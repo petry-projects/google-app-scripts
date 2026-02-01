@@ -1,4 +1,4 @@
-# Gmail to Drive Archiver
+# Gmail to Drive By Labels
 
 A robust Google Apps Script designed to automate the archiving of Gmail threads. It appends email body text to a Google Doc and intelligently saves attachments to a specific Google Drive folder based on Gmail labels.
 
