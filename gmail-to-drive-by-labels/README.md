@@ -2,6 +2,9 @@
 
 A robust Google Apps Script designed to automate the archiving of Gmail threads. It appends email body text to a Google Doc and intelligently saves attachments to a specific Google Drive folder based on Gmail labels.
 
+## Example Use-Cases
+### 1. Collect and store all documents related to an ongoing topic into Google Drive which can act as a source of grounding for a Notebook system. Use Gmail Filters to automatically label incoming emails and have them feed into your Notebook RAG.
+
 ## Features
 
 * ** automated Archiving:** Scans for emails with a specific "Trigger Label" and processes them automatically.
@@ -17,6 +20,7 @@ A robust Google Apps Script designed to automate the archiving of Gmail threads.
 
 
 * **Robust Processing:** Includes error handling and delays to prevent Google Docs "Unexpected Error" crashes during high-volume loops.
+
 * **Label Management:** Automatically removes the trigger label and applies an "Archived" label after processing.
 
 ## Setup Instructions
