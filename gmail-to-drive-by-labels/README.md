@@ -7,21 +7,26 @@ A robust Google Apps Script designed to automate the archiving of Gmail threads.
 
 ## Features
 
-* ** automated Archiving:** Scans for emails with a specific "Trigger Label" and processes them automatically.
-* **Clean Output:**
+**Automated Archiving:**
+* Scans for emails with a specific "Trigger Label" and processes them automatically.
+* Processing is performed on a per-item basis allowing resumption after timeouts
+
+**Clean Output:**
 * Strips quoted replies (e.g., "On [Date]... wrote:").
 * Removes "Confidentiality Notice" legal footers.
 * Removes lines starting with `>` or `<`.
 
+**Content-Based De-duplication:** 
+* Uses MD5 hashing (digital fingerprinting) to detect if a file is an exact duplicate of one already in the folder, even if the filename is different.
 
-* **Smart Attachment Storage:**
-* **Content-Based De-duplication:** Uses MD5 hashing (digital fingerprinting) to detect if a file is an exact duplicate of one already in the folder, even if the filename is different.
-* **Safe Renaming:** If a file has the same name but *different* content, it automatically appends a timestamp to the filename to prevent overwriting data.
+**Safe Renaming:** 
+* If a file has the same name but *different* content, it automatically appends a timestamp to the filename to prevent overwriting data.
 
+**Robust Processing:** 
+* Includes error handling and delays to prevent Google Docs "Unexpected Error" crashes during high-volume loops.
 
-* **Robust Processing:** Includes error handling and delays to prevent Google Docs "Unexpected Error" crashes during high-volume loops.
-
-* **Label Management:** Automatically removes the trigger label and applies an "Archived" label after processing.
+**Label Management:**
+* Automatically removes the trigger label and applies an "Archived" label after processing.
 
 ## Setup Instructions
 
