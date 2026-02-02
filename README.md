@@ -9,6 +9,7 @@ Open sourced under the MIT License to help others build their own automation wor
 | Script Name | Description | Documentation |
 | :--- | :--- | :--- |
 | **Gmail to Drive By Labels** | Automatically archives emails from specific Gmail labels into a Google Doc (text) and Google Drive Folder (attachments). Features robust text cleaning (removing quoted replies/legal footers) and smart content-based attachment de-duplication. | [View Readme](./gmail-to-drive-by-labels/README.md) |
+| **Calendar to Sheets** | Syncs Google Calendar events into a Google Sheet, keeping rows up to date on changes and deletions. | [View Readme](./calendar-to-sheets/README.md) |
 
 ## 🚀 Getting Started
 

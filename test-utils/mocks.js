@@ -120,6 +120,71 @@ function createGmailApp() {
   };
 }
 
+// Minimal Calendar and Spreadsheet mocks for tests
+function createCalendarEvent({id, title='', start=new Date(), end=new Date(), description='', location='', attendees=[]} = {}) {
+  return {
+    getId: () => id,
+    getTitle: () => title,
+    getStartTime: () => start,
+    getEndTime: () => end,
+    getDescription: () => description,
+    getLocation: () => location,
+    getGuestList: () => attendees.map(a => ({ getEmail: () => a }))
+  };
+}
+
+function createCalendar(id='primary') {
+  const events = [];
+  return {
+    id,
+    __events: events,
+    getEvents: (start, end) => events.filter(e => e.getStartTime() >= start && e.getStartTime() <= end),
+    __addEvent: (evt) => { events.push(evt); },
+    __reset: () => { events.length = 0 }
+  };
+}
+
+function createSheet(name='Sheet1') {
+  const headers = [];
+  const rows = [];
+  return {
+    getName: () => name,
+    getDataRange: () => ({ getValues: () => [headers.slice(), ...rows.map(r=>r.slice())] }),
+    getLastRow: () => rows.length + (headers.length ? 1 : 0),
+    appendRow: (row) => { rows.push(row.slice()); },
+    getRange: (row, col, numRows, numCols) => {
+      const start = row - 1 - (headers.length ? 1 : 0);
+      return {
+        setValues: (vals) => {
+          for (let r = 0; r < vals.length; r++) {
+            const dest = start + r;
+            rows[dest] = rows[dest] || [];
+            for (let c = 0; c < vals[r].length; c++) rows[dest][col - 1 + c] = vals[r][c];
+          }
+        }
+      }
+    },
+    deleteRow: (rowIndex) => {
+      const idx = rowIndex - 1 - (headers.length ? 1 : 0);
+      if (idx >= 0 && idx < rows.length) rows.splice(idx,1);
+    },
+    __setHeader: (h) => { headers.length = 0; h.forEach(x=>headers.push(x)) },
+    __getRows: () => rows
+  };
+}
+
+function createSpreadsheet(id='ss1') {
+  const sheets = new Map();
+  return {
+    id,
+    getSheetByName: (name) => {
+      if (!sheets.has(name)) sheets.set(name, createSheet(name));
+      return sheets.get(name);
+    },
+    __reset: () => sheets.clear()
+  };
+}
+
 function createDriveApp() {
   const folders = new Map();
   return {
@@ -147,12 +212,16 @@ function installGlobals(globals) {
   const gmail = createGmailApp();
   const drive = createDriveApp();
   const docs = createDocumentApp();
+  const calendar = createCalendar();
+  const spreadsheet = createSpreadsheet();
 
   globals.GmailApp = gmail;
   globals.DriveApp = drive;
   globals.DocumentApp = docs;
+  globals.CalendarApp = { getDefaultCalendar: () => calendar };
+  globals.SpreadsheetApp = { openById: (id) => spreadsheet };
 
-  globals.__mocks = { gmail, drive, docs, createMessage, createBlob };
+  globals.__mocks = { gmail, drive, docs, calendar, spreadsheet, createMessage, createBlob, createCalendarEvent };
 }
 
 function resetAll(globals) {
@@ -160,7 +229,9 @@ function resetAll(globals) {
     globals.__mocks.gmail.__reset();
     globals.__mocks.drive.__reset();
     globals.__mocks.docs.__reset();
+    globals.__mocks.calendar.__reset();
+    globals.__mocks.spreadsheet.__reset();
   }
 }
 
-module.exports = { installGlobals, resetAll, createMessage, createBlob };
+module.exports = { installGlobals, resetAll, createMessage, createBlob, createCalendarEvent };
