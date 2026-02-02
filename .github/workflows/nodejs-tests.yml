@@ -1,0 +1,54 @@
+name: Node.js Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  node-tests:
+    name: Node.js Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache node modules
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Discover packages
+        id: discover
+        run: |
+          echo "Finding packages with tests..."
+          PACKAGES=$(node -e "const fs=require('fs');const dirs=fs.readdirSync('.').filter(d=>fs.statSync(d).isDirectory() && fs.existsSync(d+'/tests'));console.log(JSON.stringify(dirs))")
+          echo "PACKAGES=$PACKAGES" >> $GITHUB_OUTPUT
+
+      - name: Run tests
+        env:
+          PACKAGES: ${{ steps.discover.outputs.PACKAGES }}
+        run: |
+          PACKAGES_ENV="$PACKAGES"
+          PACKAGES=$(node -e "console.log(JSON.parse(process.env.PACKAGES || '[]').join(' '))")
+          echo "Discovered packages: $PACKAGES"
+          if [ -z "$PACKAGES" ]; then
+            echo "No packages found, running root tests"
+            npm test
+            exit 0
+          fi
+          for p in $PACKAGES; do
+            echo "Running tests for $p"
+            npx jest "$p/tests" --colors || exit 1
+          done

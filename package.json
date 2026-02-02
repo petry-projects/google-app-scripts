@@ -1,0 +1,11 @@
+{
+  "name": "google-app-scripts",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "test": "jest --runInBand"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}
