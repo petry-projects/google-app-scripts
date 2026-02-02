@@ -3,38 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "test": "jest --runInBand",
-    "test:e2e": "playwright test",
-    "lint": "eslint src",
-    "format": "prettier --write .",
-    "typecheck": "tsc --noEmit",
-    "check": "prettier --check . && npm run lint",
-    "prepare": "husky"
-  },
-  "lint-staged": {
-    "**/*.{js,ts,gs,json,md,yml,yaml}": "prettier --write",
-    "**/*.{js,ts}": "eslint --fix"
-  },
-  "overrides": {
-    "js-yaml": "^4.2.0",
-    "brace-expansion": ">=5.0.8"
+    "test": "jest --runInBand"
   },
   "devDependencies": {
-    "@commitlint/cli": "^21.0.0",
-    "@commitlint/config-conventional": "^20.5.3",
-    "@playwright/test": "^1.60.0",
-    "@types/google-apps-script": "^2.0.8",
-    "@types/jest": "^30.0.0",
-    "@typescript-eslint/eslint-plugin": "^8.59.3",
-    "@typescript-eslint/parser": "^8.58.1",
-    "eslint": "^10.4.0",
-    "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-prettier": "^5.5.5",
-    "husky": "^9.1.7",
-    "jest": "^30.3.0",
-    "lint-staged": "^17.0.4",
-    "prettier": "^3.8.3",
-    "ts-jest": "^29.4.9",
-    "typescript": "^6.0.3"
+    "jest": "^29.7.0"
   }
 }

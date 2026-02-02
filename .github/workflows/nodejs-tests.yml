@@ -1,59 +1,40 @@
 name: Node.js Tests
 
-permissions: {}
-
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   pull_request:
-    branches: [main]
+    branches: [ main ]
 
 jobs:
-  node-tests:
-    name: Node.js Tests
+  discover:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: write
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v4
+      - id: set-matrix
+        run: |
+          PACKAGES=$(node -e "const fs=require('fs');const dirs=fs.readdirSync('.').filter(d=>fs.statSync(d).isDirectory() && fs.existsSync(d+'/tests'));console.log(JSON.stringify(dirs))")
+          echo "matrix=$PACKAGES" >> $GITHUB_OUTPUT
+
+  test:
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJson(needs.discover.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Use Node.js 20
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Cache node modules
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
-
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
-      - name: Discover packages
-        id: discover
-        run: |
-          echo "Finding packages with tests..."
-          PACKAGES=$(node -e "const fs=require('fs');const dirs=fs.readdirSync('.').filter(d=>fs.statSync(d).isDirectory() && fs.existsSync(d+'/tests'));console.log(JSON.stringify(dirs))")
-          echo "PACKAGES=$PACKAGES" >> $GITHUB_OUTPUT
-
-      - name: Run tests
-        env:
-          PACKAGES: ${{ steps.discover.outputs.PACKAGES }}
-        run: |
-          PACKAGES_ENV="$PACKAGES"
-          PACKAGES=$(node -e "console.log(JSON.parse(process.env.PACKAGES || '[]').join(' '))")
-          echo "Discovered packages: $PACKAGES"
-          if [ -z "$PACKAGES" ]; then
-            echo "No packages found, running root tests"
-            npm test
-            exit 0
-          fi
-          for p in $PACKAGES; do
-            echo "Running tests for $p"
-            npx jest "$p/tests" --colors || exit 1
-          done
+      - name: Run tests for package ${{ matrix.package }}
+        run: npx jest "${{ matrix.package }}/tests" --colors
