@@ -24,6 +24,7 @@ AGENTS.md is for precise, agent-focused instructions that complement README file
 - Keep dependencies and lockfiles in sync. If you update deps, update the lockfile and restart relevant dev/test processes.
 - Prefer small, focused commands for iterative work (run the specific tests you care about rather than the full suite when possible).
 - Document any project-specific dev/test/run commands and required environment variables/secrets in this file or in `<agent-folder>/README.md`.
+- Repository convention: place runnable Apps Script code in `code.gs` and configuration in `config.gs` within each script folder.
 
 ---
 
