@@ -7,24 +7,9 @@ on:
     branches: [ main ]
 
 jobs:
-  discover:
+  node-tests:
+    name: Node.js Tests
     runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
-    steps:
-      - uses: actions/checkout@v4
-      - id: set-matrix
-        run: |
-          PACKAGES=$(node -e "const fs=require('fs');const dirs=fs.readdirSync('.').filter(d=>fs.statSync(d).isDirectory() && fs.existsSync(d+'/tests'));console.log(JSON.stringify(dirs))")
-          echo "matrix=$PACKAGES" >> $GITHUB_OUTPUT
-
-  test:
-    needs: discover
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        package: ${{ fromJson(needs.discover.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -33,8 +18,37 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
-        run: npm install
+      - name: Cache node modules
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
-      - name: Run tests for package ${{ matrix.package }}
-        run: npx jest "${{ matrix.package }}/tests" --colors
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Discover packages
+        id: discover
+        run: |
+          echo "Finding packages with tests..."
+          PACKAGES=$(node -e "const fs=require('fs');const dirs=fs.readdirSync('.').filter(d=>fs.statSync(d).isDirectory() && fs.existsSync(d+'/tests'));console.log(JSON.stringify(dirs))")
+          echo "PACKAGES=$PACKAGES" >> $GITHUB_OUTPUT
+
+      - name: Run tests
+        env:
+          PACKAGES: ${{ steps.discover.outputs.PACKAGES }}
+        run: |
+          PACKAGES_ENV="$PACKAGES"
+          PACKAGES=$(node -e "console.log(JSON.parse(process.env.PACKAGES || '[]').join(' '))")
+          echo "Discovered packages: $PACKAGES"
+          if [ -z "$PACKAGES" ]; then
+            echo "No packages found, running root tests"
+            npm test
+            exit 0
+          fi
+          for p in $PACKAGES; do
+            echo "Running tests for $p"
+            npx jest "$p/tests" --colors || exit 1
+          done
