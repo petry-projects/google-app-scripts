@@ -15,9 +15,9 @@ Open sourced under the MIT License to help others build their own automation wor
 
 1.  **Browse the Catalog:** Check the table above to find a script that fits your needs.
 2.  **Open the Folder:** Navigate to the specific script folder (e.g., `/gmail-to-drive-by-label`).
-3.  **Copy the Code:** Open the `.gs` files in that folder.
-4.  **Install:** Copy the code into a new [Google Apps Script project](https://script.google.com/).
-5.  **Configure:** Follow the specific setup instructions in that script's `README.md`.
+3.  **Code & Config Convention:** Each script places the runnable code in `code.gs` and configuration values in `config.gs`.
+4.  **Copy the Code:** Open `code.gs` (and `config.gs`) in the folder and copy them into a new [Google Apps Script project](https://script.google.com/).
+5.  **Configure:** Update `config.gs` values (spreadsheet id, sheet name, etc.) and follow the specific setup instructions in that script's `README.md`.
 
 ## 🤝 Contributing
 
