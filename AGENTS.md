@@ -36,6 +36,16 @@ For monorepos or nested projects, you MAY place an `AGENTS.md` inside a packageâ
 
 ---
 
+## Agent operation guidance (adopted from https://agents.md/)
+These short rules reflect the canonical AGENTS.md guidance and are adapted for this repository so agent-driven tooling behaves predictably:
+
+- Use interactive/dev commands or test commands during agent sessions; avoid running destructive or production-only workflows from an interactive agent session.
+- Keep dependencies in sync: update the lockfile (`package-lock.json`/`pnpm-lock.yaml`/`yarn.lock`) when adding or changing dependencies and restart any local dev/test servers.
+- Prefer small, focused commands for iterative work (e.g., run the specific agent tests instead of the full suite).
+- Document project-specific commands and any environment variables/secrets needed in `agents/<name>/README.md`.
+
+---
+
 ## Tests & CI conventions
 - Use Jest (the repo default) for unit tests.
 - Unit tests MUST be fast, deterministic, and not access external networks.
