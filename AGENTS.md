@@ -11,11 +11,11 @@ This file follows the AGENTS.md conventions (see https://agents.md/) and provide
 ---
 
 ## Project layout & where to put agent code
-- All agents MUST live under `agents/` at the repo root.
+- Agent code should be placed in a clearly documented folder; record its path in `AGENTS.md` or the agent's `README.md`.
 
-Recommended layout:
+Recommended layout example:
 
-- agents/<agent-name>/
+- <agent-folder>/
   - README.md            # purpose, configuration, secrets required
   - src/                 # implementation (keep pure logic testable)
   - tests/               # unit and optional integration tests
@@ -30,7 +30,7 @@ For monorepos or nested projects, you MAY place an `AGENTS.md` inside a packageâ
 - Install repository dependencies (root):
   - npm install
 - Run tests for an agent:
-  - npm test -- "agents/<agent-name>/tests"  (or run `npx jest "agents/<agent-name>/tests"`)
+  - npm test -- "<agent-folder>/tests"  (or run `npx jest "<agent-folder>/tests"`)
 - Run the repository test suite locally before opening a PR:
   - npm test
 
@@ -42,7 +42,7 @@ These short rules reflect the canonical AGENTS.md guidance and are adapted for t
 - Use interactive/dev commands or test commands during agent sessions; avoid running destructive or production-only workflows from an interactive agent session.
 - Keep dependencies in sync: update the lockfile (`package-lock.json`/`pnpm-lock.yaml`/`yarn.lock`) when adding or changing dependencies and restart any local dev/test servers.
 - Prefer small, focused commands for iterative work (e.g., run the specific agent tests instead of the full suite).
-- Document project-specific commands and any environment variables/secrets needed in `agents/<name>/README.md`.
+- Document project-specific commands and any environment variables/secrets needed in `<agent-folder>/README.md`.
 
 ---
 
@@ -51,7 +51,7 @@ These short rules reflect the canonical AGENTS.md guidance and are adapted for t
 - Unit tests MUST be fast, deterministic, and not access external networks.
 - Mock external services (Google Apps Script, HTTP calls) using `test-utils/` helpers.
 - Integration tests are allowed but MUST be clearly marked (e.g., `@integration`) and skippable in CI.
-- Agent tests are discovered by the repository-level `Node.js Tests` job; ensure `agents/<name>/tests` passes on CI.
+- Agent tests are discovered by the repository-level `Node.js Tests` job; ensure `<agent-folder>/tests` passes on CI.
 
 ---
 
@@ -62,7 +62,7 @@ These short rules reflect the canonical AGENTS.md guidance and are adapted for t
 ---
 
 ## Security & secrets
-- Never store secrets in the repo. Use GitHub Secrets or an external secret manager and document required secrets in `agents/<name>/README.md`.
+- Never store secrets in the repo. Use GitHub Secrets or an external secret manager and document required secrets in `<agent-folder>/README.md`.
 - Limit permissions and document the minimal scope required. Anything that requires elevated permissions must be reviewed by maintainers.
 
 ---
@@ -87,9 +87,9 @@ Include short notes about how to trigger the agent (schedule, manual, webhook) a
 ---
 
 ## Example scaffold
-1. mkdir -p agents/agent-cleanup/src agents/agent-cleanup/tests
+1. mkdir -p <agent-folder>/src <agent-folder>/tests
 2. Add implementation to `src/` and tests to `tests/`
-3. Run tests: `npx jest "agents/agent-cleanup/tests"`
+3. Run tests: `npx jest "<agent-folder>/tests"`
 4. Add `README.md` and open a PR with the PR checklist above
 
 ---
@@ -97,15 +97,12 @@ Include short notes about how to trigger the agent (schedule, manual, webhook) a
 ## Repo-level rules & enforcement (required)
 To keep agent contributions consistent and safe, this repository applies the following required rules:
 
-- **PR label**: Any PR that modifies files under `agents/` MUST include the **`agent`** label. The repo includes a check workflow at `.github/workflows/require-agent-label.yml` that will fail the check if the label is not present.
+- **Coverage threshold**: Agent code SHOULD meet a minimum **global coverage of 80%** (lines, statements, branches, functions). A template workflow `.github/workflows/agent-workflow-template.yml` demonstrates running tests and enforcing the coverage threshold via `coverage/coverage-summary.json`.
 
-- **Coverage threshold**: Agents SHOULD meet a minimum **global coverage of 80%** (lines, statements, branches, functions). A template workflow `.github/workflows/agent-workflow-template.yml` demonstrates running tests and enforcing the coverage threshold via `coverage/coverage-summary.json`.
-
-- **Per-agent workflows**: If your agent needs extra verification (container build, release, or scheduled triggers), add a per-agent workflow in `agents/<name>/.github/workflows/` using the template above.
+- **Per-agent workflows**: If your agent needs extra verification (container build, release, or scheduled triggers), add a per-agent workflow in `<agent-folder>/.github/workflows/` using the template above.
 
 Notes:
 - Maintainers may adjust thresholds per-agent via PR discussion; the default baseline is 80% global coverage.
-- The label check only applies when files under `agents/` are modified; general PRs are not affected.
 
 ---
 
