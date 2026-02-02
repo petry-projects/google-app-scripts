@@ -56,7 +56,3 @@ AGENTS.md is for precise, agent-focused instructions that complement README file
 ## References
 - AGENTS.md canonical guidance: https://agents.md/
 - Example repository: https://github.com/agentsmd/agents.md/blob/main/AGENTS.md
-
----
-
-If you want, I can also scaffold a concrete example (folder + implementation + tests + workflow) in this branch—tell me the preferred folder name and trigger type (scheduled/webhook/manual).
