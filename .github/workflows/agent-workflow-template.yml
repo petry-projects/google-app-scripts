@@ -1,0 +1,37 @@
+name: "Agent: Test + Coverage Template"
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'agents/**'
+  push:
+    paths:
+      - 'agents/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests with coverage
+        run: npx jest --coverage --testPathPattern="agents/.*/tests"
+
+      - name: Check coverage threshold (global >= 80%)
+        run: |
+          if [ ! -f coverage/coverage-summary.json ]; then echo "coverage report not found"; exit 1; fi
+          node -e "const fs=require('fs');const s=JSON.parse(fs.readFileSync('coverage/coverage-summary.json'));const g=s.total;const min=80;const ok=g.lines.pct>=min&&g.statements.pct>=min&&g.branches.pct>=min&&g.functions.pct>=min; if(!ok){console.error('Coverage below threshold', g); process.exit(1)} console.log('Coverage OK', g);"
+
+# NOTES:
+# - This is a template you can copy into an agent's folder or use as-is for repository-level checks.
+# - Adjust the node version, cache strategy, or coverage threshold to meet your project's needs.

@@ -84,6 +84,21 @@ Include short notes about how to trigger the agent (schedule, manual, webhook) a
 
 ---
 
+## Repo-level rules & enforcement (required)
+To keep agent contributions consistent and safe, this repository applies the following required rules:
+
+- **PR label**: Any PR that modifies files under `agents/` MUST include the **`agent`** label. The repo includes a check workflow at `.github/workflows/require-agent-label.yml` that will fail the check if the label is not present.
+
+- **Coverage threshold**: Agents SHOULD meet a minimum **global coverage of 80%** (lines, statements, branches, functions). A template workflow `.github/workflows/agent-workflow-template.yml` demonstrates running tests and enforcing the coverage threshold via `coverage/coverage-summary.json`.
+
+- **Per-agent workflows**: If your agent needs extra verification (container build, release, or scheduled triggers), add a per-agent workflow in `agents/<name>/.github/workflows/` using the template above.
+
+Notes:
+- Maintainers may adjust thresholds per-agent via PR discussion; the default baseline is 80% global coverage.
+- The label check only applies when files under `agents/` are modified; general PRs are not affected.
+
+---
+
 ## Where to learn more
 - AGENTS.md reference: https://agents.md/
 - Agent ecosystem examples: https://github.com/search?q=path%3AAGENTS.md+NOT+is%3Afork
