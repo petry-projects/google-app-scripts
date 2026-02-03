@@ -352,7 +352,7 @@ describe('Checkpoint logic (GAS only)', () => {
   });
 
   test('getConfigs returns legacy single config when SYNC_CONFIGS not defined', () => {
-    const code = require('../code.gs');
+    
     
     // Clear existing configs
     delete global.SYNC_CONFIGS;
