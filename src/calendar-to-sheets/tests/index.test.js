@@ -1,4 +1,4 @@
-const { installGlobals, resetAll, createCalendarEvent } = require('../../test-utils/mocks');
+const { installGlobals, resetAll, createCalendarEvent } = require('../../../test-utils/mocks');
 const { eventToRow, syncCalendarToSheet, rowsEqual, rowsToMap } = require('../src/index');
 
 beforeEach(() => {

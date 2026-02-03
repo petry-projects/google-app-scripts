@@ -8,13 +8,13 @@ Open sourced under the MIT License to help others build their own automation wor
 
 | Script Name | Description | Documentation |
 | :--- | :--- | :--- |
-| **Gmail to Drive By Labels** | Automatically archives emails from specific Gmail labels into a Google Doc (text) and Google Drive Folder (attachments). Features robust text cleaning (removing quoted replies/legal footers) and smart content-based attachment de-duplication. | [View Readme](./gmail-to-drive-by-labels/README.md) |
-| **Calendar to Sheets** | Syncs Google Calendar events into a Google Sheet, keeping rows up to date on changes and deletions. | [View Readme](./calendar-to-sheets/README.md) |
+| **Gmail to Drive By Labels** | Automatically archives emails from specific Gmail labels into a Google Doc (text) and Google Drive Folder (attachments). Features robust text cleaning (removing quoted replies/legal footers) and smart content-based attachment de-duplication. | [View Readme](./src/gmail-to-drive-by-labels/README.md) |
+| **Calendar to Sheets** | Syncs Google Calendar events into a Google Sheet, keeping rows up to date on changes and deletions. | [View Readme](./src/calendar-to-sheets/README.md) |
 
 ## 🚀 Getting Started
 
 1.  **Browse the Catalog:** Check the table above to find a script that fits your needs.
-2.  **Open the Folder:** Navigate to the specific script folder (e.g., `/gmail-to-drive-by-label`).
+2.  **Open the Folder:** Navigate to the specific script folder (e.g., `/src/gmail-to-drive-by-labels`).
 3.  **Code & Config Convention:** Each script places the runnable code in `code.gs` and configuration values in `config.gs`.
 4.  **Copy the Code:** Open `code.gs` (and `config.gs`) in the folder and copy them into a new [Google Apps Script project](https://script.google.com/).
 5.  **Configure:** Update `config.gs` values (spreadsheet id, sheet name, etc.) and follow the specific setup instructions in that script's `README.md`.

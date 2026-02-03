@@ -1,4 +1,4 @@
-const { getCleanBody, getFileHash } = require('../../src/gas-utils');
+const { getCleanBody, getFileHash } = require('../../gas-utils');
 
 describe('getCleanBody', () => {
   test('returns empty string for falsy input', () => {
