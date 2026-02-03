@@ -1,106 +1,42 @@
 #!/usr/bin/env node
 
 /**
- * Verify that test coverage meets the configured minimum thresholds across all metrics.
- * Reads coverage-final.json and validates statements, branches, functions, and lines
- * against the requiredCoverage configuration. Exits with code 1 if any metric is below
- * its minimum threshold, or 0 if all pass.
+ * Verify that test coverage meets 100% across all metrics.
+ * Reads coverage-final.json and validates statements, branches, functions, and lines.
+ * Exit code 1 if any metric is below 100%, 0 if all pass.
  */
 
-const fs = require('node:fs')
-const path = require('node:path')
+const fs = require('fs');
+const path = require('path');
 
-const coveragePath = path.join(process.cwd(), 'coverage', 'coverage-final.json')
+const coveragePath = path.join(process.cwd(), 'coverage', 'coverage-final.json');
 
 if (!fs.existsSync(coveragePath)) {
-  console.error(
-    '❌ Coverage report not found. Run tests with --coverage flag first.'
-  )
-  process.exit(1)
+  console.error('❌ Coverage report not found. Run tests with --coverage flag first.');
+  process.exit(1);
 }
 
-const coverage = JSON.parse(fs.readFileSync(coveragePath, 'utf8'))
+const coverage = JSON.parse(fs.readFileSync(coveragePath, 'utf8'));
+const metrics = ['statements', 'branches', 'functions', 'lines'];
+let allPassed = true;
 
-// Calculate totals across all files
-const totals = {
-  statements: { covered: 0, total: 0 },
-  branches: { covered: 0, total: 0 },
-  functions: { covered: 0, total: 0 },
-  lines: { covered: 0, total: 0 },
-}
-
-for (const filePath in coverage) {
-  const fileCoverage = coverage[filePath]
-
-  // Statements
-  if (fileCoverage.s) {
-    for (const key in fileCoverage.s) {
-      totals.statements.total++
-      if (fileCoverage.s[key] > 0) totals.statements.covered++
-    }
-  }
-
-  // Branches
-  if (fileCoverage.b) {
-    for (const key in fileCoverage.b) {
-      const branches = fileCoverage.b[key]
-      for (const hitCount of branches) {
-        totals.branches.total++
-        if (hitCount > 0) totals.branches.covered++
-      }
-    }
-  }
-
-  // Functions
-  if (fileCoverage.f) {
-    for (const key in fileCoverage.f) {
-      totals.functions.total++
-      if (fileCoverage.f[key] > 0) totals.functions.covered++
-    }
-  }
-
-  // Lines
-  if (fileCoverage.l) {
-    for (const line in fileCoverage.l) {
-      totals.lines.total++
-      if (fileCoverage.l[line] > 0) totals.lines.covered++
-    }
-  }
-}
-
-const metrics = ['statements', 'branches', 'functions', 'lines']
-const requiredCoverage = {
-  statements: 95,
-  branches: 85,
-  functions: 95,
-  lines: 100,
-}
-
-let allPassed = true
-
-console.log('\n📊 Coverage Report:\n')
+console.log('\n📊 Coverage Report:\n');
 
 for (const metric of metrics) {
-  const { covered, total } = totals[metric]
-  const pct = total > 0 ? ((covered / total) * 100).toFixed(2) : 100
-  const required = requiredCoverage[metric]
-  const status = pct >= required ? '✅' : '❌'
-  console.log(
-    `${status} ${metric.padEnd(15)}: ${pct}% (${covered}/${total}) [required: ${required}%]`
-  )
-  if (pct < required) {
-    allPassed = false
+  const pct = coverage.total[metric]?.pct ?? 0;
+  const status = pct === 100 ? '✅' : '❌';
+  console.log(`${status} ${metric.padEnd(15)}: ${pct.toFixed(2)}%`);
+  if (pct !== 100) {
+    allPassed = false;
   }
 }
 
-console.log('')
+console.log('');
 
 if (!allPassed) {
-  console.error(
-    '❌ Coverage check failed: not all metrics meet minimum requirements.'
-  )
-  process.exit(1)
+  console.error('❌ Coverage check failed: not all metrics are at 100%.');
+  process.exit(1);
 }
 
-console.log('✅ All coverage metrics meet requirements.\n')
-process.exit(0)
+console.log('✅ All coverage metrics are at 100%.\n');
+process.exit(0);
