@@ -5,10 +5,10 @@
  * Reads coverage-final.json and validates statements, branches, functions, and lines.
  * Exit code 1 if any metric is below threshold, 0 if all pass.
  * 
- * Branch coverage is set to 98% to account for 2 environment-specific branches in code.gs
+ * Branch coverage is set to 98% to account for environment-specific branches in code.gs
  * that cannot be tested in Node.js:
- * - Line 176: Checks if Logger global exists (GAS vs Node.js)
- * - Line 200: Checks if module.exports exists (Node.js vs GAS)
+ * - Logger availability check (GAS vs Node.js environment)
+ * - module.exports check (Node.js vs GAS environment)
  * 
  * All other metrics enforce 100% coverage.
  */
