@@ -1,5 +1,8 @@
 # Google Apps Script Productivity Suite
 
+![googleappscripts](header.jpg)
+
+
 A collection of personal productivity scripts built on Google Apps Script. These tools are designed to automate repetitive tasks across Gmail, Google Drive, and Google Docs, helping you reclaim your time and keep your digital workspace organized.
 
 Open sourced under the MIT License to help others build their own automation workflows.
