@@ -152,14 +152,37 @@ function createSheet(name='Sheet1') {
     getDataRange: () => ({ getValues: () => [headers.slice(), ...rows.map(r=>r.slice())] }),
     getLastRow: () => rows.length + (headers.length ? 1 : 0),
     appendRow: (row) => { rows.push(row.slice()); },
+    insertRowBefore: (rowIndex) => {
+      // Insert a new row before the given rowIndex (1-based)
+      if (rowIndex === 1 && headers.length === 0) {
+        // Inserting before row 1 when no header - this will become the header
+        // No-op for now, setValues will handle it
+      } else {
+        const idx = rowIndex - 1 - (headers.length ? 1 : 0);
+        if (idx >= 0) {
+          rows.splice(idx, 0, []);
+        }
+      }
+    },
     getRange: (row, col, numRows, numCols) => {
       const start = row - 1 - (headers.length ? 1 : 0);
       return {
         setValues: (vals) => {
-          for (let r = 0; r < vals.length; r++) {
-            const dest = start + r;
-            rows[dest] = rows[dest] || [];
-            for (let c = 0; c < vals[r].length; c++) rows[dest][col - 1 + c] = vals[r][c];
+          // Special case: if row is 1 and headers are empty, we're setting the header
+          if (row === 1 && headers.length === 0 && rows.length === 0) {
+            // Setting the header row on an empty sheet
+            headers.length = 0;
+            vals[0].forEach(x => headers.push(x));
+          } else if (row === 1 && start === -1) {
+            // Setting the header row when it already exists
+            headers.length = 0;
+            vals[0].forEach(x => headers.push(x));
+          } else {
+            for (let r = 0; r < vals.length; r++) {
+              const dest = start + r;
+              rows[dest] = rows[dest] || [];
+              for (let c = 0; c < vals[r].length; c++) rows[dest][col - 1 + c] = vals[r][c];
+            }
           }
         }
       }

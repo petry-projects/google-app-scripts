@@ -750,5 +750,119 @@ describe('Checkpoint logic (GAS only)', () => {
   });
 });
 
+// Test ensureHeader function
+describe('ensureHeader', () => {
+  const { ensureHeader } = require('../src/index');
+
+  test('ensureHeader creates header when sheet is completely empty', () => {
+    const mockSetValues = jest.fn();
+    const sheet = {
+      getDataRange: () => ({ getValues: () => [] }),
+      appendRow: jest.fn(),
+      insertRowBefore: jest.fn(),
+      getRange: jest.fn(() => ({ setValues: mockSetValues }))
+    };
+
+    ensureHeader(sheet);
+    
+    expect(sheet.getRange).toHaveBeenCalledWith(1, 1, 1, 7);
+    expect(mockSetValues).toHaveBeenCalledWith([['id', 'title', 'start', 'end', 'description', 'location', 'attendees']]);
+    expect(sheet.insertRowBefore).not.toHaveBeenCalled();
+  });
+
+  test('ensureHeader does nothing when valid header already exists', () => {
+    const sheet = {
+      getDataRange: () => ({ getValues: () => [['id', 'title', 'start', 'end', 'description', 'location', 'attendees']] }),
+      appendRow: jest.fn(),
+      insertRowBefore: jest.fn(),
+      getRange: jest.fn(() => ({ setValues: jest.fn() }))
+    };
+
+    ensureHeader(sheet);
+    
+    expect(sheet.appendRow).not.toHaveBeenCalled();
+    expect(sheet.insertRowBefore).not.toHaveBeenCalled();
+  });
+
+  test('ensureHeader inserts header when first row is data not header', () => {
+    const mockSetValues = jest.fn();
+    const sheet = {
+      getDataRange: () => ({ getValues: () => [['e1', 'Meeting', '2026-02-02T10:00:00Z', '2026-02-02T11:00:00Z', 'desc', 'loc', 'attendees']] }),
+      appendRow: jest.fn(),
+      insertRowBefore: jest.fn(),
+      getRange: jest.fn(() => ({ setValues: mockSetValues }))
+    };
+
+    ensureHeader(sheet);
+    
+    expect(sheet.insertRowBefore).toHaveBeenCalledWith(1);
+    expect(sheet.getRange).toHaveBeenCalledWith(1, 1, 1, 7);
+    expect(mockSetValues).toHaveBeenCalledWith([['id', 'title', 'start', 'end', 'description', 'location', 'attendees']]);
+  });
+});
+
+// Test syncCalendarToSheet with empty sheet (no header)
+test('syncCalendarToSheet works correctly when sheet starts empty with no header', async () => {
+  const calendar = CalendarApp.getDefaultCalendar();
+  
+  // Create a fresh sheet with no header set
+  const ss = SpreadsheetApp.openById('ss_empty');
+  const sheet = ss.getSheetByName('EmptySheet');
+  // Intentionally NOT calling __setHeader
+
+  const evt1 = createCalendarEvent({ 
+    id: 'e_empty1', 
+    title: 'First Event', 
+    start: new Date('2026-02-02T10:00:00Z'), 
+    end: new Date('2026-02-02T11:00:00Z'), 
+    description: 'd1', 
+    location: 'L1', 
+    attendees: ['a@example.com'] 
+  });
+  
+  const evt2 = createCalendarEvent({ 
+    id: 'e_empty2', 
+    title: 'Second Event', 
+    start: new Date('2026-02-03T10:00:00Z'), 
+    end: new Date('2026-02-03T11:00:00Z'), 
+    description: 'd2', 
+    location: 'L2', 
+    attendees: [] 
+  });
+  
+  calendar.__addEvent(evt1);
+  calendar.__addEvent(evt2);
+
+  // Sync should create header and add events
+  await syncCalendarToSheet(calendar, sheet, { start: new Date('2026-02-01'), end: new Date('2026-02-05') });
+
+  const rows = sheet.__getRows();
+  expect(rows.length).toBe(2);
+  expect(rows[0][0]).toBe('e_empty1');
+  expect(rows[1][0]).toBe('e_empty2');
+  
+  // Second sync should update correctly without duplicating
+  const evt1Updated = createCalendarEvent({ 
+    id: 'e_empty1', 
+    title: 'First Event Updated', 
+    start: new Date('2026-02-02T10:00:00Z'), 
+    end: new Date('2026-02-02T11:00:00Z'), 
+    description: 'd1', 
+    location: 'L1', 
+    attendees: ['a@example.com'] 
+  });
+  
+  calendar.__reset();
+  calendar.__addEvent(evt1Updated);
+  calendar.__addEvent(evt2);
+
+  await syncCalendarToSheet(calendar, sheet, { start: new Date('2026-02-01'), end: new Date('2026-02-05') });
+
+  const rows2 = sheet.__getRows();
+  expect(rows2.length).toBe(2);
+  const e1row = rows2.find(r => r[0] === 'e_empty1');
+  expect(e1row[1]).toBe('First Event Updated');
+});
+
 
 
