@@ -182,3 +182,52 @@ test('syncAllCalendarsToSheetsGAS syncs multiple configs to multiple sheets', as
 
   delete global.SYNC_CONFIGS;
 });
+
+// Test checkpoint logic for avoiding reprocessing old events
+describe('Checkpoint logic (GAS only)', () => {
+  beforeEach(() => {
+    installGlobals(global);
+  });
+
+  afterEach(() => resetAll(global));
+
+  test('getCheckpointKey returns consistent key for config', () => {
+    const code = require('../code.gs');
+    const cfg = { calendarId: 'cal123' };
+    const key = code.getCheckpointKey(cfg);
+    expect(key).toBe('calendar_to_sheets_last_sync_cal123');
+  });
+
+  test('getLastSyncTime defaults to epoch on first run', () => {
+    const code = require('../code.gs');
+    const cfg = { calendarId: 'new_cal' };
+    const lastSync = code.getLastSyncTime(cfg);
+    // Should be epoch (Jan 1, 1970)
+    expect(lastSync.getTime()).toBe(0);
+  });
+
+  test('saveLastSyncTime and getLastSyncTime persist checkpoint', () => {
+    const code = require('../code.gs');
+    const cfg = { calendarId: 'cal456' };
+    const testTime = new Date('2026-01-15T10:00:00Z');
+    
+    code.saveLastSyncTime(cfg, testTime);
+    const retrieved = code.getLastSyncTime(cfg);
+    
+    expect(retrieved.getTime()).toBe(testTime.getTime());
+  });
+
+  test('clearCheckpoint removes saved sync time', () => {
+    const code = require('../code.gs');
+    const cfg = { calendarId: 'cal789' };
+    const testTime = new Date('2026-01-15T10:00:00Z');
+    
+    code.saveLastSyncTime(cfg, testTime);
+    code.clearCheckpoint(cfg);
+    
+    const retrieved = code.getLastSyncTime(cfg);
+    // Should be reset to epoch
+    expect(retrieved.getTime()).toBe(0);
+  });
+});
+
