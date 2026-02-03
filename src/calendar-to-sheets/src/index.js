@@ -36,15 +36,10 @@ function rowsToMap(rows) {
 }
 
 function rowsEqual(a, b) {
-  // Compare only the first row.length columns (ignoring extra cols in b)
-  const minLen = Math.min(a.length, b.length);
-  for (let i = 0; i < minLen; i++) if (a[i] !== b[i]) return false;
-  // If lengths differ, they're only equal if extra columns are all falsy/empty
-  if (a.length !== b.length) {
-    const longer = a.length > b.length ? a : b;
-    for (let i = Math.max(a.length, b.length) === a.length ? b.length : a.length; i < longer.length; i++) {
-      if (longer[i]) return false;
-    }
+  // Compare only the first a.length columns of both arrays.
+  // This ignores any extra trailing columns in b (e.g., user-added notes).
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
   }
   return true;
 }

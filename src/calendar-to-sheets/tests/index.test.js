@@ -68,8 +68,9 @@ test('rowsToMap builds correct mapping and rowsEqual works', () => {
   expect(m.get('e2').rowIndex).toBe(3); // header row considered
   expect(rowsEqual(['a','b'], ['a','b'])).toBe(true);
   expect(rowsEqual(['a','b'], ['a','c'])).toBe(false);
-  // different lengths should return false (covers early length check)
-  expect(rowsEqual(['a'], ['a','b'])).toBe(false);
+  // when b has extra trailing columns, only compare columns in a
+  expect(rowsEqual(['a','b'], ['a','b','extra','columns'])).toBe(true);
+  expect(rowsEqual(['a','b'], ['a','c','extra','columns'])).toBe(false);
 });
 
 test('eventToRow handles missing optional fields', () => {
@@ -93,6 +94,35 @@ test('syncCalendarToSheet skips update when rows are equal', async () => {
   await syncCalendarToSheet(calendar, sheet, { start: new Date('2026-02-01'), end: new Date('2026-02-06') });
   const after = JSON.stringify(sheet.__getRows());
   expect(before).toBe(after);
+});
+
+test('syncCalendarToSheet ignores extra user columns when comparing rows', async () => {
+  const calendar = CalendarApp.getDefaultCalendar();
+  const ss = SpreadsheetApp.openById('ss1');
+  const sheet = ss.getSheetByName('Sheet1');
+
+  const evt = createCalendarEvent({ id: 'e_extra', title: 'Meeting with notes', start: new Date('2026-02-04T10:00:00Z'), end: new Date('2026-02-04T11:00:00Z'), description: 'desc', location: 'L', attendees: ['a@example.com'] });
+  calendar.__addEvent(evt);
+  
+  // First sync
+  await syncCalendarToSheet(calendar, sheet, { start: new Date('2026-02-01'), end: new Date('2026-02-06') });
+  
+  // Simulate user adding extra columns (notes) to the row
+  const rows = sheet.__getRows();
+  const targetRow = rows.find(r => r[0] === 'e_extra');
+  targetRow.push('User note 1', 'User note 2', 'Extra data');
+  
+  // Second sync - should NOT update the row because script-owned columns are identical
+  await syncCalendarToSheet(calendar, sheet, { start: new Date('2026-02-01'), end: new Date('2026-02-06') });
+  
+  const rowsAfter = sheet.__getRows();
+  const rowAfter = rowsAfter.find(r => r[0] === 'e_extra');
+  
+  // User notes should still be there (row was not rewritten)
+  expect(rowAfter.length).toBeGreaterThan(7); // more than the 7 script columns
+  expect(rowAfter[7]).toBe('User note 1');
+  expect(rowAfter[8]).toBe('User note 2');
+  expect(rowAfter[9]).toBe('Extra data');
 });
 
 test('rowsToMap skips empty rows and sync uses default date range', async () => {
