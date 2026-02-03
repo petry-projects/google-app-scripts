@@ -44,7 +44,39 @@ function rowsEqual(a, b) {
   return true;
 }
 
+function ensureHeader(sheet) {
+  // Ensure the sheet has a proper header row. If the sheet is empty or the first row
+  // doesn't look like our expected header, create/replace it.
+  const expectedHeader = ['id', 'title', 'start', 'end', 'description', 'location', 'attendees'];
+  
+  const data = sheet.getDataRange().getValues();
+  
+  // If sheet is completely empty, add header
+  if (!data || data.length === 0) {
+    sheet.getRange(1, 1, 1, expectedHeader.length).setValues([expectedHeader]);
+    return;
+  }
+  
+  // Check if first row matches expected header
+  const firstRow = data[0];
+  const isValidHeader = firstRow && 
+                       firstRow.length >= expectedHeader.length &&
+                       firstRow[0] === 'id' && 
+                       firstRow[1] === 'title' &&
+                       firstRow[2] === 'start' &&
+                       firstRow[3] === 'end';
+  
+  // If first row doesn't look like a header, insert one at the top
+  if (!isValidHeader) {
+    sheet.insertRowBefore(1);
+    sheet.getRange(1, 1, 1, expectedHeader.length).setValues([expectedHeader]);
+  }
+}
+
 async function syncCalendarToSheet(calendar, sheet, { start = new Date(0), end = new Date(Date.now() + 365*24*60*60*1000) } = {}) {
+  // Ensure header row exists
+  ensureHeader(sheet);
+  
   // Fetch events
   const events = calendar.getEvents(start, end);
   const desired = events.map(eventToRow);
@@ -93,4 +125,4 @@ async function syncCalendarToSheet(calendar, sheet, { start = new Date(0), end =
   toDelete.sort((a,b) => b - a).forEach(r => sheet.deleteRow(r));
 }
 
-module.exports = { eventToRow, syncCalendarToSheet, rowsEqual, rowsToMap };
+module.exports = { eventToRow, syncCalendarToSheet, rowsEqual, rowsToMap, ensureHeader };
