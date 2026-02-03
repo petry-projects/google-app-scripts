@@ -169,7 +169,11 @@ function createSheet(name='Sheet1') {
       if (idx >= 0 && idx < rows.length) rows.splice(idx,1);
     },
     __setHeader: (h) => { headers.length = 0; h.forEach(x=>headers.push(x)) },
-    __getRows: () => rows
+    __getRows: () => rows,
+    __reset: () => { 
+      headers.length = 0; 
+      rows.length = 0; 
+    }
   };
 }
 
@@ -190,6 +194,7 @@ function createSpreadsheet(id='ss1') {
     getSheets: () => [firstSheet],
     __reset: () => { 
       sheets.clear();
+      firstSheet.__reset();
       sheets.set('Sheet1', firstSheet);
     }
   };
