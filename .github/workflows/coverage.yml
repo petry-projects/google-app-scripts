@@ -26,5 +26,5 @@ jobs:
       - name: Run tests with coverage
         run: npm test -- --coverage
 
-      - name: Enforce 100% coverage
+      - name: Enforce coverage thresholds
         run: node scripts/check-coverage.js
