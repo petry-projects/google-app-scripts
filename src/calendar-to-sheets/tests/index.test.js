@@ -143,14 +143,16 @@ test('syncCalendarToSheet deletes multiple rows and calls sort comparator', asyn
   const ss = SpreadsheetApp.openById('ss1');
   const sheet = ss.getSheetByName('Sheet1');
 
-  // pre-populate sheet with two rows that won't be in calendar
-  sheet.__getRows().push(['x1', 'A']);
-  sheet.__getRows().push(['x2', 'B']);
+  // pre-populate sheet with two rows that have dates within the sync window
+  const start = new Date('2026-02-01');
+  const end = new Date('2026-02-03');
+  sheet.__getRows().push(['x1', 'A', start.toISOString(), end.toISOString()]);
+  sheet.__getRows().push(['x2', 'B', start.toISOString(), end.toISOString()]);
 
   // ensure calendar is empty
   calendar.__reset();
 
-  await syncCalendarToSheet(calendar, sheet, { start: new Date('2026-02-01'), end: new Date('2026-02-03') });
+  await syncCalendarToSheet(calendar, sheet, { start, end });
 
   expect(sheet.__getRows().length).toBe(0);
 });

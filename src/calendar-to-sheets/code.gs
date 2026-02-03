@@ -150,8 +150,11 @@ function syncAllCalendarsToSheetsGAS(startIso, endIso) {
 }
 
 /**
- * Full resync: clears checkpoint for a calendar and syncs from scratch.
- * Only use if necessary as it may timeout with very large calendars.
+ * Resync within a limited window: clears checkpoint and syncs from ~1 year ago.
+ * This avoids timeout issues with very large calendars while still capturing
+ * recent deletions and updates. To resync the full calendar history, manually
+ * set start = new Date(0) before calling _syncCalendarToSheetGAS.
+ * Use sparingly as it may cause performance issues with large calendars.
  */
 function fullResyncCalendarToSheetGAS(configIndex) {
   const cfgs = getConfigs();
