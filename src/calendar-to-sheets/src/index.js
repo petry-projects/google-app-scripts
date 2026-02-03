@@ -80,7 +80,6 @@ async function syncCalendarToSheet(calendar, sheet, { start = new Date(0), end =
       const rowEnd = ex.values[3];   // end is at index 3
       if (rowStart && rowEnd) {
         const rowStartTime = new Date(rowStart);
-        const rowEndTime = new Date(rowEnd);
         // Only delete if row's event time falls within our sync window
         if (rowStartTime >= start && rowStartTime <= end) {
           toDelete.push(ex.rowIndex);
