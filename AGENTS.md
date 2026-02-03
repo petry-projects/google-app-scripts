@@ -21,6 +21,7 @@ AGENTS.md is for precise, agent-focused instructions that complement README file
 
 ## Agent operation guidance (canonical guidance adapted)
 - Prefer interactive or dev commands when iterating (e.g., `npm run dev`) and avoid running production-only commands (e.g., `npm run build`) from an interactive agent session.
+
 - Keep dependencies and lockfiles in sync. If you update deps, update the lockfile and restart relevant dev/test processes.
 - Prefer small, focused commands for iterative work (run the specific tests you care about rather than the full suite when possible).
 - Document any project-specific dev/test/run commands and required environment variables/secrets in this file or in `<agent-folder>/README.md`.
@@ -29,6 +30,8 @@ AGENTS.md is for precise, agent-focused instructions that complement README file
 ---
 
 ## Tests & CI (repo conventions)
+- **Follow Test-Driven Development (TDD): write tests before implementing features or bug fixes.** Add tests first and iterate until they pass; include the tests in the same PR as the implementation.
+- **Achieve and maintain 100% test coverage.** All code must be covered across statements, branches, functions, and lines. Verify locally with `npm test -- --coverage` (or `npx jest --coverage`) and ensure CI coverage remains at 100%. PRs that reduce coverage or do not reach 100% will be rejected.
 - Use Jest for unit tests. Unit tests MUST be fast, deterministic, and not access external networks.
 - Mock external services (Google Apps Script, HTTP calls) using `test-utils/` helpers where appropriate.
 - Integration tests are allowed but MUST be clearly marked (e.g., `@integration`) and skippable in CI.
