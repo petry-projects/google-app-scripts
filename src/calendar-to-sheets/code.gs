@@ -68,14 +68,35 @@ function clearCheckpoint(cfg) {
   PropertiesService.getUserProperties().deleteProperty(key);
 }
 
+/**
+ * Sanitize a value to prevent formula injection in spreadsheets.
+ * If a string starts with =, +, -, or @, prefix it with a single quote
+ * to force it to be treated as literal text rather than a formula.
+ */
+function sanitizeValue(val) {
+  if (typeof val === 'string' && /^[=+\-@]/.test(val)) {
+    return "'" + val;
+  }
+  return val;
+}
+
+function sanitizeForSheet_(value) {
+  if (typeof value !== 'string') return value;
+  if (value.length === 0) return value;
+  const firstChar = value.charAt(0);
+  if (firstChar === '=' || firstChar === '+' || firstChar === '-' || firstChar === '@') {
+    return "'" + value;
+  }
+  return value;
+}
 
 function eventToRowGAS(event) {
   const id = event.getId();
-  const title = event.getTitle();
+  const title = sanitizeForSheet_(event.getTitle());
   const start = event.getStartTime().toISOString();
   const end = event.getEndTime().toISOString();
-  const description = event.getDescription() || '';
-  const location = event.getLocation() || '';
+  const description = sanitizeForSheet_(event.getDescription() || '');
+  const location = sanitizeForSheet_(event.getLocation() || '');
   const attendees = (event.getGuestList() || []).map(g => g.getEmail()).join(',');
   return [id, title, start, end, description, location, attendees];
 }
@@ -177,5 +198,5 @@ function fullResyncCalendarToSheetGAS(configIndex) {
 
 // Export for testing in Node environments
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { getConfigs, getConfig, eventToRowGAS, syncCalendarToSheetGAS, syncAllCalendarsToSheetsGAS, getLastSyncTime, saveLastSyncTime, clearCheckpoint, getCheckpointKey, fullResyncCalendarToSheetGAS };
+  module.exports = { getConfigs, getConfig, eventToRowGAS, sanitizeValue, syncCalendarToSheetGAS, syncAllCalendarsToSheetsGAS, getLastSyncTime, saveLastSyncTime, clearCheckpoint, getCheckpointKey, fullResyncCalendarToSheetGAS };
 }

