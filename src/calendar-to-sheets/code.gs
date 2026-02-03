@@ -68,25 +68,24 @@ function clearCheckpoint(cfg) {
   PropertiesService.getUserProperties().deleteProperty(key);
 }
 
-/**
- * Sanitize a value to prevent formula injection in spreadsheets.
- * If a string starts with =, +, -, or @, prefix it with a single quote
- * to force it to be treated as literal text rather than a formula.
- */
-function sanitizeValue(val) {
-  if (typeof val === 'string' && /^[=+\-@]/.test(val)) {
-    return "'" + val;
+
+function sanitizeForSheet_(value) {
+  if (typeof value !== 'string') return value;
+  if (value.length === 0) return value;
+  const firstChar = value.charAt(0);
+  if (firstChar === '=' || firstChar === '+' || firstChar === '-' || firstChar === '@') {
+    return "'" + value;
   }
-  return val;
+  return value;
 }
 
 function eventToRowGAS(event) {
   const id = event.getId();
-  const title = sanitizeValue(event.getTitle());
+  const title = sanitizeForSheet_(event.getTitle());
   const start = event.getStartTime().toISOString();
   const end = event.getEndTime().toISOString();
-  const description = sanitizeValue(event.getDescription() || '');
-  const location = sanitizeValue(event.getLocation() || '');
+  const description = sanitizeForSheet_(event.getDescription() || '');
+  const location = sanitizeForSheet_(event.getLocation() || '');
   const attendees = (event.getGuestList() || []).map(g => g.getEmail()).join(',');
   return [id, title, start, end, description, location, attendees];
 }
@@ -123,18 +122,9 @@ function _syncCalendarToSheetGAS(cfg, start, end) {
     }
   }
 
-  // Delete removed events that fall within the sync window [start, end]
-  // This prevents wiping historical events outside the current sync range.
+  // Delete removed
   const toDelete = [];
-  for (const [id, ex] of existingMap.entries()) {
-    if (!desiredMap.has(id)) {
-      // Only delete if the event's start time falls within the sync window
-      const eventStart = ex.values[2] ? new Date(ex.values[2]) : null;
-      if (eventStart && eventStart >= start && eventStart <= end) {
-        toDelete.push(ex.rowIndex);
-      }
-    }
-  }
+  for (const [id, ex] of existingMap.entries()) if (!desiredMap.has(id)) toDelete.push(ex.rowIndex);
   toDelete.sort((a,b) => b - a).forEach(r => sheet.deleteRow(r));
 }
 
@@ -188,5 +178,5 @@ function fullResyncCalendarToSheetGAS(configIndex) {
 
 // Export for testing in Node environments
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { getConfigs, getConfig, eventToRowGAS, sanitizeValue, syncCalendarToSheetGAS, syncAllCalendarsToSheetsGAS, getLastSyncTime, saveLastSyncTime, clearCheckpoint, getCheckpointKey, fullResyncCalendarToSheetGAS };
+  module.exports = { getConfigs, getConfig, eventToRowGAS, syncCalendarToSheetGAS, syncAllCalendarsToSheetsGAS, getLastSyncTime, saveLastSyncTime, clearCheckpoint, getCheckpointKey, fullResyncCalendarToSheetGAS };
 }
