@@ -112,9 +112,18 @@ function _syncCalendarToSheetGAS(cfg, start, end) {
     }
   }
 
-  // Delete removed
+  // Delete removed events that fall within the sync window [start, end]
+  // This prevents wiping historical events outside the current sync range.
   const toDelete = [];
-  for (const [id, ex] of existingMap.entries()) if (!desiredMap.has(id)) toDelete.push(ex.rowIndex);
+  for (const [id, ex] of existingMap.entries()) {
+    if (!desiredMap.has(id)) {
+      // Only delete if the event's start time falls within the sync window
+      const eventStart = ex.values[2] ? new Date(ex.values[2]) : null;
+      if (eventStart && eventStart >= start && eventStart <= end) {
+        toDelete.push(ex.rowIndex);
+      }
+    }
+  }
   toDelete.sort((a,b) => b - a).forEach(r => sheet.deleteRow(r));
 }
 

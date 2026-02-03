@@ -553,6 +553,175 @@ describe('Checkpoint logic (GAS only)', () => {
     expect(row[5]).toBe(''); // location
     expect(row[6]).toBe(''); // attendees
   });
+
+  test('incremental sync preserves historical events outside sync window', () => {
+    const code = require('../code.gs');
+    
+    global.SPREADSHEET_ID = 'ss1';
+    global.SHEET_NAME = 'Sheet1';
+    
+    const ss = SpreadsheetApp.openById('ss1');
+    const sheet = ss.getSheetByName('Sheet1');
+    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
+    
+    const calendar = CalendarApp.getDefaultCalendar();
+    
+    // Create events in different time windows
+    const oldEvent = createCalendarEvent({ 
+      id: 'e_old', 
+      title: 'Old Event', 
+      start: new Date('2025-01-15T10:00:00Z'), 
+      end: new Date('2025-01-15T11:00:00Z'), 
+      description: '', 
+      location: '', 
+      attendees: [] 
+    });
+    
+    const recentEvent = createCalendarEvent({ 
+      id: 'e_recent', 
+      title: 'Recent Event', 
+      start: new Date('2026-02-02T10:00:00Z'), 
+      end: new Date('2026-02-02T11:00:00Z'), 
+      description: '', 
+      location: '', 
+      attendees: [] 
+    });
+    
+    // Add both events and do a full sync
+    calendar.__addEvent(oldEvent);
+    calendar.__addEvent(recentEvent);
+    code.syncCalendarToSheetGAS('2025-01-01', '2026-03-01');
+    
+    expect(sheet.__getRows().length).toBe(2);
+    
+    // Now simulate an incremental sync from Feb 1 onwards
+    // The old event (Jan 2025) is NOT deleted from calendar, but it's outside the sync window
+    calendar.__reset();
+    calendar.__addEvent(oldEvent); // still exists in calendar
+    calendar.__addEvent(recentEvent); // still exists in calendar
+    
+    // Sync only Feb-March window
+    code.syncCalendarToSheetGAS('2026-02-01', '2026-03-01');
+    
+    // Both events should still be in the sheet
+    const rows = sheet.__getRows();
+    expect(rows.length).toBe(2);
+    expect(rows.find(r => r[0] === 'e_old')).toBeTruthy();
+    expect(rows.find(r => r[0] === 'e_recent')).toBeTruthy();
+    
+    delete global.SPREADSHEET_ID;
+    delete global.SHEET_NAME;
+  });
+
+  test('incremental sync deletes events within sync window but preserves those outside', () => {
+    const code = require('../code.gs');
+    
+    global.SPREADSHEET_ID = 'ss1';
+    global.SHEET_NAME = 'Sheet1';
+    
+    const ss = SpreadsheetApp.openById('ss1');
+    const sheet = ss.getSheetByName('Sheet1');
+    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
+    
+    const calendar = CalendarApp.getDefaultCalendar();
+    
+    // Create events in different time windows
+    const oldEvent = createCalendarEvent({ 
+      id: 'e_old', 
+      title: 'Old Event', 
+      start: new Date('2025-01-15T10:00:00Z'), 
+      end: new Date('2025-01-15T11:00:00Z'), 
+      description: '', 
+      location: '', 
+      attendees: [] 
+    });
+    
+    const recentEvent1 = createCalendarEvent({ 
+      id: 'e_recent1', 
+      title: 'Recent Event 1', 
+      start: new Date('2026-02-02T10:00:00Z'), 
+      end: new Date('2026-02-02T11:00:00Z'), 
+      description: '', 
+      location: '', 
+      attendees: [] 
+    });
+    
+    const recentEvent2 = createCalendarEvent({ 
+      id: 'e_recent2', 
+      title: 'Recent Event 2', 
+      start: new Date('2026-02-03T10:00:00Z'), 
+      end: new Date('2026-02-03T11:00:00Z'), 
+      description: '', 
+      location: '', 
+      attendees: [] 
+    });
+    
+    // Add all events and do a full sync
+    calendar.__addEvent(oldEvent);
+    calendar.__addEvent(recentEvent1);
+    calendar.__addEvent(recentEvent2);
+    code.syncCalendarToSheetGAS('2025-01-01', '2026-03-01');
+    
+    expect(sheet.__getRows().length).toBe(3);
+    
+    // Now delete recentEvent2 from calendar and do incremental sync
+    // The old event should remain, recentEvent1 should remain, recentEvent2 should be deleted
+    calendar.__reset();
+    calendar.__addEvent(oldEvent);
+    calendar.__addEvent(recentEvent1);
+    // recentEvent2 is deleted from calendar
+    
+    // Sync only Feb-March window
+    code.syncCalendarToSheetGAS('2026-02-01', '2026-03-01');
+    
+    // Old event should be preserved (outside window), recentEvent1 kept, recentEvent2 deleted
+    const rows = sheet.__getRows();
+    expect(rows.length).toBe(2);
+    expect(rows.find(r => r[0] === 'e_old')).toBeTruthy();
+    expect(rows.find(r => r[0] === 'e_recent1')).toBeTruthy();
+    expect(rows.find(r => r[0] === 'e_recent2')).toBeUndefined();
+    
+    delete global.SPREADSHEET_ID;
+    delete global.SHEET_NAME;
+  });
+
+  test('incremental sync handles events with missing start dates gracefully', () => {
+    const code = require('../code.gs');
+    
+    global.SPREADSHEET_ID = 'ss1';
+    global.SHEET_NAME = 'Sheet1';
+    
+    const ss = SpreadsheetApp.openById('ss1');
+    const sheet = ss.getSheetByName('Sheet1');
+    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
+    
+    // Manually add a row with invalid/missing start date
+    sheet.__getRows().push(['e_invalid', 'Invalid Event', null, null, '', '', '']);
+    
+    const calendar = CalendarApp.getDefaultCalendar();
+    const recentEvent = createCalendarEvent({ 
+      id: 'e_recent', 
+      title: 'Recent Event', 
+      start: new Date('2026-02-02T10:00:00Z'), 
+      end: new Date('2026-02-02T11:00:00Z'), 
+      description: '', 
+      location: '', 
+      attendees: [] 
+    });
+    calendar.__addEvent(recentEvent);
+    
+    // Sync - should not crash on invalid date
+    code.syncCalendarToSheetGAS('2026-02-01', '2026-03-01');
+    
+    // Invalid event should be preserved (can't determine if in window)
+    const rows = sheet.__getRows();
+    expect(rows.find(r => r[0] === 'e_invalid')).toBeTruthy();
+    expect(rows.find(r => r[0] === 'e_recent')).toBeTruthy();
+    
+    delete global.SPREADSHEET_ID;
+    delete global.SHEET_NAME;
+  });
 });
+
 
 
