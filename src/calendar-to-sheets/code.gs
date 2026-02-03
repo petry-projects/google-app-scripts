@@ -87,3 +87,8 @@ function syncAllCalendarsToSheetsGAS(startIso, endIso) {
     _syncCalendarToSheetGAS(cfgs[i], start, end);
   }
 }
+
+// Export for testing in Node environments
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { getConfigs, getConfig, eventToRowGAS, syncCalendarToSheetGAS, syncAllCalendarsToSheetsGAS };
+}

@@ -154,3 +154,31 @@ test('syncCalendarToSheet deletes multiple rows and calls sort comparator', asyn
 
   expect(sheet.__getRows().length).toBe(0);
 });
+
+// Ensure the GAS wrapper can sync multiple configs in SYNC_CONFIGS
+test('syncAllCalendarsToSheetsGAS syncs multiple configs to multiple sheets', async () => {
+  const code = require('../code.gs');
+
+  // Use two configs pointing at the same spreadsheet but different sheets
+  global.SYNC_CONFIGS = [
+    { spreadsheetId: 'ss1', sheetName: 'SheetA', calendarId: '' },
+    { spreadsheetId: 'ss1', sheetName: 'SheetB', calendarId: '' }
+  ];
+
+  const ss = SpreadsheetApp.openById('ss1');
+  const sheetA = ss.getSheetByName('SheetA');
+  const sheetB = ss.getSheetByName('SheetB');
+  sheetA.__setHeader(['id','title','start','end','description','location','attendees']);
+  sheetB.__setHeader(['id','title','start','end','description','location','attendees']);
+
+  const calendar = CalendarApp.getDefaultCalendar();
+  const evt = createCalendarEvent({ id: 'em', title: 'MultiEvent', start: new Date('2026-02-02T10:00:00Z'), end: new Date('2026-02-02T11:00:00Z'), description: 'd', location: 'L', attendees: [] });
+  calendar.__addEvent(evt);
+
+  await code.syncAllCalendarsToSheetsGAS('2026-02-01', '2026-02-03');
+
+  expect(sheetA.__getRows().find(r => r[0] === 'em')).toBeTruthy();
+  expect(sheetB.__getRows().find(r => r[0] === 'em')).toBeTruthy();
+
+  delete global.SYNC_CONFIGS;
+});
