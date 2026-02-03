@@ -168,6 +168,46 @@ test('eventToRow handles null guest list and sync handles empty data array', asy
   expect(sheet.__getRows().find(r => r[0] === 'enul')).toBeTruthy();
 });
 
+test('syncCalendarToSheet skips deleting rows with missing date columns', async () => {
+  const calendar = CalendarApp.getDefaultCalendar();
+  const ss = SpreadsheetApp.openById('ss1');
+  const sheet = ss.getSheetByName('Sheet1');
+
+  // Pre-populate sheet with rows that have invalid/missing date columns
+  sheet.__getRows().push(['x1', 'A', null, null]); // both dates null
+  sheet.__getRows().push(['x2', 'B', '2026-02-02T10:00:00Z', null]); // end date null
+  sheet.__getRows().push(['x3', 'C', null, '2026-02-02T11:00:00Z']); // start date null
+
+  // ensure calendar is empty
+  calendar.__reset();
+
+  await syncCalendarToSheet(calendar, sheet, { start: new Date('2026-02-01'), end: new Date('2026-02-03') });
+
+  // All rows should remain because they have missing dates
+  expect(sheet.__getRows().length).toBe(3);
+});
+
+test('syncCalendarToSheet preserves rows with dates outside sync window', async () => {
+  const calendar = CalendarApp.getDefaultCalendar();
+  const ss = SpreadsheetApp.openById('ss1');
+  const sheet = ss.getSheetByName('Sheet1');
+
+  // Pre-populate sheet with row outside sync window
+  sheet.__getRows().push(['x1', 'Before window', '2026-01-15T10:00:00Z', '2026-01-15T11:00:00Z']);
+  sheet.__getRows().push(['x2', 'After window', '2026-02-10T10:00:00Z', '2026-02-10T11:00:00Z']);
+
+  // ensure calendar is empty (so these events don't exist in calendar)
+  calendar.__reset();
+
+  // Sync with a window that doesn't include these events
+  await syncCalendarToSheet(calendar, sheet, { start: new Date('2026-02-01'), end: new Date('2026-02-03') });
+
+  // Both rows should remain because they're outside the sync window
+  expect(sheet.__getRows().length).toBe(2);
+  expect(sheet.__getRows()[0][0]).toBe('x1');
+  expect(sheet.__getRows()[1][0]).toBe('x2');
+});
+
 test('syncCalendarToSheet deletes multiple rows and calls sort comparator', async () => {
   const calendar = CalendarApp.getDefaultCalendar();
   const ss = SpreadsheetApp.openById('ss1');
@@ -518,6 +558,59 @@ describe('Checkpoint logic (GAS only)', () => {
     delete global.Logger;
   });
 
+  test('syncAllCalendarsToSheetsGAS handles errors when Logger.log is undefined', () => {
+    const code = require('../code.gs');
+    
+    // Create a mock that will throw an error
+    const originalOpenById = SpreadsheetApp.openById;
+    SpreadsheetApp.openById = jest.fn(() => {
+      throw new Error('Spreadsheet not found');
+    });
+    
+    global.SYNC_CONFIGS = [
+      { spreadsheetId: 'invalid_ss', sheetName: 'BadSheet', calendarId: 'bad_cal' }
+    ];
+    
+    // Set Logger but without a log method
+    global.Logger = {};
+    
+    // This should not crash even though Logger exists but doesn't have log method
+    expect(() => {
+      code.syncAllCalendarsToSheetsGAS('2026-02-01', '2026-02-03');
+    }).not.toThrow();
+    
+    // Restore
+    SpreadsheetApp.openById = originalOpenById;
+    delete global.SYNC_CONFIGS;
+    delete global.Logger;
+  });
+
+  test('syncAllCalendarsToSheetsGAS handles errors when Logger is completely undefined', () => {
+    const code = require('../code.gs');
+    
+    // Create a mock that will throw an error
+    const originalOpenById = SpreadsheetApp.openById;
+    SpreadsheetApp.openById = jest.fn(() => {
+      throw new Error('Spreadsheet not found');
+    });
+    
+    global.SYNC_CONFIGS = [
+      { spreadsheetId: 'invalid_ss', sheetName: 'BadSheet', calendarId: 'bad_cal' }
+    ];
+    
+    // Make sure Logger is not defined at all
+    delete global.Logger;
+    
+    // This should not crash when Logger is undefined
+    expect(() => {
+      code.syncAllCalendarsToSheetsGAS('2026-02-01', '2026-02-03');
+    }).not.toThrow();
+    
+    // Restore
+    SpreadsheetApp.openById = originalOpenById;
+    delete global.SYNC_CONFIGS;
+  });
+
   test('_syncCalendarToSheetGAS uses getActiveSpreadsheet when spreadsheetId is null', () => {
     const code = require('../code.gs');
     
@@ -747,6 +840,471 @@ describe('Checkpoint logic (GAS only)', () => {
     
     delete global.SPREADSHEET_ID;
     delete global.SHEET_NAME;
+  });
+
+  test('eventToRowGAS handles non-string and empty values', () => {
+    const code = require('../code.gs');
+    
+    // Test with event that has non-string title
+    const evt1 = {
+      getId: () => 'e_nonstring',
+      getTitle: () => 123,
+      getStartTime: () => new Date('2026-02-02T10:00:00Z'),
+      getEndTime: () => new Date('2026-02-02T11:00:00Z'),
+      getDescription: () => null,
+      getLocation: () => undefined,
+      getGuestList: () => []
+    };
+    
+    const row1 = code.eventToRowGAS(evt1);
+    expect(row1[1]).toBe(123); // non-string passes through
+    
+    // Test with empty string values
+    const evt2 = createCalendarEvent({
+      id: 'e_empty',
+      title: '',
+      start: new Date('2026-02-02T10:00:00Z'),
+      end: new Date('2026-02-02T11:00:00Z'),
+      description: '',
+      location: '',
+      attendees: []
+    });
+    
+    const row2 = code.eventToRowGAS(evt2);
+    expect(row2[1]).toBe(''); // empty string passes through unchanged
+    expect(row2[4]).toBe('');
+    expect(row2[5]).toBe('');
+  });
+
+  test('eventToRowGAS handles null guest list', () => {
+    const code = require('../code.gs');
+    const evt = { 
+      getId: () => 'e_nullguests', 
+      getTitle: () => 'No Guests', 
+      getStartTime: () => new Date('2026-02-02T10:00:00Z'), 
+      getEndTime: () => new Date('2026-02-02T11:00:00Z'), 
+      getDescription: () => '',
+      getLocation: () => '',
+      getGuestList: () => null  // null guest list
+    };
+    const row = code.eventToRowGAS(evt);
+    expect(row[6]).toBe(''); // attendees should be empty string
+  });
+
+  test('_syncCalendarToSheetGAS handles sheet data with null rows', () => {
+    const code = require('../code.gs');
+    
+    global.SPREADSHEET_ID = 'ss1';
+    global.SHEET_NAME = 'Sheet1';
+    
+    const ss = SpreadsheetApp.openById('ss1');
+    const sheet = ss.getSheetByName('Sheet1');
+    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
+    
+    // Mock getDataRange to return data with null/undefined rows
+    const originalGetDataRange = sheet.getDataRange;
+    sheet.getDataRange = () => ({
+      getValues: () => [
+        ['id','title','start','end','description','location','attendees'], // header
+        ['e1', 'Valid', '2026-02-02T10:00:00Z', '2026-02-02T11:00:00Z', '', '', ''], // valid row
+        null, // null row
+        undefined, // undefined row
+        ['', '', '', '', '', '', ''], // row with empty id
+      ]
+    });
+    
+    const calendar = CalendarApp.getDefaultCalendar();
+    const evt = createCalendarEvent({ 
+      id: 'e1', 
+      title: 'Valid', 
+      start: new Date('2026-02-02T10:00:00Z'), 
+      end: new Date('2026-02-02T11:00:00Z'), 
+      description: '', 
+      location: '', 
+      attendees: [] 
+    });
+    calendar.__addEvent(evt);
+
+    // This should not crash despite null/undefined rows
+    code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03');
+    
+    // Restore
+    sheet.getDataRange = originalGetDataRange;
+    delete global.SPREADSHEET_ID;
+    delete global.SHEET_NAME;
+  });
+
+  test('_syncCalendarToSheetGAS handles config with null sheetName', () => {
+    const code = require('../code.gs');
+    
+    // Use a config with null sheetName to trigger the ternary
+    global.SYNC_CONFIGS = [{ spreadsheetId: 'ss1', sheetName: null, calendarId: null }];
+    
+    const ss = SpreadsheetApp.openById('ss1');
+    const defaultSheet = ss.getSheets()[0];
+    defaultSheet.__setHeader(['id','title','start','end','description','location','attendees']);
+    
+    const calendar = CalendarApp.getDefaultCalendar();
+    const evt = createCalendarEvent({ 
+      id: 'e_null_sheet', 
+      title: 'Null Sheet Name', 
+      start: new Date('2026-02-02T10:00:00Z'), 
+      end: new Date('2026-02-02T11:00:00Z'), 
+      description: '', 
+      location: '', 
+      attendees: [] 
+    });
+    calendar.__addEvent(evt);
+
+    code.syncAllCalendarsToSheetsGAS('2026-02-01', '2026-02-03');
+
+    expect(defaultSheet.__getRows().find(r => r[0] === 'e_null_sheet')).toBeTruthy();
+    
+    delete global.SYNC_CONFIGS;
+  });
+
+  test('_syncCalendarToSheetGAS preserves rows with null start date in column', () => {
+    const code = require('../code.gs');
+    
+    global.SPREADSHEET_ID = 'ss1';
+    global.SHEET_NAME = 'Sheet1';
+    
+    const ss = SpreadsheetApp.openById('ss1');
+    const sheet = ss.getSheetByName('Sheet1');
+    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
+    
+    // Pre-populate sheet with a row that has null in the start date column (index 2)
+    sheet.__getRows().push(['x_nullstart', 'No Start Date', null, '2026-02-02T11:00:00Z', '', '', '']);
+    
+    const calendar = CalendarApp.getDefaultCalendar();
+    calendar.__reset(); // Empty calendar
+
+    // Sync - the row with null start should not be deleted
+    code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03');
+
+    expect(sheet.__getRows().length).toBe(1);
+    expect(sheet.__getRows()[0][0]).toBe('x_nullstart');
+    
+    delete global.SPREADSHEET_ID;
+    delete global.SHEET_NAME;
+  });
+
+  test('_syncCalendarToSheetGAS deletes events at exact boundary dates', () => {
+    const code = require('../code.gs');
+    
+    global.SPREADSHEET_ID = 'ss1';
+    global.SHEET_NAME = 'Sheet1';
+    
+    const ss = SpreadsheetApp.openById('ss1');
+    const sheet = ss.getSheetByName('Sheet1');
+    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
+    
+    const calendar = CalendarApp.getDefaultCalendar();
+    
+    // Create events at and within boundaries
+    const startBoundary = new Date('2026-02-01T00:00:00Z');
+    const endBoundary = new Date('2026-02-03T00:00:00Z');
+    
+    const evtAtStart = createCalendarEvent({ 
+      id: 'e_start', 
+      title: 'At Start', 
+      start: startBoundary, 
+      end: new Date('2026-02-01T01:00:00Z'), 
+      description: '', 
+      location: '', 
+      attendees: [] 
+    });
+    
+    const evtWithin = createCalendarEvent({ 
+      id: 'e_within', 
+      title: 'Within Range', 
+      start: new Date('2026-02-02T12:00:00Z'), 
+      end: new Date('2026-02-02T13:00:00Z'), 
+      description: '', 
+      location: '', 
+      attendees: [] 
+    });
+    
+    // Add event manually to sheet to simulate historical data outside sync window
+    const evtBeyond = createCalendarEvent({ 
+      id: 'e_beyond', 
+      title: 'Beyond End', 
+      start: new Date('2026-02-04T00:00:00Z'), 
+      end: new Date('2026-02-04T01:00:00Z'), 
+      description: '', 
+      location: '', 
+      attendees: [] 
+    });
+    
+    calendar.__addEvent(evtAtStart);
+    calendar.__addEvent(evtWithin);
+    
+    // First sync - should add events within range
+    code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03');
+    
+    // Manually add the beyond event to sheet (simulating historical data)
+    sheet.__getRows().push([
+      'e_beyond',
+      'Beyond End',
+      new Date('2026-02-04T00:00:00Z').toISOString(),
+      new Date('2026-02-04T01:00:00Z').toISOString(),
+      '',
+      '',
+      ''
+    ]);
+    
+    expect(sheet.__getRows().length).toBe(3); // 2 synced + 1 manual
+    
+    // Remove evtAtStart and evtWithin from calendar
+    calendar.__reset();
+    
+    // Sync again - events within boundaries should be deleted, beyond should remain
+    code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03');
+    
+    const rows = sheet.__getRows();
+    expect(rows.length).toBe(1);
+    expect(rows[0][0]).toBe('e_beyond'); // Only beyond-boundary event remains
+    
+    delete global.SPREADSHEET_ID;
+    delete global.SHEET_NAME;
+  });
+
+  test('_syncCalendarToSheetGAS triggers update when row values differ', () => {
+    const code = require('../code.gs');
+    
+    global.SPREADSHEET_ID = 'ss1';
+    global.SHEET_NAME = 'Sheet1';
+    
+    const ss = SpreadsheetApp.openById('ss1');
+    const sheet = ss.getSheetByName('Sheet1');
+    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
+    
+    const calendar = CalendarApp.getDefaultCalendar();
+    
+    // Add initial event
+    const evt1 = createCalendarEvent({ 
+      id: 'e_update', 
+      title: 'Original Title', 
+      start: new Date('2026-02-02T10:00:00Z'), 
+      end: new Date('2026-02-02T11:00:00Z'), 
+      description: 'Original Desc', 
+      location: 'Original Loc', 
+      attendees: ['a@example.com'] 
+    });
+    calendar.__addEvent(evt1);
+    
+    code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03');
+    const rowsBefore = sheet.__getRows();
+    expect(rowsBefore[0][1]).toBe('Original Title');
+    
+    // Update event with different values in multiple columns
+    const evt2 = createCalendarEvent({ 
+      id: 'e_update', 
+      title: 'Updated Title', 
+      start: new Date('2026-02-02T10:00:00Z'), 
+      end: new Date('2026-02-02T11:00:00Z'), 
+      description: 'Updated Desc', 
+      location: 'Updated Loc', 
+      attendees: ['b@example.com', 'c@example.com'] 
+    });
+    calendar.__reset();
+    calendar.__addEvent(evt2);
+    
+    code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03');
+    const rowsAfter = sheet.__getRows();
+    
+    expect(rowsAfter[0][1]).toBe('Updated Title');
+    expect(rowsAfter[0][4]).toBe('Updated Desc');
+    expect(rowsAfter[0][5]).toBe('Updated Loc');
+    expect(rowsAfter[0][6]).toBe('b@example.com,c@example.com');
+    
+    delete global.SPREADSHEET_ID;
+    delete global.SHEET_NAME;
+  });
+
+
+  test('_syncCalendarToSheetGAS with specific calendar ID', () => {
+    const code = require('../code.gs');
+    
+    global.SYNC_CONFIGS = [{ spreadsheetId: 'ss1', sheetName: 'Sheet1', calendarId: 'specific_cal_id' }];
+    
+    // Mock CalendarApp.getCalendarById
+    const originalGetCalendarById = CalendarApp.getCalendarById;
+    const mockCalendar = CalendarApp.getDefaultCalendar();
+    CalendarApp.getCalendarById = jest.fn(() => mockCalendar);
+    
+    const ss = SpreadsheetApp.openById('ss1');
+    const sheet = ss.getSheetByName('Sheet1');
+    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
+    
+    const evt = createCalendarEvent({ 
+      id: 'e_specific', 
+      title: 'Specific Cal', 
+      start: new Date('2026-02-02T10:00:00Z'), 
+      end: new Date('2026-02-02T11:00:00Z'), 
+      description: '', 
+      location: '', 
+      attendees: [] 
+    });
+    mockCalendar.__addEvent(evt);
+
+    code.syncAllCalendarsToSheetsGAS('2026-02-01', '2026-02-03');
+
+    expect(CalendarApp.getCalendarById).toHaveBeenCalledWith('specific_cal_id');
+    expect(sheet.__getRows().find(r => r[0] === 'e_specific')).toBeTruthy();
+    
+    // Restore
+    CalendarApp.getCalendarById = originalGetCalendarById;
+    delete global.SYNC_CONFIGS;
+  });
+
+  test('getConfig returns null when configs array is empty', () => {
+    // Clear all configs to force getConfig to create an empty config
+    delete global.SYNC_CONFIGS;
+    delete global.SPREADSHEET_ID;
+    delete global.SHEET_NAME;
+    delete global.CALENDAR_ID;
+    
+    // Set SYNC_CONFIGS to empty array
+    global.SYNC_CONFIGS = [];
+    
+    delete require.cache[require.resolve('../code.gs')];
+    const freshCode = require('../code.gs');
+    
+    const result = freshCode.getConfig();
+    // getConfig returns cfgs[0] || null, so with empty array it should return undefined || null = null
+    expect(result).toBe(null);
+    
+    delete global.SYNC_CONFIGS;
+  });
+
+  test('syncCalendarToSheetGAS uses checkpoint when dates not provided', () => {
+    const code = require('../code.gs');
+    
+    delete global.SYNC_CONFIGS;
+    delete global.SPREADSHEET_ID;
+    delete global.SHEET_NAME;
+    delete global.CALENDAR_ID;
+    
+    global.SPREADSHEET_ID = 'ss1';
+    global.SHEET_NAME = 'Sheet1';
+    
+    const ss = SpreadsheetApp.openById('ss1');
+    const sheet = ss.getSheetByName('Sheet1');
+    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
+    
+    const calendar = CalendarApp.getDefaultCalendar();
+    const evt = createCalendarEvent({ 
+      id: 'e_nodate', 
+      title: 'No Date Params', 
+      start: new Date(), 
+      end: new Date(Date.now() + 3600000), 
+      description: '', 
+      location: '', 
+      attendees: [] 
+    });
+    calendar.__addEvent(evt);
+
+    // Call without date parameters (null or undefined)
+    code.syncCalendarToSheetGAS(null, null);
+    
+    expect(sheet.__getRows().find(r => r[0] === 'e_nodate')).toBeTruthy();
+    
+    delete global.SPREADSHEET_ID;
+    delete global.SHEET_NAME;
+  });
+
+  test('syncAllCalendarsToSheetsGAS uses checkpoint when dates not provided', () => {
+    const code = require('../code.gs');
+    
+    global.SYNC_CONFIGS = [
+      { spreadsheetId: 'ss1', sheetName: 'SheetA', calendarId: null }
+    ];
+    
+    const ss = SpreadsheetApp.openById('ss1');
+    const sheetA = ss.getSheetByName('SheetA');
+    sheetA.__setHeader(['id','title','start','end','description','location','attendees']);
+    
+    const calendar = CalendarApp.getDefaultCalendar();
+    const evt = createCalendarEvent({ 
+      id: 'e_nodate2', 
+      title: 'No Date Params All', 
+      start: new Date(), 
+      end: new Date(Date.now() + 3600000), 
+      description: '', 
+      location: '', 
+      attendees: [] 
+    });
+    calendar.__addEvent(evt);
+
+    // Call without date parameters
+    code.syncAllCalendarsToSheetsGAS(null, null);
+    
+    expect(sheetA.__getRows().find(r => r[0] === 'e_nodate2')).toBeTruthy();
+    
+    delete global.SYNC_CONFIGS;
+  });
+});
+
+// Test the sanitizeValue function from code.gs directly
+describe('sanitizeValue from code.gs', () => {
+  test('sanitizes strings starting with formula metacharacters', () => {
+    const code = require('../code.gs');
+    
+    expect(code.sanitizeValue('=FORMULA()')).toBe("'=FORMULA()");
+    expect(code.sanitizeValue('+123')).toBe("'+123");
+    expect(code.sanitizeValue('-456')).toBe("'-456");
+    expect(code.sanitizeValue('@IMPORT')).toBe("'@IMPORT");
+  });
+
+  test('returns non-string values unchanged', () => {
+    const code = require('../code.gs');
+    
+    expect(code.sanitizeValue(123)).toBe(123);
+    expect(code.sanitizeValue(null)).toBe(null);
+    expect(code.sanitizeValue(undefined)).toBe(undefined);
+    expect(code.sanitizeValue(true)).toBe(true);
+  });
+
+  test('returns safe strings unchanged', () => {
+    const code = require('../code.gs');
+    
+    expect(code.sanitizeValue('normal text')).toBe('normal text');
+    expect(code.sanitizeValue('123 numbers')).toBe('123 numbers');
+    expect(code.sanitizeValue('')).toBe('');
+  });
+});
+
+// Test eventToRow to cover index.js sanitizeValue branches
+describe('eventToRow edge cases for sanitization', () => {
+  test('eventToRow sanitizes non-string values passed through', () => {
+    const evt = {
+      getId: () => 'e1',
+      getTitle: () => 123, // non-string
+      getStartTime: () => new Date('2026-02-02T10:00:00Z'),
+      getEndTime: () => new Date('2026-02-02T11:00:00Z'),
+      getDescription: () => null,
+      getLocation: () => undefined,
+      getGuestList: () => []
+    };
+    const row = eventToRow(evt);
+    expect(row[1]).toBe(123); // non-string values should pass through
+  });
+
+  test('eventToRow sanitizes formula injection in all string fields', () => {
+    const evt = {
+      getId: () => 'e_formula',
+      getTitle: () => '=MALICIOUS()',
+      getStartTime: () => new Date('2026-02-02T10:00:00Z'),
+      getEndTime: () => new Date('2026-02-02T11:00:00Z'),
+      getDescription: () => '+DANGEROUS',
+      getLocation: () => '-ATTACK',
+      getGuestList: () => []
+    };
+    const row = eventToRow(evt);
+    expect(row[1]).toBe("'=MALICIOUS()");
+    expect(row[4]).toBe("'+DANGEROUS");
+    expect(row[5]).toBe("'-ATTACK");
   });
 });
 

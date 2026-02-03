@@ -4,6 +4,10 @@
  * Verify that test coverage meets 100% across all metrics.
  * Reads coverage-final.json and validates statements, branches, functions, and lines.
  * Exit code 1 if any metric is below 100%, 0 if all pass.
+ * 
+ * Note: Some branches may be environment-specific (e.g., checking for GAS vs Node.js globals)
+ * and cannot be fully covered in a single test environment. The thresholds below enforce
+ * 100% coverage where achievable while accounting for these limitations.
  */
 
 const fs = require('fs');
@@ -67,9 +71,9 @@ for (const filePath in coverage) {
 
 const metrics = ['statements', 'branches', 'functions', 'lines'];
 const requiredCoverage = {
-  statements: 95,
-  branches: 85,
-  functions: 95,
+  statements: 100,
+  branches: 100,
+  functions: 100,
   lines: 100
 };
 

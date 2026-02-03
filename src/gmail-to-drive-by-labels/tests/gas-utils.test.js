@@ -20,6 +20,29 @@ describe('getCleanBody', () => {
     const input = 'Message body\nThis is a confidentiality notice: do not share';
     expect(getCleanBody(input)).toBe('Message body');
   });
+
+  test('handles match at start of text (no newline before match)', () => {
+    const input = 'On Jan 1, 2020, John Doe wrote:\nQuoted content';
+    // Match is at the start, so lastIndexOf will return -1
+    expect(getCleanBody(input)).toBe('');
+  });
+
+  test('chooses earliest match when multiple patterns match', () => {
+    const input = 'First line\nOn Jan 1, 2020, John wrote:\nSecond\nFrom: someone@example.com\nThird';
+    // Both "On ... wrote:" and "From:" patterns match, should split at earliest one
+    const result = getCleanBody(input);
+    expect(result).toBe('First line');
+  });
+
+  test('handles multiple matches where later match is not earlier', () => {
+    // Pattern 1: "___________" at beginning will match first (line 0)
+    // Pattern 2: "From:...< >" later in text
+    // Since second match is later, lineStart will be >= splitIndex, so we don't update
+    const input = '__________\nFirst line\nSecond line\nFrom: sender <sender@example.com>\nQuoted';
+    const result = getCleanBody(input);
+    // Should split at the first match (underscores at line 0)
+    expect(result).toBe('');
+  });
 });
 
 describe('getFileHash', () => {
