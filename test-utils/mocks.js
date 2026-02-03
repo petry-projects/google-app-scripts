@@ -129,7 +129,7 @@ function createCalendarEvent({id, title='', start=new Date(), end=new Date(), de
     getEndTime: () => end,
     getDescription: () => description,
     getLocation: () => location,
-    getGuestList: () => attendees.map(a => ({ getEmail: () => a }))
+    getGuestList: () => (attendees || []).map(a => ({ getEmail: () => a }))
   };
 }
 
@@ -175,13 +175,23 @@ function createSheet(name='Sheet1') {
 
 function createSpreadsheet(id='ss1') {
   const sheets = new Map();
+  // Always have a default first sheet
+  const firstSheet = createSheet('Sheet1');
+  sheets.set('Sheet1', firstSheet);
+  
   return {
     id,
     getSheetByName: (name) => {
-      if (!sheets.has(name)) sheets.set(name, createSheet(name));
+      if (!sheets.has(name)) {
+        sheets.set(name, createSheet(name));
+      }
       return sheets.get(name);
     },
-    __reset: () => sheets.clear()
+    getSheets: () => [firstSheet],
+    __reset: () => { 
+      sheets.clear();
+      sheets.set('Sheet1', firstSheet);
+    }
   };
 }
 
@@ -208,20 +218,41 @@ function createDocumentApp() {
   };
 }
 
+function createPropertiesService() {
+  const userProperties = new Map();
+  return {
+    getUserProperties: () => ({
+      getProperty: (key) => userProperties.get(key) || null,
+      setProperty: (key, value) => userProperties.set(key, value),
+      deleteProperty: (key) => userProperties.delete(key),
+      __reset: () => userProperties.clear()
+    }),
+    __reset: () => userProperties.clear()
+  };
+}
+
 function installGlobals(globals) {
   const gmail = createGmailApp();
   const drive = createDriveApp();
   const docs = createDocumentApp();
   const calendar = createCalendar();
   const spreadsheet = createSpreadsheet();
+  const properties = createPropertiesService();
 
   globals.GmailApp = gmail;
   globals.DriveApp = drive;
   globals.DocumentApp = docs;
-  globals.CalendarApp = { getDefaultCalendar: () => calendar };
-  globals.SpreadsheetApp = { openById: (id) => spreadsheet };
+  globals.CalendarApp = { 
+    getDefaultCalendar: () => calendar,
+    getCalendarById: (id) => calendar
+  };
+  globals.SpreadsheetApp = { 
+    openById: (id) => spreadsheet,
+    getActiveSpreadsheet: () => spreadsheet
+  };
+  globals.PropertiesService = properties;
 
-  globals.__mocks = { gmail, drive, docs, calendar, spreadsheet, createMessage, createBlob, createCalendarEvent };
+  globals.__mocks = { gmail, drive, docs, calendar, spreadsheet, properties, createMessage, createBlob, createCalendarEvent };
 }
 
 function resetAll(globals) {
@@ -231,6 +262,7 @@ function resetAll(globals) {
     globals.__mocks.docs.__reset();
     globals.__mocks.calendar.__reset();
     globals.__mocks.spreadsheet.__reset();
+    globals.__mocks.properties.__reset();
   }
 }
 

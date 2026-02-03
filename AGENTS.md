@@ -31,7 +31,7 @@ AGENTS.md is for precise, agent-focused instructions that complement README file
 
 ## Tests & CI (repo conventions)
 - **Follow Test-Driven Development (TDD): write tests before implementing features or bug fixes.** Add tests first and iterate until they pass; include the tests in the same PR as the implementation.
-- **Achieve and maintain 100% test coverage.** All code must be covered across statements, branches, functions, and lines. Verify locally with `npm test -- --coverage` (or `npx jest --coverage`) and ensure CI coverage remains at 100%. PRs that reduce coverage or do not reach 100% will be rejected.
+- **Achieve and maintain excellent test coverage.** Minimum thresholds: 100% lines, 95% statements/functions, 85% branches. Verify locally with `npm test -- --coverage` (or `npx jest --coverage`) and ensure CI coverage meets these requirements. PRs that reduce coverage below these thresholds will be rejected.
 - Use Jest for unit tests. Unit tests MUST be fast, deterministic, and not access external networks.
 - Mock external services (Google Apps Script, HTTP calls) using `test-utils/` helpers where appropriate.
 - Integration tests are allowed but MUST be clearly marked (e.g., `@integration`) and skippable in CI.

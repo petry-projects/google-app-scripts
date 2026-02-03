@@ -32,4 +32,15 @@ describe('getFileHash', () => {
     const blob = { getBytes: () => Buffer.from('abc') };
     expect(getFileHash(blob)).toBe('900150983cd24fb0d6963f7d28e17f72');
   });
+
+  test('computes md5 for an object with bytes property', () => {
+    const blob = { bytes: Buffer.from('test') };
+    expect(getFileHash(blob)).toBe('098f6bcd4621d373cade4e832627b4f6');
+  });
+
+  test('throws error for unsupported blob type', () => {
+    expect(() => getFileHash('not a blob')).toThrow('Unsupported blob type');
+    expect(() => getFileHash({})).toThrow('Unsupported blob type');
+    expect(() => getFileHash(null)).toThrow('Unsupported blob type');
+  });
 });

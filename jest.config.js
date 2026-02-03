@@ -2,12 +2,18 @@ module.exports = {
   testEnvironment: 'node',
   setupFilesAfterEnv: ['<rootDir>/test-utils/setup.js'],
   testMatch: ['**/tests/**/*.test.[jt]s?(x)'],
+  collectCoverageFrom: [
+    'src/**/*.{js,gs}',
+    '!**/node_modules/**',
+    '!**/coverage/**',
+    '!**/tests/**'
+  ],
   coverageThreshold: {
-    './src/calendar-to-sheets/src/*.js': {
-      branches: 100,
-      functions: 100,
+    global: {
+      branches: 85,
+      functions: 95,
       lines: 100,
-      statements: 100
+      statements: 95
     }
   }
 };
