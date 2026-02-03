@@ -8,8 +8,8 @@
  *
  * Example:
  * var SYNC_CONFIGS = [
- *   { spreadsheetId: '', sheetName: 'Sheet1', calendarId: '' },
- *   { spreadsheetId: 'anotherSpreadsheetId', sheetName: 'Events', calendarId: 'calendar@example.com' }
+ *   { spreadsheetId: 'aSpreadsheetId', sheetName: 'Sheet1', calendarId: 'aCalendarId' },
+ *   { spreadsheetId: 'anotherSpreadsheetId', sheetName: 'Sheet2', calendarId: 'anotherCalendarId' }
  * ];
  */
 
