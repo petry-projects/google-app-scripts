@@ -4,7 +4,14 @@
  * Place configuration in `config.gs` using `SYNC_CONFIGS` (preferred) or the legacy
  * `SPREADSHEET_ID`/`SHEET_NAME`/`CALENDAR_ID` vars for a single mapping.
  * This file is primarily a wrapper that can run in Google Apps Script.
+ * 
+ * Checkpoint logic prevents reprocessing very old events (>1 year) to avoid timeouts.
  */
+
+const CHECKPOINT_PREFIX = 'calendar_to_sheets_last_sync_';
+const DEFAULT_SYNC_WINDOW_MS = 365 * 24 * 60 * 60 * 1000; // 1 year in milliseconds
+// Backward-compatible alias; prefer DEFAULT_SYNC_WINDOW_MS in new code.
+const MIN_EVENT_AGE_MS = DEFAULT_SYNC_WINDOW_MS;
 
 function getConfigs() {
   if (typeof SYNC_CONFIGS !== 'undefined' && Array.isArray(SYNC_CONFIGS)) return SYNC_CONFIGS;
@@ -22,6 +29,45 @@ function getConfig() {
   const cfgs = getConfigs();
   return cfgs[0] || null;
 }
+
+/**
+ * Get the checkpoint key for a given config.
+ * Used to store/retrieve last sync timestamp for a calendar.
+ */
+function getCheckpointKey(cfg) {
+  return CHECKPOINT_PREFIX + (cfg.calendarId || 'default');
+}
+
+/**
+ * Load the last sync timestamp from properties storage.
+ * If never synced, defaults to epoch (scan all history on first run).
+ */
+function getLastSyncTime(cfg) {
+  const key = getCheckpointKey(cfg);
+  const stored = PropertiesService.getUserProperties().getProperty(key);
+  if (stored) {
+    return new Date(parseInt(stored));
+  }
+  // Default: epoch (January 1, 1970) to sync all events on first run
+  return new Date(0);
+}
+
+/**
+ * Save the current sync timestamp to properties storage.
+ */
+function saveLastSyncTime(cfg, timestamp) {
+  const key = getCheckpointKey(cfg);
+  PropertiesService.getUserProperties().setProperty(key, timestamp.getTime().toString());
+}
+
+/**
+ * Clear checkpoint for a calendar (useful for full re-sync).
+ */
+function clearCheckpoint(cfg) {
+  const key = getCheckpointKey(cfg);
+  PropertiesService.getUserProperties().deleteProperty(key);
+}
+
 
 function eventToRowGAS(event) {
   const id = event.getId();
@@ -74,21 +120,50 @@ function _syncCalendarToSheetGAS(cfg, start, end) {
 
 function syncCalendarToSheetGAS(startIso, endIso) {
   const cfg = getConfig();
-  const start = startIso ? new Date(startIso) : new Date(0);
+  let start = startIso ? new Date(startIso) : getLastSyncTime(cfg);
   const end = endIso ? new Date(endIso) : new Date(Date.now() + 365*24*60*60*1000);
-  return _syncCalendarToSheetGAS(cfg, start, end);
+  
+  const result = _syncCalendarToSheetGAS(cfg, start, end);
+  
+  // Update checkpoint after successful sync
+  saveLastSyncTime(cfg, end);
+  return result;
 }
 
 function syncAllCalendarsToSheetsGAS(startIso, endIso) {
   const cfgs = getConfigs();
-  const start = startIso ? new Date(startIso) : new Date(0);
-  const end = endIso ? new Date(endIso) : new Date(Date.now() + 365*24*60*60*1000);
   for (let i = 0; i < cfgs.length; i++) {
-    _syncCalendarToSheetGAS(cfgs[i], start, end);
+    try {
+      let start = startIso ? new Date(startIso) : getLastSyncTime(cfgs[i]);
+      const end = endIso ? new Date(endIso) : new Date(Date.now() + 365*24*60*60*1000);
+      _syncCalendarToSheetGAS(cfgs[i], start, end);
+
+      // Update checkpoint after successful sync
+      saveLastSyncTime(cfgs[i], end);
+    } catch (e) {
+      // Log and continue with other calendars; do not advance checkpoint on failure
+      if (typeof Logger !== 'undefined' && Logger.log) {
+        Logger.log('Error syncing calendar "' + (cfgs[i].calendarId || 'default') + '": ' + e);
+      }
+    }
   }
+}
+
+/**
+ * Full resync: clears checkpoint for a calendar and syncs from scratch.
+ * Only use if necessary as it may timeout with very large calendars.
+ */
+function fullResyncCalendarToSheetGAS(configIndex) {
+  const cfgs = getConfigs();
+  const cfg = cfgs[configIndex || 0];
+  clearCheckpoint(cfg);
+  const start = new Date(Date.now() - MIN_EVENT_AGE_MS);
+  const end = new Date(Date.now() + 365*24*60*60*1000);
+  _syncCalendarToSheetGAS(cfg, start, end);
+  saveLastSyncTime(cfg, end);
 }
 
 // Export for testing in Node environments
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { getConfigs, getConfig, eventToRowGAS, syncCalendarToSheetGAS, syncAllCalendarsToSheetsGAS };
+  module.exports = { getConfigs, getConfig, eventToRowGAS, syncCalendarToSheetGAS, syncAllCalendarsToSheetsGAS, getLastSyncTime, saveLastSyncTime, clearCheckpoint, getCheckpointKey, fullResyncCalendarToSheetGAS };
 }

@@ -16,5 +16,32 @@ Usage
 - Configuration now supports multiple calendar->sheet mappings via `SYNC_CONFIGS` in `config.gs` (preferred). Legacy single mapping using `SPREADSHEET_ID`, `SHEET_NAME`, and `CALENDAR_ID` is still supported.
 - Use the GAS wrapper `syncCalendarToSheetGAS(startIso, endIso)` for a single mapping (legacy behavior) or `syncAllCalendarsToSheetsGAS(startIso, endIso)` to sync all mappings defined in `SYNC_CONFIGS`. Both functions accept optional `startIso`/`endIso` ISO timestamps.
 - The core, testable logic lives under `src/` (`eventToRow`, `syncCalendarToSheet`, etc.) and is exercised by the included Jest tests.
-- To deploy: copy `code.gs` and `config.gs` into your Apps Script project or import their contents into the script editor, then schedule `syncCalendarToSheetGAS` as a trigger or run it manually.
+## Checkpoint logic (performance optimization)
+
+To prevent timeouts on subsequent runs with large calendars, the script implements **checkpoint logic**:
+
+- **First run:** Syncs all events (since epoch) to ensure complete history.
+- **Subsequent runs:** Syncs only from the last successful sync timestamp (stored in your Google Apps Script properties).
+- **Result:** After the initial full sync, each sync processes only new/updated events, avoiding timeout issues.
+
+### Functions
+
+- `getLastSyncTime(cfg)` — Returns the last sync timestamp for a config (or epoch if never synced).
+- `saveLastSyncTime(cfg, timestamp)` — Saves checkpoint after successful sync (called automatically).
+- `clearCheckpoint(cfg)` — Manually reset checkpoint to resync from epoch.
+- `fullResyncCalendarToSheetGAS(configIndex)` — Full resync for a specific config (index in `SYNC_CONFIGS`).
+
+### Example: Manual resync
+
+```javascript
+// In Google Apps Script Editor, run one of these as needed:
+
+// Reset checkpoint for the first config and resync from epoch
+fullResyncCalendarToSheetGAS(0);
+
+// Or manually clear and resync a specific config
+const cfg = SYNC_CONFIGS[0];
+clearCheckpoint(cfg);
+syncCalendarToSheetGAS(); // Will now scan all history
+```
 
