@@ -36,10 +36,21 @@ function rowsToMap(rows) {
 }
 
 function rowsEqual(a, b) {
-  // Compare only the first a.length columns of both arrays.
-  // This ignores any extra trailing columns in b (e.g., user-added notes).
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return false;
+  // Compare only the first minLen columns (ignoring extra cols if they are falsy)
+  const minLen = Math.min(a.length, b.length);
+  for (let i = 0; i < minLen; i++) {
+    if (a[i] !== b[i]) {
+      console.log('[rowsEqual] Difference at column', i, ':', { a: a[i], b: b[i] });
+      return false;
+    }
+  }
+  // If lengths differ, they're only equal if extra columns are all falsy/empty
+  if (a.length !== b.length) {
+    const longer = a.length > b.length ? a : b;
+    const startIndex = a.length > b.length ? b.length : a.length;
+    for (let i = startIndex; i < longer.length; i++) {
+      if (longer[i]) return false;
+    }
   }
   return true;
 }
@@ -76,30 +87,39 @@ function ensureHeader(sheet) {
 async function syncCalendarToSheet(calendar, sheet, { start = new Date(0), end = new Date(Date.now() + 365*24*60*60*1000) } = {}) {
   // Ensure header row exists
   ensureHeader(sheet);
-  
+  console.log('[syncCalendarToSheet] Starting sync with date range:', { start, end });
   // Fetch events
   const events = calendar.getEvents(start, end);
+  console.log('[syncCalendarToSheet] Fetched events:', events.length);
   const desired = events.map(eventToRow);
   const desiredMap = new Map(desired.map(r => [r[0], r]));
 
   // Read existing rows
   const data = sheet.getDataRange().getValues();
   const body = data.slice(1);
+  console.log('[syncCalendarToSheet] Existing rows:', body.length);
   const existingMap = rowsToMap(body);
 
   // Upsert
+  let updateCount = 0;
+  let insertCount = 0;
   for (const [id, row] of desiredMap.entries()) {
     if (existingMap.has(id)) {
       const ex = existingMap.get(id);
       if (!rowsEqual(ex.values, row)) {
         // update
+        console.log('[syncCalendarToSheet] Updating row for event:', id);
         const rowIndex = ex.rowIndex;
         sheet.getRange(rowIndex, 1, 1, row.length).setValues([row]);
+        updateCount++;
       }
     } else {
+      console.log('[syncCalendarToSheet] Inserting new event:', id);
       sheet.appendRow(row);
+      insertCount++;
     }
   }
+  console.log('[syncCalendarToSheet] Updates:', updateCount, 'Inserts:', insertCount);
 
   // Delete rows for events that no longer exist, but only if they fall within
   // the synced time window to avoid deleting rows from events outside [start,end]
@@ -114,15 +134,21 @@ async function syncCalendarToSheet(calendar, sheet, { start = new Date(0), end =
         const rowStartTime = new Date(rowStart);
         // Only delete if row's event time falls within our sync window
         if (rowStartTime >= start && rowStartTime <= end) {
+          console.log('[syncCalendarToSheet] Marking event for deletion:', id);
           toDelete.push(ex.rowIndex);
+        } else {
+          console.log('[syncCalendarToSheet] Preserving event outside sync window:', id);
         }
       } else {
         // If no valid date columns, don't delete (preserve historical data)
+        console.log('[syncCalendarToSheet] Preserving event with invalid dates:', id);
       }
     }
   }
   // delete from bottom to top
+  console.log('[syncCalendarToSheet] Deleting rows:', toDelete.length);
   toDelete.sort((a,b) => b - a).forEach(r => sheet.deleteRow(r));
+  console.log('[syncCalendarToSheet] Sync complete');
 }
 
 module.exports = { eventToRow, syncCalendarToSheet, rowsEqual, rowsToMap, ensureHeader };

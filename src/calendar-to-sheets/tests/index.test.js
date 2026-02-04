@@ -234,8 +234,10 @@ describe('Checkpoint logic (GAS only)', () => {
     const code = require('../code.gs');
     const cfg = { calendarId: 'new_cal' };
     const lastSync = code.getLastSyncTime(cfg);
-    // Should be epoch (Jan 1, 1970)
-    expect(lastSync.getTime()).toBe(0);
+    // Should be 1 year ago (DEFAULT_SYNC_WINDOW_MS)
+    const oneYearAgo = Date.now() - (365 * 24 * 60 * 60 * 1000);
+    expect(lastSync.getTime()).toBeGreaterThan(oneYearAgo - 10000); // Allow 10s margin
+    expect(lastSync.getTime()).toBeLessThan(oneYearAgo + 10000);
   });
 
   test('saveLastSyncTime and getLastSyncTime persist checkpoint', () => {
@@ -258,8 +260,10 @@ describe('Checkpoint logic (GAS only)', () => {
     code.clearCheckpoint(cfg);
     
     const retrieved = code.getLastSyncTime(cfg);
-    // Should be reset to epoch
-    expect(retrieved.getTime()).toBe(0);
+    // Should be reset to 1 year ago (DEFAULT_SYNC_WINDOW_MS)
+    const oneYearAgo = Date.now() - (365 * 24 * 60 * 60 * 1000);
+    expect(retrieved.getTime()).toBeGreaterThan(oneYearAgo - 10000); // Allow 10s margin
+    expect(retrieved.getTime()).toBeLessThan(oneYearAgo + 10000);
   });
 
   test('syncCalendarToSheetGAS saves checkpoint after successful sync', () => {
@@ -286,7 +290,10 @@ describe('Checkpoint logic (GAS only)', () => {
 
     const cfg = code.getConfig();
     const lastSync = code.getLastSyncTime(cfg);
-    expect(lastSync.getTime()).toBe(new Date('2026-02-03').getTime());
+    // Checkpoint should be saved as current time, not the end parameter
+    const now = Date.now();
+    expect(lastSync.getTime()).toBeGreaterThan(now - 10000); // Allow 10s margin
+    expect(lastSync.getTime()).toBeLessThan(now + 10000);
     
     delete global.SPREADSHEET_ID;
     delete global.SHEET_NAME;
@@ -323,7 +330,34 @@ describe('Checkpoint logic (GAS only)', () => {
     delete global.SYNC_CONFIGS;
     delete global.Logger;
   });
+  test('syncAllCalendarsToSheetsGAS without dates uses checkpoints', async () => {
+    const code = require('../code.gs');
+    
+    global.SYNC_CONFIGS = [
+      { spreadsheetId: 'ss1', sheetName: 'SheetA', calendarId: '' }
+    ];
 
+    const ss = SpreadsheetApp.openById('ss1');
+    const sheetA = ss.getSheetByName('SheetA');
+    sheetA.__setHeader(['id','title','start','end','description','location','attendees']);
+
+    const calendar = CalendarApp.getDefaultCalendar();
+    const evt = createCalendarEvent({ 
+      id: 'e_checkpoint', 
+      title: 'CheckpointTest', 
+      start: new Date(), 
+      end: new Date(Date.now() + 3600000)
+    });
+    calendar.__addEvent(evt);
+
+    // Call without dates to trigger checkpoint logic (line 138)
+    await code.syncAllCalendarsToSheetsGAS();
+
+    // Sheet should have the event
+    expect(sheetA.__getRows().find(r => r[0] === 'e_checkpoint')).toBeTruthy();
+
+    delete global.SYNC_CONFIGS;
+  });
   test('fullResyncCalendarToSheetGAS clears checkpoint and syncs', () => {
     const code = require('../code.gs');
     
@@ -949,6 +983,238 @@ test('syncCalendarToSheet works correctly when sheet starts empty with no header
   expect(rows2.length).toBe(2);
   const e1row = rows2.find(r => r[0] === 'e_empty1');
   expect(e1row[1]).toBe('First Event Updated');
+});
+
+// Test formula injection sanitization
+test('eventToRow sanitizes values starting with formula metacharacters', () => {
+  const evt = createCalendarEvent({ 
+    id: 'e_formula', 
+    title: '=SUM(A1:A10)', 
+    start: new Date('2026-02-02T10:00:00Z'), 
+    end: new Date('2026-02-02T11:00:00Z'), 
+    description: '+ALERT()', 
+    location: '-cmd', 
+    attendees: [] 
+  });
+  
+  const row = eventToRow(evt);
+  
+  expect(row[1]).toBe("'=SUM(A1:A10)"); // title sanitized
+  expect(row[4]).toBe("'+ALERT()"); // description sanitized
+  expect(row[5]).toBe("'-cmd"); // location sanitized
+});
+
+// Test historical data preservation (no valid dates)
+test('syncCalendarToSheet preserves rows without valid date columns', async () => {
+  const calendar = CalendarApp.getDefaultCalendar();
+  const ss = SpreadsheetApp.openById('ss1');
+  const sheet = ss.getSheetByName('Sheet1');
+
+  // Add a row with missing date columns (historical data)
+  sheet.__getRows().push(['old_event', 'Old Event', null, null, 'desc', 'loc', '']);
+
+  // Sync with empty calendar
+  calendar.__reset();
+  await syncCalendarToSheet(calendar, sheet, { start: new Date('2026-02-01'), end: new Date('2026-02-03') });
+
+  // Row should still exist because it has no valid dates
+  const rows = sheet.__getRows();
+  expect(rows.find(r => r[0] === 'old_event')).toBeTruthy();
+});
+
+// Test historical data preservation (dates outside sync window)
+test('syncCalendarToSheet preserves rows with dates outside sync window', async () => {
+  const calendar = CalendarApp.getDefaultCalendar();
+  const ss = SpreadsheetApp.openById('ss1');
+  const sheet = ss.getSheetByName('Sheet1');
+
+  // Add a row with dates outside the sync window
+  const oldDate = new Date('2025-01-01T10:00:00Z');
+  sheet.__getRows().push(['old_event', 'Old Event', oldDate.toISOString(), oldDate.toISOString(), 'desc', 'loc', '']);
+
+  // Sync with empty calendar for Feb 2026 window
+  calendar.__reset();
+  await syncCalendarToSheet(calendar, sheet, { start: new Date('2026-02-01'), end: new Date('2026-02-03') });
+
+  // Row should still exist because its dates are outside the sync window
+  const rows = sheet.__getRows();
+  expect(rows.find(r => r[0] === 'old_event')).toBeTruthy();
+});
+
+// Test rowsEqual with longer array having extra truthy values
+test('rowsEqual returns false when longer array has extra truthy values', () => {
+  expect(rowsEqual(['a', 'b'], ['a', 'b', 'c'])).toBe(false);
+  expect(rowsEqual(['a', 'b', 'c'], ['a', 'b'])).toBe(false);
+  // But should return true if extra values are falsy
+  expect(rowsEqual(['a', 'b'], ['a', 'b', ''])).toBe(true);
+  expect(rowsEqual(['a', 'b'], ['a', 'b', null])).toBe(true);
+});
+
+// Test code.gs functions for coverage
+describe('GAS wrapper functions', () => {
+  beforeEach(() => {
+    installGlobals(global);
+  });
+
+  afterEach(() => resetAll(global));
+
+  test('syncCalendarToSheetGAS uses checkpoint and saves new checkpoint', async () => {
+    const code = require('../code.gs');
+    global.SYNC_CONFIGS = [{ calendarId: '', spreadsheetId: 'ss1', sheetName: 'Sheet1' }];
+    
+    const ss = SpreadsheetApp.openById('ss1');
+    const sheet = ss.getSheetByName('Sheet1');
+    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
+    
+    const calendar = CalendarApp.getDefaultCalendar();
+    const evt = createCalendarEvent({ 
+      id: 'e1', 
+      title: 'Test', 
+      start: new Date('2026-02-02T10:00:00Z'), 
+      end: new Date('2026-02-02T11:00:00Z') 
+    });
+    calendar.__addEvent(evt);
+    
+    // Call without dates to use checkpoint logic
+    await code.syncCalendarToSheetGAS();
+    
+    expect(sheet.__getRows().find(r => r[0] === 'e1')).toBeTruthy();
+    
+    delete global.SYNC_CONFIGS;
+  });
+
+  test('syncCalendarToSheetGAS with explicit dates and updates existing row', async () => {
+    const code = require('../code.gs');
+    global.SPREADSHEET_ID = 'ss1';
+    global.SHEET_NAME = 'Sheet1';
+    
+    const ss = SpreadsheetApp.openById('ss1');
+    const sheet = ss.getSheetByName('Sheet1');
+    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
+    
+    // Add initial event
+    const calendar = CalendarApp.getDefaultCalendar();
+    const evt1 = createCalendarEvent({ 
+      id: 'e1', 
+      title: 'Initial', 
+      start: new Date('2026-02-02T10:00:00Z'), 
+      end: new Date('2026-02-02T11:00:00Z'),
+      description: 'desc1',
+      location: 'loc1',
+      attendees: []
+    });
+    calendar.__addEvent(evt1);
+    
+    await code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03');
+    
+    expect(sheet.__getRows()[0][1]).toBe('Initial');
+    
+    // Update event title
+    calendar.__reset();
+    const evt2 = createCalendarEvent({ 
+      id: 'e1', 
+      title: 'Updated', 
+      start: new Date('2026-02-02T10:00:00Z'), 
+      end: new Date('2026-02-02T11:00:00Z'),
+      description: 'desc1',
+      location: 'loc1',
+      attendees: []
+    });
+    calendar.__addEvent(evt2);
+    
+    await code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03');
+    
+    expect(sheet.__getRows()[0][1]).toBe('Updated');
+    
+    delete global.SPREADSHEET_ID;
+    delete global.SHEET_NAME;
+  });
+
+  test('syncCalendarToSheetGAS handles event deletion', async () => {
+    const code = require('../code.gs');
+    global.SPREADSHEET_ID = 'ss1';
+    global.SHEET_NAME = 'Sheet1';
+    
+    const ss = SpreadsheetApp.openById('ss1');
+    const sheet = ss.getSheetByName('Sheet1');
+    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
+    
+    const calendar = CalendarApp.getDefaultCalendar();
+    const evt1 = createCalendarEvent({ 
+      id: 'e1', 
+      title: 'ToBeDeleted', 
+      start: new Date('2026-02-02T10:00:00Z'), 
+      end: new Date('2026-02-02T11:00:00Z')
+    });
+    calendar.__addEvent(evt1);
+    
+    await code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03');
+    expect(sheet.__getRows().length).toBe(1);
+    
+    // Remove event from calendar
+    calendar.__reset();
+    
+    await code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03');
+    expect(sheet.__getRows().length).toBe(0);
+    
+    delete global.SPREADSHEET_ID;
+    delete global.SHEET_NAME;
+  });
+
+  test('syncAllCalendarsToSheetsGAS handles errors and continues', async () => {
+    const code = require('../code.gs');
+    global.SYNC_CONFIGS = [
+      { calendarId: 'bad_calendar', spreadsheetId: 'ss1', sheetName: 'Sheet1' },
+      { calendarId: '', spreadsheetId: 'ss1', sheetName: 'Sheet2' }
+    ];
+    
+    const ss = SpreadsheetApp.openById('ss1');
+    const sheet1 = ss.getSheetByName('Sheet1');
+    const sheet2 = ss.getSheetByName('Sheet2');
+    sheet1.__setHeader(['id','title','start','end','description','location','attendees']);
+    sheet2.__setHeader(['id','title','start','end','description','location','attendees']);
+    
+    const calendar = CalendarApp.getDefaultCalendar();
+    const evt = createCalendarEvent({ 
+      id: 'e1', 
+      title: 'Test', 
+      start: new Date('2026-02-02T10:00:00Z'), 
+      end: new Date('2026-02-02T11:00:00Z') 
+    });
+    calendar.__addEvent(evt);
+    
+    // Should not throw, should continue to second config
+    await code.syncAllCalendarsToSheetsGAS('2026-02-01', '2026-02-03');
+    
+    // Second config should succeed
+    expect(sheet2.__getRows().find(r => r[0] === 'e1')).toBeTruthy();
+    
+    delete global.SYNC_CONFIGS;
+  });
+
+  test('fullResyncCalendarToSheetGAS clears checkpoint and resyncs', async () => {
+    const code = require('../code.gs');
+    global.SYNC_CONFIGS = [{ calendarId: '', spreadsheetId: 'ss1', sheetName: 'Sheet1' }];
+    
+    const ss = SpreadsheetApp.openById('ss1');
+    const sheet = ss.getSheetByName('Sheet1');
+    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
+    
+    const calendar = CalendarApp.getDefaultCalendar();
+    const evt = createCalendarEvent({ 
+      id: 'e1', 
+      title: 'Test', 
+      start: new Date(), 
+      end: new Date(Date.now() + 3600000) 
+    });
+    calendar.__addEvent(evt);
+    
+    await code.fullResyncCalendarToSheetGAS(0);
+    
+    expect(sheet.__getRows().find(r => r[0] === 'e1')).toBeTruthy();
+    
+    delete global.SYNC_CONFIGS;
+  });
 });
 
 
