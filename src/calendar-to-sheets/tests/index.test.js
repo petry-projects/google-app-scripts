@@ -68,8 +68,8 @@ test('rowsToMap builds correct mapping and rowsEqual works', () => {
   expect(m.get('e2').rowIndex).toBe(3); // header row considered
   expect(rowsEqual(['a','b'], ['a','b'])).toBe(true);
   expect(rowsEqual(['a','b'], ['a','c'])).toBe(false);
-  // when b has extra trailing columns, only compare columns in a
-  expect(rowsEqual(['a','b'], ['a','b','extra','columns'])).toBe(true);
+  // extra trailing columns only allowed if they are falsy/empty
+  expect(rowsEqual(['a','b'], ['a','b','extra','columns'])).toBe(false);
   expect(rowsEqual(['a','b'], ['a','c','extra','columns'])).toBe(false);
 });
 
