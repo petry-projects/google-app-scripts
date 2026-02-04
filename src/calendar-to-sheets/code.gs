@@ -52,7 +52,7 @@ function getCheckpointKey(cfg) {
 
 /**
  * Load the last sync timestamp from properties storage.
- * If never synced, defaults to epoch (scan all history on first run).
+ * If never synced, defaults to ~1 year ago to avoid large initial syncs.
  */
 function getLastSyncTime(cfg) {
   const key = getCheckpointKey(cfg);
@@ -60,8 +60,9 @@ function getLastSyncTime(cfg) {
   if (stored) {
     return new Date(parseInt(stored));
   }
-  // Default: epoch (January 1, 1970) to sync all events on first run
-  return new Date(0);
+  // Default: 1 year ago to prevent timeouts on first run with large calendars
+  // This syncs recent events only; use fullResyncCalendarToSheetGAS() for full history
+  return new Date(Date.now() - DEFAULT_SYNC_WINDOW_MS);
 }
 
 /**
@@ -80,6 +81,17 @@ function clearCheckpoint(cfg) {
   PropertiesService.getUserProperties().deleteProperty(key);
 }
 
+/**
+ * Sanitize a value to prevent formula injection in spreadsheets.
+ * If a string starts with =, +, -, or @, prefix it with a single quote
+ * to force it to be treated as literal text rather than a formula.
+ */
+function sanitizeValue(val) {
+  if (typeof val === 'string' && /^[=+\-@]/.test(val)) {
+    return "'" + val;
+  }
+  return val;
+}
 
 function eventToRowGAS(event) {
   const id = event.getId();
@@ -93,16 +105,21 @@ function eventToRowGAS(event) {
 }
 
 function _syncCalendarToSheetGAS(cfg, start, end) {
+  console.log('[_syncCalendarToSheetGAS] Starting sync with config:', { calendarId: cfg?.calendarId, spreadsheetId: cfg?.spreadsheetId, sheetName: cfg?.sheetName });
+  console.log('[_syncCalendarToSheetGAS] Date range:', { start, end });
+  
   const calendar = cfg && cfg.calendarId ? CalendarApp.getCalendarById(cfg.calendarId) : CalendarApp.getDefaultCalendar();
   const ss = cfg && cfg.spreadsheetId ? SpreadsheetApp.openById(cfg.spreadsheetId) : SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(cfg && cfg.sheetName ? cfg.sheetName : 'Sheet1') || ss.getSheets()[0];
 
   const events = calendar.getEvents(start, end);
+  console.log('[_syncCalendarToSheetGAS] Fetched events:', events.length);
   const desired = events.map(eventToRowGAS);
   const desiredMap = new Map(desired.map(r => [r[0], r]));
 
   const data = sheet.getDataRange().getValues();
   const body = data.slice(1);
+  console.log('[_syncCalendarToSheetGAS] Existing rows in sheet:', body.length);
 
   const existingMap = new Map();
   for (let i = 0; i < body.length; i++) {
@@ -112,33 +129,54 @@ function _syncCalendarToSheetGAS(cfg, start, end) {
   }
 
   // Upsert
+  let updateCount = 0;
+  let insertCount = 0;
   for (const [id, row] of desiredMap.entries()) {
     if (existingMap.has(id)) {
       const ex = existingMap.get(id);
       // shallow compare
       let equal = true;
       for (let i = 0; i < row.length; i++) if (ex.values[i] !== row[i]) { equal = false; break; }
-      if (!equal) sheet.getRange(ex.rowIndex, 1, 1, row.length).setValues([row]);
+      if (!equal) {
+        console.log('[_syncCalendarToSheetGAS] Updating event:', id);
+        sheet.getRange(ex.rowIndex, 1, 1, row.length).setValues([row]);
+        updateCount++;
+      }
     } else {
+      console.log('[_syncCalendarToSheetGAS] Inserting new event:', id);
       sheet.appendRow(row);
+      insertCount++;
     }
   }
+  console.log('[_syncCalendarToSheetGAS] Updates:', updateCount, 'Inserts:', insertCount);
 
-  // Delete removed
+  // Delete removed events that fall within the sync window [start, end]
+  // This prevents wiping historical events outside the current sync range.
   const toDelete = [];
-  for (const [id, ex] of existingMap.entries()) if (!desiredMap.has(id)) toDelete.push(ex.rowIndex);
+  for (const [id, ex] of existingMap.entries()) {
+    if (!desiredMap.has(id)) {
+      // Only delete if the event's start time falls within the sync window
+      const eventStart = ex.values[2] ? new Date(ex.values[2]) : null;
+      if (eventStart && eventStart >= start && eventStart <= end) {
+        toDelete.push(ex.rowIndex);
+      }
+    }
+  }
+  console.log('[_syncCalendarToSheetGAS] Deleting rows:', toDelete.length);
   toDelete.sort((a,b) => b - a).forEach(r => sheet.deleteRow(r));
+  console.log('[_syncCalendarToSheetGAS] Sync complete');
 }
 
 function syncCalendarToSheetGAS(startIso, endIso) {
   const cfg = getConfig();
   let start = startIso ? new Date(startIso) : getLastSyncTime(cfg);
-  const end = endIso ? new Date(endIso) : new Date(Date.now() + 365*24*60*60*1000);
+  const end = endIso ? new Date(endIso) : new Date();
   
   const result = _syncCalendarToSheetGAS(cfg, start, end);
   
-  // Update checkpoint after successful sync
-  saveLastSyncTime(cfg, end);
+  // Update checkpoint to current time after successful sync
+  // This ensures next sync starts from now, not from future dates
+  saveLastSyncTime(cfg, new Date());
   return result;
 }
 
@@ -147,11 +185,11 @@ function syncAllCalendarsToSheetsGAS(startIso, endIso) {
   for (let i = 0; i < cfgs.length; i++) {
     try {
       let start = startIso ? new Date(startIso) : getLastSyncTime(cfgs[i]);
-      const end = endIso ? new Date(endIso) : new Date(Date.now() + 365*24*60*60*1000);
+      const end = endIso ? new Date(endIso) : new Date();
       _syncCalendarToSheetGAS(cfgs[i], start, end);
 
-      // Update checkpoint after successful sync
-      saveLastSyncTime(cfgs[i], end);
+      // Update checkpoint to current time after successful sync
+      saveLastSyncTime(cfgs[i], new Date());
     } catch (e) {
       // Log and continue with other calendars; do not advance checkpoint on failure
       if (typeof Logger !== 'undefined' && Logger.log) {
@@ -172,13 +210,14 @@ function fullResyncCalendarToSheetGAS(configIndex) {
   const cfgs = getConfigs();
   const cfg = cfgs[configIndex || 0];
   clearCheckpoint(cfg);
-  const start = new Date(Date.now() - MIN_EVENT_AGE_MS);
-  const end = new Date(Date.now() + 365*24*60*60*1000);
+  // Resync from 1 year ago to present
+  const start = new Date(Date.now() - DEFAULT_SYNC_WINDOW_MS);
+  const end = new Date();
   _syncCalendarToSheetGAS(cfg, start, end);
-  saveLastSyncTime(cfg, end);
+  saveLastSyncTime(cfg, new Date());
 }
 
 // Export for testing in Node environments
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { getConfigs, getConfig, eventToRowGAS, syncCalendarToSheetGAS, syncAllCalendarsToSheetsGAS, getLastSyncTime, saveLastSyncTime, clearCheckpoint, getCheckpointKey, fullResyncCalendarToSheetGAS };
+  module.exports = { getConfigs, getConfig, eventToRowGAS, sanitizeValue, syncCalendarToSheetGAS, syncAllCalendarsToSheetsGAS, getLastSyncTime, saveLastSyncTime, clearCheckpoint, getCheckpointKey, fullResyncCalendarToSheetGAS };
 }

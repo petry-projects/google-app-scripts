@@ -18,11 +18,12 @@ Usage
 - The core, testable logic lives under `src/` (`eventToRow`, `syncCalendarToSheet`, etc.) and is exercised by the included Jest tests.
 ## Checkpoint logic (performance optimization)
 
-To prevent timeouts on subsequent runs with large calendars, the script implements **checkpoint logic**:
+To prevent timeouts with large calendars, the script implements **intelligent checkpoint logic**:
 
-- **First run:** Syncs all events (since epoch) to ensure complete history.
-- **Subsequent runs:** Syncs only from the last successful sync timestamp (stored in your Google Apps Script properties).
-- **Result:** After the initial full sync, each sync processes only new/updated events, avoiding timeout issues.
+- **First run:** Syncs events from the past year (not from epoch) to avoid timeouts with large calendars.
+- **Subsequent runs:** Syncs only from the last sync time to present, processing only new/updated events.
+- **Result:** Each sync is fast and incremental, with the first sync covering recent history only.
+- **Full history sync:** Use `fullResyncCalendarToSheetGAS(0)` if you need to sync older events.
 
 ### Functions
 
@@ -34,14 +35,16 @@ To prevent timeouts on subsequent runs with large calendars, the script implemen
 ### Example: Manual resync
 
 ```javascript
-// In Google Apps Script Editor, run one of these as needed:
+// In Google Apps Script Editor, run this for a full historical sync:
 
-// Reset checkpoint for the first config and resync from epoch
+// Resync from 1 year ago (the default safe window)
 fullResyncCalendarToSheetGAS(0);
 
-// Or manually clear and resync a specific config
-const cfg = SYNC_CONFIGS[0];
-clearCheckpoint(cfg);
-syncCalendarToSheetGAS(); // Will now scan all history
+// For a complete historical sync, manually adjust the start date:
+// (Warning: may timeout with very large calendars)
+// const cfg = SYNC_CONFIGS[0];
+// clearCheckpoint(cfg);
+// _syncCalendarToSheetGAS(cfg, new Date(0), new Date()); // From epoch
+// saveLastSyncTime(cfg, new Date());
 ```
 
