@@ -47,7 +47,7 @@ function getConfig() {
  * Used to store/retrieve last sync timestamp for a calendar.
  */
 function getCheckpointKey(cfg) {
-  return CHECKPOINT_PREFIX + (cfg && cfg.calendarId || 'default');
+  return CHECKPOINT_PREFIX + ((cfg && cfg.calendarId) || 'default');
 }
 
 /**
@@ -185,7 +185,7 @@ function syncAllCalendarsToSheetsGAS(startIso, endIso) {
     } catch (e) {
       // Log and continue with other calendars; do not advance checkpoint on failure
       if (typeof Logger !== 'undefined' && Logger.log) {
-        Logger.log('Error syncing calendar "' + (cfgs[i] && cfgs[i].calendarId || 'default') + '": ' + e);
+        Logger.log('Error syncing calendar "' + ((cfgs[i] && cfgs[i].calendarId) || 'default') + '": ' + e);
       }
     }
   }
