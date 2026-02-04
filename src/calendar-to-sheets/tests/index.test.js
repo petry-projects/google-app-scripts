@@ -414,6 +414,93 @@ describe('Checkpoint logic (GAS only)', () => {
     delete global.SYNC_CONFIGS;
   });
 
+  test('getConfigs handles empty array SYNC_CONFIGS', () => {
+    delete global.SYNC_CONFIGS;
+    global.SYNC_CONFIGS = [];
+
+    delete require.cache[require.resolve('../code.gs')];
+    const freshCode = require('../code.gs');
+    
+    const configs = freshCode.getConfigs();
+    
+    // Should fall back to legacy mode when array is empty
+    expect(configs.length).toBe(1);
+    expect(configs[0].sheetName).toBe('Sheet1');
+    expect(configs[0].spreadsheetId).toBe(null);
+    expect(configs[0].calendarId).toBe(null);
+    
+    delete global.SYNC_CONFIGS;
+  });
+
+  test('syncCalendarToSheetGAS handles empty SYNC_CONFIGS gracefully', () => {
+    const code = require('../code.gs');
+    
+    // Set empty SYNC_CONFIGS
+    delete global.SYNC_CONFIGS;
+    global.SYNC_CONFIGS = [];
+    
+    // This should not throw even with empty SYNC_CONFIGS
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('Sheet1');
+    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
+    
+    const calendar = CalendarApp.getDefaultCalendar();
+    const evt = createCalendarEvent({ 
+      id: 'e_empty_cfg', 
+      title: 'Empty Config Test', 
+      start: new Date('2026-02-02T10:00:00Z'), 
+      end: new Date('2026-02-02T11:00:00Z'), 
+      description: '', 
+      location: '', 
+      attendees: [] 
+    });
+    calendar.__addEvent(evt);
+
+    // Should not throw
+    expect(() => {
+      code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03');
+    }).not.toThrow();
+
+    // Should still sync to the default spreadsheet/sheet
+    expect(sheet.__getRows().find(r => r[0] === 'e_empty_cfg')).toBeTruthy();
+    
+    delete global.SYNC_CONFIGS;
+  });
+
+  test('syncAllCalendarsToSheetsGAS handles empty SYNC_CONFIGS gracefully', () => {
+    const code = require('../code.gs');
+    
+    // Set empty SYNC_CONFIGS
+    delete global.SYNC_CONFIGS;
+    global.SYNC_CONFIGS = [];
+    
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('Sheet1');
+    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
+    
+    const calendar = CalendarApp.getDefaultCalendar();
+    const evt = createCalendarEvent({ 
+      id: 'e_empty_all', 
+      title: 'Empty All Test', 
+      start: new Date('2026-02-02T10:00:00Z'), 
+      end: new Date('2026-02-02T11:00:00Z'), 
+      description: '', 
+      location: '', 
+      attendees: [] 
+    });
+    calendar.__addEvent(evt);
+
+    // Should not throw
+    expect(() => {
+      code.syncAllCalendarsToSheetsGAS('2026-02-01', '2026-02-03');
+    }).not.toThrow();
+
+    // Should still sync to the default spreadsheet/sheet
+    expect(sheet.__getRows().find(r => r[0] === 'e_empty_all')).toBeTruthy();
+    
+    delete global.SYNC_CONFIGS;
+  });
+
   test('getCheckpointKey handles default calendar', () => {
     const code = require('../code.gs');
     const cfg = { calendarId: null };
