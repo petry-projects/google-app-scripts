@@ -80,23 +80,13 @@ function sanitizeValue(val) {
   return val;
 }
 
-function sanitizeForSheet_(value) {
-  if (typeof value !== 'string') return value;
-  if (value.length === 0) return value;
-  const firstChar = value.charAt(0);
-  if (firstChar === '=' || firstChar === '+' || firstChar === '-' || firstChar === '@') {
-    return "'" + value;
-  }
-  return value;
-}
-
 function eventToRowGAS(event) {
   const id = event.getId();
-  const title = sanitizeForSheet_(event.getTitle());
+  const title = sanitizeValue(event.getTitle());
   const start = event.getStartTime().toISOString();
   const end = event.getEndTime().toISOString();
-  const description = sanitizeForSheet_(event.getDescription() || '');
-  const location = sanitizeForSheet_(event.getLocation() || '');
+  const description = sanitizeValue(event.getDescription() || '');
+  const location = sanitizeValue(event.getLocation() || '');
   const attendees = (event.getGuestList() || []).map(g => g.getEmail()).join(',');
   return [id, title, start, end, description, location, attendees];
 }
