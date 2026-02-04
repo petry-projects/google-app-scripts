@@ -14,7 +14,19 @@ const DEFAULT_SYNC_WINDOW_MS = 365 * 24 * 60 * 60 * 1000; // 1 year in milliseco
 const MIN_EVENT_AGE_MS = DEFAULT_SYNC_WINDOW_MS;
 
 function getConfigs() {
-  if (typeof SYNC_CONFIGS !== 'undefined' && Array.isArray(SYNC_CONFIGS)) return SYNC_CONFIGS;
+  if (typeof SYNC_CONFIGS !== 'undefined' && Array.isArray(SYNC_CONFIGS)) {
+    // If SYNC_CONFIGS is an empty array, fall back to legacy mode
+    if (SYNC_CONFIGS.length === 0) {
+      return [
+        {
+          spreadsheetId: typeof SPREADSHEET_ID !== 'undefined' ? SPREADSHEET_ID : null,
+          sheetName: typeof SHEET_NAME !== 'undefined' ? SHEET_NAME : 'Sheet1',
+          calendarId: typeof CALENDAR_ID !== 'undefined' ? CALENDAR_ID : null
+        }
+      ];
+    }
+    return SYNC_CONFIGS;
+  }
   // Legacy single-config support
   return [
     {
@@ -35,7 +47,7 @@ function getConfig() {
  * Used to store/retrieve last sync timestamp for a calendar.
  */
 function getCheckpointKey(cfg) {
-  return CHECKPOINT_PREFIX + (cfg.calendarId || 'default');
+  return CHECKPOINT_PREFIX + (cfg && cfg.calendarId || 'default');
 }
 
 /**
@@ -173,7 +185,7 @@ function syncAllCalendarsToSheetsGAS(startIso, endIso) {
     } catch (e) {
       // Log and continue with other calendars; do not advance checkpoint on failure
       if (typeof Logger !== 'undefined' && Logger.log) {
-        Logger.log('Error syncing calendar "' + (cfgs[i].calendarId || 'default') + '": ' + e);
+        Logger.log('Error syncing calendar "' + (cfgs[i] && cfgs[i].calendarId || 'default') + '": ' + e);
       }
     }
   }
