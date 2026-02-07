@@ -52,7 +52,7 @@ function getCheckpointKey(cfg) {
 
 /**
  * Load the last sync timestamp from properties storage.
- * If never synced, defaults to epoch
+ * If never synced, defaults to epoch.
  * If the stored checkpoint is invalid (NaN or corrupt), resets to epoch.
  */
 function getLastSyncTime(cfg) {
@@ -75,9 +75,9 @@ function getLastSyncTime(cfg) {
     return date;
   }
 
-  // Default to sync window lookback if no checkpoint exists
-  const defaultStart = new Date(Date.now() - DEFAULT_SYNC_WINDOW_MS);
-  console.log('[getLastSyncTime] Defaulting to sync window start:', defaultStart.toISOString());
+  // Default to epoch if no checkpoint exists
+  const defaultStart = new Date(0);
+  console.log('[getLastSyncTime] Defaulting to epoch:', defaultStart.toISOString());
   return defaultStart;
 }
 
@@ -191,8 +191,15 @@ function syncCalendarToSheetGAS(startIso, endIso) {
   const cfg = getConfig();
   const checkpoint = getLastSyncTime(cfg);
   const now = new Date();
-  let start = startIso ? new Date(startIso) : new Date(checkpoint.getTime() - DEFAULT_SYNC_WINDOW_MS);
+  let start = startIso ? new Date(startIso) : checkpoint;
   const end = endIso ? new Date(endIso) : now;
+
+  // Validate: if checkpoint is in the future, reset it
+  if (start > end) {
+    console.log('[syncCalendarToSheetGAS] Warning: start time is after end time, resetting checkpoint');
+    clearCheckpoint(cfg);
+    start = getLastSyncTime(cfg);
+  }
 
   if (startIso && (now.getTime() - start.getTime()) <= DEFAULT_SYNC_WINDOW_MS) {
     start = new Date(start.getTime() - DEFAULT_SYNC_WINDOW_MS);
