@@ -44,12 +44,12 @@ Usage
 - The core, testable logic lives under `src/` (`eventToRow`, `syncCalendarToSheet`, etc.) and is exercised by the included Jest tests.
 ## Checkpoint logic (performance optimization)
 
-To prevent timeouts with large calendars, the script implements **intelligent checkpoint logic**:
+To prevent timeouts with large calendars, the script implements **checkpoint logic**:
 
-- **First run:** Syncs events from the past year (not from epoch) to avoid timeouts with large calendars.
-- **Subsequent runs:** Syncs only from the last sync time to present, processing only new/updated events.
-- **Result:** Each sync is fast and incremental, with the first sync covering recent history only.
-- **Full history sync:** Use `fullResyncCalendarToSheetGAS(0)` if you need to sync older events.
+- **First run:** Syncs events from epoch to now when no checkpoint exists.
+- **Subsequent runs:** Syncs only from the last sync time to present, processing only new/updated events based on the configured lookback window.
+- **Result:** Each sync is incremental and resumes from the last checkpoint.
+- **Full history sync:** Use `fullResyncCalendarToSheetGAS(0)` if you need to wipe and resync.
 
 ### Functions
 
@@ -63,14 +63,10 @@ To prevent timeouts with large calendars, the script implements **intelligent ch
 ```javascript
 // In Google Apps Script Editor, run this for a full historical sync:
 
-// Resync from 1 year ago (the default safe window)
+// Full historical resync (clears checkpoint and syncs from epoch)
 fullResyncCalendarToSheetGAS(0);
 
-// For a complete historical sync, manually adjust the start date:
-// (Warning: may timeout with very large calendars)
-// const cfg = SYNC_CONFIGS[0];
-// clearCheckpoint(cfg);
-// _syncCalendarToSheetGAS(cfg, new Date(0), new Date()); // From epoch
-// saveLastSyncTime(cfg, new Date());
+// For a manual one-off window, call the sync function with explicit dates:
+// syncAllCalendarsToSheetsGAS('2025-01-01', '2025-12-31');
 ```
 

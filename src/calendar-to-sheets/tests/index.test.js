@@ -234,10 +234,9 @@ describe('Checkpoint logic (GAS only)', () => {
     const code = require('../code.gs');
     const cfg = { calendarId: 'new_cal' };
     const lastSync = code.getLastSyncTime(cfg);
-    // Should be 1 year ago (DEFAULT_SYNC_WINDOW_MS)
-    const oneYearAgo = Date.now() - (365 * 24 * 60 * 60 * 1000);
-    expect(lastSync.getTime()).toBeGreaterThan(oneYearAgo - 10000); // Allow 10s margin
-    expect(lastSync.getTime()).toBeLessThan(oneYearAgo + 10000);
+    // Should be epoch
+    expect(lastSync.getTime()).toBe(0);
+    expect(lastSync.toISOString()).toBe('1970-01-01T00:00:00.000Z');
   });
 
   test('saveLastSyncTime and getLastSyncTime persist checkpoint', () => {
@@ -260,10 +259,9 @@ describe('Checkpoint logic (GAS only)', () => {
     code.clearCheckpoint(cfg);
     
     const retrieved = code.getLastSyncTime(cfg);
-    // Should be reset to 1 year ago (DEFAULT_SYNC_WINDOW_MS)
-    const oneYearAgo = Date.now() - (365 * 24 * 60 * 60 * 1000);
-    expect(retrieved.getTime()).toBeGreaterThan(oneYearAgo - 10000); // Allow 10s margin
-    expect(retrieved.getTime()).toBeLessThan(oneYearAgo + 10000);
+    // Should be reset to epoch
+    expect(retrieved.getTime()).toBe(0);
+    expect(retrieved.toISOString()).toBe('1970-01-01T00:00:00.000Z');
   });
 
   test('getLastSyncTime resets invalid checkpoint to epoch', () => {
