@@ -266,6 +266,100 @@ describe('Checkpoint logic (GAS only)', () => {
     expect(retrieved.getTime()).toBeLessThan(oneYearAgo + 10000);
   });
 
+  test('getLastSyncTime resets invalid checkpoint to epoch', () => {
+    const code = require('../code.gs');
+    const cfg = { calendarId: 'cal_invalid' };
+    
+    // Simulate various corrupted checkpoint values
+    const key = code.getCheckpointKey(cfg);
+    
+    // Test with NaN-producing values
+    const invalidValues = ['NaN', 'null', 'undefined', 'invalid', '', 'abc123'];
+    
+    for (const invalidValue of invalidValues) {
+      PropertiesService.getUserProperties().setProperty(key, invalidValue);
+      const retrieved = code.getLastSyncTime(cfg);
+      
+      // Should reset to epoch (beginning of time)
+      expect(retrieved.getTime()).toBe(0);
+      expect(retrieved.toISOString()).toBe('1970-01-01T00:00:00.000Z');
+    }
+    
+    // Test with a very large invalid number that creates Invalid Date
+    PropertiesService.getUserProperties().setProperty(key, '999999999999999999');
+    const retrieved2 = code.getLastSyncTime(cfg);
+    expect(retrieved2.getTime()).toBe(0);
+  });
+
+  test('syncCalendarToSheetGAS syncs in 1-year chunks with checkpoints', () => {
+    const code = require('../code.gs');
+    
+    delete global.SYNC_CONFIGS;
+    delete global.SPREADSHEET_ID;
+    delete global.SHEET_NAME;
+    delete global.CALENDAR_ID;
+    
+    global.SPREADSHEET_ID = 'ss1';
+    global.SHEET_NAME = 'Sheet1';
+    
+    const ss = SpreadsheetApp.openById('ss1');
+    const sheet = ss.getSheetByName('Sheet1');
+    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
+    
+    const calendar = CalendarApp.getDefaultCalendar();
+    
+    // Add events across multiple years
+    const evt2024 = createCalendarEvent({ 
+      id: 'e_2024', 
+      title: 'Event 2024', 
+      start: new Date('2024-06-01T10:00:00Z'), 
+      end: new Date('2024-06-01T11:00:00Z'), 
+      description: '', 
+      location: '', 
+      attendees: [] 
+    });
+    const evt2025 = createCalendarEvent({ 
+      id: 'e_2025', 
+      title: 'Event 2025', 
+      start: new Date('2025-06-01T10:00:00Z'), 
+      end: new Date('2025-06-01T11:00:00Z'), 
+      description: '', 
+      location: '', 
+      attendees: [] 
+    });
+    const evt2026 = createCalendarEvent({ 
+      id: 'e_2026', 
+      title: 'Event 2026', 
+      start: new Date('2026-01-15T10:00:00Z'), 
+      end: new Date('2026-01-15T11:00:00Z'), 
+      description: '', 
+      location: '', 
+      attendees: [] 
+    });
+    
+    calendar.__addEvent(evt2024);
+    calendar.__addEvent(evt2025);
+    calendar.__addEvent(evt2026);
+    
+    // Sync from 2024-01-01 to 2026-02-01 (over 2 years)
+    code.syncCalendarToSheetGAS('2024-01-01', '2026-02-01');
+    
+    // All events should be synced
+    const rows = sheet.__getRows();
+    expect(rows.length).toBe(3);
+    expect(rows.find(r => r[0] === 'e_2024')).toBeTruthy();
+    expect(rows.find(r => r[0] === 'e_2025')).toBeTruthy();
+    expect(rows.find(r => r[0] === 'e_2026')).toBeTruthy();
+    
+    // Checkpoint should be at the end date
+    const cfg = code.getConfig();
+    const lastSync = code.getLastSyncTime(cfg);
+    expect(lastSync.toISOString()).toBe('2026-02-01T00:00:00.000Z');
+    
+    delete global.SPREADSHEET_ID;
+    delete global.SHEET_NAME;
+  });
+
   test('syncCalendarToSheetGAS saves checkpoint after successful sync', () => {
     const code = require('../code.gs');
     
@@ -290,10 +384,89 @@ describe('Checkpoint logic (GAS only)', () => {
 
     const cfg = code.getConfig();
     const lastSync = code.getLastSyncTime(cfg);
-    // Checkpoint should be saved as current time, not the end parameter
+    // Checkpoint should be saved as the end date parameter
+    expect(lastSync.toISOString()).toBe('2026-02-03T00:00:00.000Z');
+    
+    delete global.SPREADSHEET_ID;
+    delete global.SHEET_NAME;
+    delete global.CALENDAR_ID;
+  });
+
+  test('syncCalendarToSheetGAS expands recent start by one window', () => {
+    const code = require('../code.gs');
+
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-02-07T00:00:00Z'));
+
+    try {
+      delete global.SYNC_CONFIGS;
+      delete global.SPREADSHEET_ID;
+      delete global.SHEET_NAME;
+      delete global.CALENDAR_ID;
+
+      global.SPREADSHEET_ID = 'ss1';
+      global.SHEET_NAME = 'Sheet1';
+
+      const ss = SpreadsheetApp.openById('ss1');
+      const sheet = ss.getSheetByName('Sheet1');
+      sheet.__setHeader(['id','title','start','end','description','location','attendees']);
+
+      const calendar = CalendarApp.getDefaultCalendar();
+      const evt = createCalendarEvent({
+        id: 'e_recent_window',
+        title: 'Recent Window Event',
+        start: new Date('2025-06-01T10:00:00Z'),
+        end: new Date('2025-06-01T11:00:00Z'),
+        description: 'd',
+        location: 'L',
+        attendees: []
+      });
+      calendar.__addEvent(evt);
+
+      code.syncCalendarToSheetGAS('2026-01-15', '2026-02-01');
+
+      expect(sheet.__getRows().find(r => r[0] === 'e_recent_window')).toBeTruthy();
+    } finally {
+      jest.useRealTimers();
+      delete global.SPREADSHEET_ID;
+      delete global.SHEET_NAME;
+      delete global.CALENDAR_ID;
+    }
+  });
+
+  test('syncCalendarToSheetGAS resets checkpoint when start is in the future', () => {
+    const code = require('../code.gs');
+    
+    // Clear any existing config
+    delete global.SYNC_CONFIGS;
+    delete global.SPREADSHEET_ID;
+    delete global.SHEET_NAME;
+    delete global.CALENDAR_ID;
+    
+    global.SPREADSHEET_ID = 'ss1';
+    global.SHEET_NAME = 'Sheet1';
+    
+    const ss = SpreadsheetApp.openById('ss1');
+    const sheet = ss.getSheetByName('Sheet1');
+    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
+    
+    const calendar = CalendarApp.getDefaultCalendar();
+    const evt = createCalendarEvent({ id: 'e_future', title: 'Test', start: new Date('2026-02-02T10:00:00Z'), end: new Date('2026-02-02T11:00:00Z'), description: 'd', location: 'L', attendees: [] });
+    calendar.__addEvent(evt);
+
+    const cfg = code.getConfig();
+    // Set checkpoint to a future date (simulating old bug where end dates were saved)
+    const futureDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000); // 1 year in future
+    code.saveLastSyncTime(cfg, futureDate);
+
+    // Call without date parameters to trigger checkpoint validation
+    code.syncCalendarToSheetGAS();
+
+    // Verify checkpoint was reset to reasonable past date
+    const lastSync = code.getLastSyncTime(cfg);
     const now = Date.now();
-    expect(lastSync.getTime()).toBeGreaterThan(now - 10000); // Allow 10s margin
-    expect(lastSync.getTime()).toBeLessThan(now + 10000);
+    expect(lastSync.getTime()).toBeLessThanOrEqual(now);
+    expect(lastSync.getTime()).toBeGreaterThan(now - 10000); // Should be very recent (just reset)
     
     delete global.SPREADSHEET_ID;
     delete global.SHEET_NAME;
@@ -329,6 +502,40 @@ describe('Checkpoint logic (GAS only)', () => {
 
     delete global.SYNC_CONFIGS;
     delete global.Logger;
+  });
+
+  test('syncAllCalendarsToSheetsGAS resets checkpoint when start is in the future', () => {
+    const code = require('../code.gs');
+    
+    global.SYNC_CONFIGS = [
+      { spreadsheetId: 'ss1', sheetName: 'SheetA', calendarId: 'cal1' }
+    ];
+
+    const ss = SpreadsheetApp.openById('ss1');
+    const sheetA = ss.getSheetByName('SheetA');
+    sheetA.__setHeader(['id','title','start','end','description','location','attendees']);
+
+    const calendar = CalendarApp.getDefaultCalendar();
+    const evt = createCalendarEvent({ id: 'e_future_multi', title: 'Test', start: new Date('2026-02-02T10:00:00Z'), end: new Date('2026-02-02T11:00:00Z'), description: 'd', location: 'L', attendees: [] });
+    calendar.__addEvent(evt);
+
+    // Set checkpoint to a future date (simulating old bug where end dates were saved)
+    const futureDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000); // 1 year in future
+    code.saveLastSyncTime(global.SYNC_CONFIGS[0], futureDate);
+
+    // Call without date parameters to trigger checkpoint validation
+    code.syncAllCalendarsToSheetsGAS();
+
+    // Verify checkpoint was reset to reasonable past date
+    const lastSync = code.getLastSyncTime(global.SYNC_CONFIGS[0]);
+    const now = Date.now();
+    expect(lastSync.getTime()).toBeLessThanOrEqual(now);
+    expect(lastSync.getTime()).toBeGreaterThan(now - 10000); // Should be very recent (just reset)
+    
+    // Verify event was synced
+    expect(sheetA.__getRows().find(r => r[0] === 'e_future_multi')).toBeTruthy();
+
+    delete global.SYNC_CONFIGS;
   });
   test('syncAllCalendarsToSheetsGAS without dates uses checkpoints', async () => {
     const code = require('../code.gs');

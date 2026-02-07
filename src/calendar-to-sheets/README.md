@@ -7,6 +7,32 @@ Features:
 - Updates existing rows when an event changes (no duplicates).
 - Removes rows when events are deleted from the calendar.
 
+## Sync Process
+
+```mermaid
+sequenceDiagram
+    participant GAS as Apps Script<br/>(Trigger)
+    participant Cal as Google Calendar
+    participant Sheet as Google Sheet
+    participant Props as Script Properties
+
+    GAS->>Props: Get last sync timestamp
+    Props-->>GAS: Return checkpoint
+
+    GAS->>Cal: Fetch events since<br/>last checkpoint
+    Cal-->>GAS: Return events
+
+    GAS->>GAS: Match events to<br/>existing rows
+
+    GAS->>Sheet: Insert new event rows
+    GAS->>Sheet: Update changed rows
+    GAS->>Sheet: Delete removed rows
+    Sheet-->>GAS: Rows updated
+
+    GAS->>Props: Save new timestamp
+    Props-->>GAS: Checkpoint saved
+```
+
 Testing & development
 - Unit tests are implemented with Jest. Run `npm test` from the repo root.
 - Tests are designed to run locally using the repository's `test-utils` mocks.
