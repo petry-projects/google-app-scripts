@@ -250,7 +250,7 @@ function createPropertiesService() {
   const userProperties = new Map();
   return {
     getUserProperties: () => ({
-      getProperty: (key) => userProperties.get(key) || null,
+      getProperty: (key) => userProperties.has(key) ? userProperties.get(key) : null,
       setProperty: (key, value) => userProperties.set(key, value),
       deleteProperty: (key) => userProperties.delete(key),
       __reset: () => userProperties.clear()

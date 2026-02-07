@@ -5,13 +5,13 @@
  * `SPREADSHEET_ID`/`SHEET_NAME`/`CALENDAR_ID` vars for a single mapping.
  * This file is primarily a wrapper that can run in Google Apps Script.
  * 
- * Checkpoint logic prevents reprocessing very old events (>1 year) to avoid timeouts.
+ * Checkpoint logic processes data in chunks to work around timeouts found in personal GAS plans.
  */
 
 const CHECKPOINT_PREFIX = 'calendar_to_sheets_last_sync_';
 const DEFAULT_SYNC_WINDOW_MS = 365 * 24 * 60 * 60 * 1000; // 1 year in milliseconds
-// Backward-compatible alias; prefer DEFAULT_SYNC_WINDOW_MS in new code.
-const MIN_EVENT_AGE_MS = DEFAULT_SYNC_WINDOW_MS;
+const TAIL_MERGE_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+
 
 function getConfigs() {
   if (typeof SYNC_CONFIGS !== 'undefined' && Array.isArray(SYNC_CONFIGS)) {
@@ -52,17 +52,33 @@ function getCheckpointKey(cfg) {
 
 /**
  * Load the last sync timestamp from properties storage.
- * If never synced, defaults to ~1 year ago to avoid large initial syncs.
+ * If never synced, defaults to epoch
+ * If the stored checkpoint is invalid (NaN or corrupt), resets to epoch.
  */
 function getLastSyncTime(cfg) {
   const key = getCheckpointKey(cfg);
   const stored = PropertiesService.getUserProperties().getProperty(key);
-  if (stored) {
-    return new Date(parseInt(stored));
+  // Check if a value exists (null means no property set)
+  if (stored !== null && stored !== undefined) {
+    const parsedTime = parseInt(stored);
+    // Validate the parsed timestamp
+    if (isNaN(parsedTime)) {
+      console.log('[getLastSyncTime] Invalid checkpoint detected (NaN), resetting to epoch');
+      return new Date(0);
+    }
+    const date = new Date(parsedTime);
+    // Check if the date is valid (not Invalid Date)
+    if (isNaN(date.getTime())) {
+      console.log('[getLastSyncTime] Invalid checkpoint detected (Invalid Date), resetting to epoch');
+      return new Date(0);
+    }
+    return date;
   }
-  // Default: 1 year ago to prevent timeouts on first run with large calendars
-  // This syncs recent events only; use fullResyncCalendarToSheetGAS() for full history
-  return new Date(Date.now() - DEFAULT_SYNC_WINDOW_MS);
+
+  // Default to sync window lookback if no checkpoint exists
+  const defaultStart = new Date(Date.now() - DEFAULT_SYNC_WINDOW_MS);
+  console.log('[getLastSyncTime] Defaulting to sync window start:', defaultStart.toISOString());
+  return defaultStart;
 }
 
 /**
@@ -70,7 +86,9 @@ function getLastSyncTime(cfg) {
  */
 function saveLastSyncTime(cfg, timestamp) {
   const key = getCheckpointKey(cfg);
+  console.log('[saveLastSyncTime] Saving checkpoint for calendar:', cfg?.calendarId || 'default', 'timestamp:', timestamp.toISOString());
   PropertiesService.getUserProperties().setProperty(key, timestamp.getTime().toString());
+  console.log('[saveLastSyncTime] Checkpoint saved with key:', key);
 }
 
 /**
@@ -78,7 +96,9 @@ function saveLastSyncTime(cfg, timestamp) {
  */
 function clearCheckpoint(cfg) {
   const key = getCheckpointKey(cfg);
+  console.log('[clearCheckpoint] Clearing checkpoint for calendar:', cfg?.calendarId || 'default');
   PropertiesService.getUserProperties().deleteProperty(key);
+  console.log('[clearCheckpoint] Checkpoint cleared with key:', key);
 }
 
 /**
@@ -169,27 +189,98 @@ function _syncCalendarToSheetGAS(cfg, start, end) {
 
 function syncCalendarToSheetGAS(startIso, endIso) {
   const cfg = getConfig();
-  let start = startIso ? new Date(startIso) : getLastSyncTime(cfg);
-  const end = endIso ? new Date(endIso) : new Date();
+  const checkpoint = getLastSyncTime(cfg);
+  const now = new Date();
+  let start = startIso ? new Date(startIso) : new Date(checkpoint.getTime() - DEFAULT_SYNC_WINDOW_MS);
+  const end = endIso ? new Date(endIso) : now;
+
+  if (startIso && (now.getTime() - start.getTime()) <= DEFAULT_SYNC_WINDOW_MS) {
+    start = new Date(start.getTime() - DEFAULT_SYNC_WINDOW_MS);
+  }
   
-  const result = _syncCalendarToSheetGAS(cfg, start, end);
   
-  // Update checkpoint to current time after successful sync
-  // This ensures next sync starts from now, not from future dates
-  saveLastSyncTime(cfg, new Date());
-  return result;
+  // Sync in chunks to prevent timeouts
+  // After each chunk, checkpoint progress so we can resume if interrupted
+  let currentStart = start;
+  let iterationCount = 0;
+  const maxIterations = 100; // Safety limit to prevent infinite loops
+  
+  while (currentStart < end && iterationCount < maxIterations) {
+    // Calculate the end of this chunk (SYNC_WINDOW from current start, but not beyond target end)
+    const chunkEnd = new Date(currentStart.getTime() + DEFAULT_SYNC_WINDOW_MS);
+    let effectiveEnd = chunkEnd < end ? chunkEnd : end;
+    if (chunkEnd < end && (end.getTime() - chunkEnd.getTime()) <= TAIL_MERGE_WINDOW_MS) {
+      effectiveEnd = end;
+    }
+    
+    console.log('[syncCalendarToSheetGAS] Syncing chunk:', { start: currentStart.toISOString(), end: effectiveEnd.toISOString() });
+    
+    _syncCalendarToSheetGAS(cfg, currentStart, effectiveEnd);
+    
+    // Checkpoint after each successful chunk
+    saveLastSyncTime(cfg, effectiveEnd);
+    console.log('[syncCalendarToSheetGAS] Checkpointed:', effectiveEnd.toISOString());
+    
+    // Move to next chunk
+    currentStart = effectiveEnd;
+    iterationCount++;
+  }
+  
+  if (iterationCount >= maxIterations) {
+    console.log('[syncCalendarToSheetGAS] Warning: reached maximum iteration limit');
+  }
 }
 
 function syncAllCalendarsToSheetsGAS(startIso, endIso) {
   const cfgs = getConfigs();
   for (let i = 0; i < cfgs.length; i++) {
     try {
-      let start = startIso ? new Date(startIso) : getLastSyncTime(cfgs[i]);
-      const end = endIso ? new Date(endIso) : new Date();
-      _syncCalendarToSheetGAS(cfgs[i], start, end);
+      const checkpoint = getLastSyncTime(cfgs[i]);
+      const now = new Date();
+      let start = startIso ? new Date(startIso) : checkpoint;
+      const end = endIso ? new Date(endIso) : now;
+      
+      // Validate: if checkpoint is in the future, reset it
+      if (start > end) {
+        console.log('[syncAllCalendarsToSheetsGAS] Warning: start time is after end time for calendar', cfgs[i].calendarId, ', resetting checkpoint');
+        clearCheckpoint(cfgs[i]);
+        start = getLastSyncTime(cfgs[i]);
+      }
 
-      // Update checkpoint to current time after successful sync
-      saveLastSyncTime(cfgs[i], new Date());
+      if ((now.getTime() - start.getTime()) <= DEFAULT_SYNC_WINDOW_MS) {
+        start = new Date(start.getTime() - DEFAULT_SYNC_WINDOW_MS);
+      }
+      
+      // Sync in 1-year chunks to prevent timeouts
+      // After each chunk, checkpoint progress so we can resume if interrupted
+      let currentStart = start;
+      let iterationCount = 0;
+      const maxIterations = 100; // Safety limit to prevent infinite loops
+      
+      while (currentStart < end && iterationCount < maxIterations) {
+        // Calculate the end of this chunk (1 year from current start, but not beyond target end)
+        const chunkEnd = new Date(currentStart.getTime() + DEFAULT_SYNC_WINDOW_MS);
+        let effectiveEnd = chunkEnd < end ? chunkEnd : end;
+        if (chunkEnd < end && (end.getTime() - chunkEnd.getTime()) <= TAIL_MERGE_WINDOW_MS) {
+          effectiveEnd = end;
+        }
+        
+        console.log('[syncAllCalendarsToSheetsGAS] Syncing chunk for calendar', cfgs[i].calendarId, ':', { start: currentStart.toISOString(), end: effectiveEnd.toISOString() });
+        
+        _syncCalendarToSheetGAS(cfgs[i], currentStart, effectiveEnd);
+        
+        // Checkpoint after each successful chunk
+        saveLastSyncTime(cfgs[i], effectiveEnd);
+        console.log('[syncAllCalendarsToSheetsGAS] Checkpointed calendar', cfgs[i].calendarId, ':', effectiveEnd.toISOString());
+        
+        // Move to next chunk
+        currentStart = effectiveEnd;
+        iterationCount++;
+      }
+      
+      if (iterationCount >= maxIterations) {
+        console.log('[syncAllCalendarsToSheetsGAS] Warning: reached maximum iteration limit for calendar', cfgs[i].calendarId);
+      }
     } catch (e) {
       // Log and continue with other calendars; do not advance checkpoint on failure
       if (typeof Logger !== 'undefined' && Logger.log) {
@@ -200,21 +291,55 @@ function syncAllCalendarsToSheetsGAS(startIso, endIso) {
 }
 
 /**
- * Resync within a limited window: clears checkpoint and syncs from ~1 year ago.
- * This avoids timeout issues with very large calendars while still capturing
- * recent deletions and updates. To resync the full calendar history, manually
- * set start = new Date(0) before calling _syncCalendarToSheetGAS.
- * Use sparingly as it may cause performance issues with large calendars.
+ * Full resync: clears the sheet and checkpoint(s), then resyncs calendar(s) from the beginning of time (epoch).
+ * 
+ * @param {number|null} configIndex - Index of specific config to resync, or null/undefined to resync all
+ * 
+ * Uses chunking logic to process large date ranges in 1-year increments, preventing timeouts.
+ * Checkpoints are saved after each chunk, allowing resumption if interrupted.
  */
 function fullResyncCalendarToSheetGAS(configIndex) {
   const cfgs = getConfigs();
-  const cfg = cfgs[configIndex || 0];
-  clearCheckpoint(cfg);
-  // Resync from 1 year ago to present
-  const start = new Date(Date.now() - DEFAULT_SYNC_WINDOW_MS);
+  const start = new Date(0);
   const end = new Date();
-  _syncCalendarToSheetGAS(cfg, start, end);
-  saveLastSyncTime(cfg, new Date());
+  
+  // If configIndex is specified, sync only that config
+  if (configIndex !== null && configIndex !== undefined) {
+    const cfg = cfgs[configIndex];
+    if (cfg) {
+      clearCheckpoint(cfg);
+      // Clear sheet content (except header) before full resync
+      const ss = cfg && cfg.spreadsheetId ? SpreadsheetApp.openById(cfg.spreadsheetId) : SpreadsheetApp.getActiveSpreadsheet();
+      const sheet = ss.getSheetByName(cfg && cfg.sheetName ? cfg.sheetName : 'Sheet1') || ss.getSheets()[0];
+      const data = sheet.getDataRange().getValues();
+      if (data.length > 1) {
+        sheet.deleteRows(2, data.length - 1);
+      }
+      _syncCalendarToSheetGAS(cfg, start, end);
+      saveLastSyncTime(cfg, new Date());
+    }
+  } else {
+    // Otherwise, sync all configs
+    // First loop: clear checkpoints and sheets for all configs
+    for (let i = 0; i < cfgs.length; i++) {
+      try {
+        clearCheckpoint(cfgs[i]);
+        // Clear sheet content (except header) before full resync
+        const ss = cfgs[i] && cfgs[i].spreadsheetId ? SpreadsheetApp.openById(cfgs[i].spreadsheetId) : SpreadsheetApp.getActiveSpreadsheet();
+        const sheet = ss.getSheetByName(cfgs[i] && cfgs[i].sheetName ? cfgs[i].sheetName : 'Sheet1') || ss.getSheets()[0];
+        const data = sheet.getDataRange().getValues();
+        if (data.length > 1) {
+          sheet.deleteRows(2, data.length - 1);
+        }
+      } catch (e) {
+        if (typeof Logger !== 'undefined' && Logger.log) {
+          Logger.log('Error clearing calendar "' + ((cfgs[i] && cfgs[i].calendarId) || 'default') + '": ' + e);
+        }
+      }
+    }
+    // Use syncAllCalendarsToSheetsGAS which handles chunking and error handling
+    syncAllCalendarsToSheetsGAS(start.toISOString(), end.toISOString());
+  }
 }
 
 // Export for testing in Node environments
