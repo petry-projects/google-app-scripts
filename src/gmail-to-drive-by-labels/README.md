@@ -206,7 +206,11 @@ function getProcessConfig() {
       docId: "YOUR_GOOGLE_DOC_ID_HERE", 
       
       // The Drive Folder ID found in step 3
-      folderId: "YOUR_DRIVE_FOLDER_ID_HERE" 
+      folderId: "YOUR_DRIVE_FOLDER_ID_HERE",
+      
+      // Optional: number of emails/threads to process per execution (default is 250)
+      // Adjust this if you hit script timeouts during processing or rebuilds.
+      batchSize: 250
     }
   ];
 }

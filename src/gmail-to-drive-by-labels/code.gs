@@ -74,6 +74,21 @@ function removeExistingThreadFromDoc(body, threadId) {
   return true;
 }
 
+/**
+ * High-level entry point to rebuild all destination documents for every process configuration.
+ *
+ * For each config returned by getProcessConfig(), this calls rebuildDoc(config) to:
+ *   - Clear the associated document
+ *   - Move previously processed emails back to their trigger label
+ *
+ * rebuildDoc() is designed to respect Apps Script execution time limits and may return false
+ * when it needs to pause. In that case, rebuildAllDocs() stops processing the remaining
+ * configurations and logs that it should be run again to continue the rebuild.
+ *
+ * When all configurations have been successfully rebuilt in one or more runs, this function
+ * logs that rebuild preparation is complete and instructs the caller to run
+ * storeEmailsAndAttachments() to reprocess all emails into the freshly rebuilt documents.
+ */
 function rebuildAllDocs() {
   console.log('[rebuildAllDocs] Starting rebuild process');
   var PROCESS_CONFIG = getProcessConfig();
@@ -262,11 +277,15 @@ function processLabelGroup(config) {
   
   // Sort threads by last message date (newest first) to ensure reverse chronological order
   // This handles cases where Gmail API returns threads in random order or when older threads are labeled
+  // Precompute last message timestamps to avoid repeated Gmail service calls during sort
+  var threadLastDates = {};
+  threads.forEach(function(thread) {
+    threadLastDates[thread.getId()] = thread.getLastMessageDate().getTime();
+  });
+
   threads.sort(function(a, b) {
-    var aMessages = a.getMessages();
-    var bMessages = b.getMessages();
-    var aLastDate = aMessages[aMessages.length - 1].getDate().getTime();
-    var bLastDate = bMessages[bMessages.length - 1].getDate().getTime();
+    var aLastDate = threadLastDates[a.getId()];
+    var bLastDate = threadLastDates[b.getId()];
     return bLastDate - aLastDate; // Descending order (newest first)
   });
   console.log('[processLabelGroup] Sorted threads by last message date (newest first)');
@@ -291,8 +310,10 @@ function processLabelGroup(config) {
     var threadId = thread.getId();
     console.log('[processLabelGroup] Thread', threadIndex + 1, 'has', messages.length, 'messages, ID:', threadId);
     
-    // Remove existing thread content if it already exists in the document
-    removeExistingThreadFromDoc(body, threadId);
+    // Remove existing thread content only if this thread's ID is present in the document
+    if (body.findText(threadId)) {
+      removeExistingThreadFromDoc(body, threadId);
+    }
     
     // Sort messages by date (oldest first) so when we prepend (insert at index 0),
     // the newest messages end up at the top of the document
