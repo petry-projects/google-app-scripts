@@ -170,4 +170,22 @@ function processMessagesToDoc(messages, body, folder, options = {}) {
   return sortedMessages.length;
 }
 
-module.exports = { processMessageToDoc, processMessagesToDoc };
+/**
+ * Sort threads by their last message date in reverse chronological order (newest first).
+ * This ensures threads are always processed in the correct order regardless of how
+ * the Gmail API returns them or when they were labeled.
+ * 
+ * @param {Array} threads - Array of Gmail thread objects
+ * @returns {Array} Sorted array of threads (newest first)
+ */
+function sortThreadsByLastMessageDate(threads) {
+  return threads.slice().sort(function(a, b) {
+    const aMessages = a.getMessages();
+    const bMessages = b.getMessages();
+    const aLastDate = aMessages[aMessages.length - 1].getDate().getTime();
+    const bLastDate = bMessages[bMessages.length - 1].getDate().getTime();
+    return bLastDate - aLastDate; // Descending order (newest first)
+  });
+}
+
+module.exports = { processMessageToDoc, processMessagesToDoc, sortThreadsByLastMessageDate };

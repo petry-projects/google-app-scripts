@@ -54,6 +54,17 @@ function processLabelGroup(config) {
     return;
   }
   console.log('[processLabelGroup] Found', threads.length, 'threads to process');
+  
+  // Sort threads by last message date (newest first) to ensure reverse chronological order
+  // This handles cases where Gmail API returns threads in random order or when older threads are labeled
+  threads.sort(function(a, b) {
+    var aMessages = a.getMessages();
+    var bMessages = b.getMessages();
+    var aLastDate = aMessages[aMessages.length - 1].getDate().getTime();
+    var bLastDate = bMessages[bMessages.length - 1].getDate().getTime();
+    return bLastDate - aLastDate; // Descending order (newest first)
+  });
+  console.log('[processLabelGroup] Sorted threads by last message date (newest first)');
 
   // 3. Open Destination Doc and Folder
   console.log('[processLabelGroup] Opening doc:', config.docId, 'and folder:', config.folderId);
