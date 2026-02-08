@@ -48,7 +48,7 @@ function createBlob(bytesOrBuffer, name = 'file.bin') {
       // Return a new blob with the same content
       return createBlob(buf, name);
     },
-    bytes: buf, // For test compatibility
+    bytes: buf, // Direct buffer access for tests that need it without method call
     asBuffer: () => buf
   };
 }

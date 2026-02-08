@@ -62,6 +62,7 @@ function processMessageToDoc(message, body, folder, options = {}) {
       console.log('[processMessageToDoc] Processing attachment', attIndex + 1, 'of', attachments.length, ':', att.getName());
       
       let fileName = att.getName();
+      // In GAS environment, copyBlob() creates a copy; in test environment, att itself is the blob
       const newFileBlob = att.copyBlob ? att.copyBlob() : att;
       let isDuplicate = false;
       
@@ -76,6 +77,7 @@ function processMessageToDoc(message, body, folder, options = {}) {
         console.log('[processMessageToDoc] Comparing with existing file', existingCount);
         
         // Compare sizes first (fast fail)
+        // Try getBytes() for GAS blobs, bytes property for test mocks, empty buffer as fallback
         const newFileBytes = newFileBlob.getBytes ? newFileBlob.getBytes() : newFileBlob.bytes || Buffer.from('');
         if (existingFile.getSize() === newFileBytes.length) {
           console.log('[processMessageToDoc] Size match, checking hash');
