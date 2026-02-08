@@ -1,6 +1,7 @@
 const { createMessage, createBlob } = require('../../../test-utils/mocks');
+const { processMessageToDoc, processMessagesToDoc } = require('../src/index');
 
-// This test simulates the actual email processing flow from code.gs
+// This test uses the actual processing functions from src/index.js
 // to verify that the prepend behavior works correctly end-to-end
 describe('Gmail to Drive integration with prepend behavior', () => {
   let doc, body, folder, processedLabel;
@@ -44,33 +45,13 @@ describe('Gmail to Drive integration with prepend behavior', () => {
     // Add them to a thread
     global.GmailApp.__addThreadWithLabels(['test-trigger'], [msg1, msg2, msg3]);
     
-    // Simulate processing like code.gs does
+    // Process using the real function
     const threads = triggerLabel.getThreads();
     expect(threads.length).toBe(1);
     
     threads.forEach((thread) => {
       const messages = thread.getMessages();
-      
-      // Sort messages by date (oldest first) like code.gs does
-      messages.sort(function(a, b) {
-        return a.getDate().getTime() - b.getDate().getTime();
-      });
-      
-      messages.forEach((message) => {
-        var currentIndex = 0;
-        const subject = message.getSubject();
-        const rawContent = message.getPlainBody();
-        const timestamp = message.getDate();
-        
-        // Prepend to doc (simulating code.gs behavior)
-        const subjectText = "Subject: " + (subject ? subject : "(No Subject)");
-        const headingPara = body.insertParagraph(currentIndex++, subjectText);
-        headingPara.setHeading('HEADING_3');
-        
-        body.insertParagraph(currentIndex++, "Date: " + timestamp);
-        body.insertParagraph(currentIndex++, rawContent);
-        body.insertParagraph(currentIndex++, "------------------------------");
-      });
+      processMessagesToDoc(messages, body, folder);
     });
     
     // Verify: Most recent email should be at the top
@@ -94,7 +75,7 @@ describe('Gmail to Drive integration with prepend behavior', () => {
     expect(paragraphs[10].getText()).toBe('Content of first email');
   });
 
-  test('prepends email with attachments correctly', () => {
+  test('prepends email with attachments correctly using production deduplication logic', () => {
     const triggerLabel = global.GmailApp.createLabel('test-trigger');
     
     // Create attachments
@@ -110,32 +91,11 @@ describe('Gmail to Drive integration with prepend behavior', () => {
     
     global.GmailApp.__addThreadWithLabels(['test-trigger'], [msg]);
     
-    // Simulate processing
+    // Process using the real function
     const threads = triggerLabel.getThreads();
     const messages = threads[0].getMessages();
-    const message = messages[0];
     
-    var currentIndex = 0;
-    const subject = message.getSubject();
-    const timestamp = message.getDate();
-    const attachments = message.getAttachments();
-    
-    // Prepend subject, date, content
-    body.insertParagraph(currentIndex++, "Subject: " + subject);
-    body.insertParagraph(currentIndex++, "Date: " + timestamp);
-    body.insertParagraph(currentIndex++, message.getPlainBody());
-    
-    // Prepend attachments section
-    if (attachments.length > 0) {
-      body.insertParagraph(currentIndex++, "[Attachments]:");
-      
-      attachments.forEach((att) => {
-        const file = folder.createFile(att);
-        body.insertParagraph(currentIndex++, "- " + file.getName());
-      });
-    }
-    
-    body.insertParagraph(currentIndex++, "------------------------------");
+    processMessagesToDoc(messages, body, folder);
     
     // Verify structure
     const paragraphs = body.getParagraphs();
@@ -167,15 +127,11 @@ describe('Gmail to Drive integration with prepend behavior', () => {
     
     global.GmailApp.__addThreadWithLabels(['test-trigger'], [msg]);
     
-    // Process the new email
+    // Process using the real function
     const threads = triggerLabel.getThreads();
     const message = threads[0].getMessages()[0];
     
-    var currentIndex = 0;
-    body.insertParagraph(currentIndex++, "Subject: " + message.getSubject());
-    body.insertParagraph(currentIndex++, "Date: " + message.getDate());
-    body.insertParagraph(currentIndex++, message.getPlainBody());
-    body.insertParagraph(currentIndex++, "------------------------------");
+    processMessageToDoc(message, body, folder);
     
     // Verify new content is at top, old content at bottom
     const paragraphs = body.getParagraphs();
@@ -209,19 +165,13 @@ describe('Gmail to Drive integration with prepend behavior', () => {
     global.GmailApp.__addThreadWithLabels(['test-trigger'], [thread1Msg]);
     global.GmailApp.__addThreadWithLabels(['test-trigger'], [thread2Msg]);
     
-    // Process all threads
+    // Process all threads using real function
     const threads = triggerLabel.getThreads();
     expect(threads.length).toBe(2);
     
     threads.forEach((thread) => {
       const messages = thread.getMessages();
-      messages.forEach((message) => {
-        var currentIndex = 0;
-        body.insertParagraph(currentIndex++, "Subject: " + message.getSubject());
-        body.insertParagraph(currentIndex++, "Date: " + message.getDate());
-        body.insertParagraph(currentIndex++, message.getPlainBody());
-        body.insertParagraph(currentIndex++, "------------------------------");
-      });
+      processMessagesToDoc(messages, body, folder);
     });
     
     // Verify both threads are in document
@@ -231,5 +181,34 @@ describe('Gmail to Drive integration with prepend behavior', () => {
     // Most recently processed thread should be at top
     expect(paragraphs[0].getText()).toBe('Subject: Thread 2 Email');
     expect(paragraphs[4].getText()).toBe('Subject: Thread 1 Email');
+  });
+
+  test('handles attachment deduplication correctly', () => {
+    // Pre-create a file in the folder
+    const existingBlob = createBlob('duplicate content', 'duplicate.txt');
+    folder.createFile(existingBlob);
+    
+    // Create a message with the same attachment
+    const duplicateAttachment = createBlob('duplicate content', 'duplicate.txt');
+    const msg = createMessage({
+      subject: 'Email with Duplicate',
+      body: 'Test deduplication',
+      date: new Date('2024-01-01T10:00:00Z'),
+      attachments: [duplicateAttachment]
+    });
+    
+    global.GmailApp.__addThreadWithLabels(['test-trigger'], [msg]);
+    const threads = global.GmailApp.getUserLabelByName('test-trigger').getThreads();
+    const messages = threads[0].getMessages();
+    
+    processMessagesToDoc(messages, body, folder);
+    
+    // Verify duplicate was skipped
+    const paragraphs = body.getParagraphs();
+    expect(paragraphs.some(p => p.getText().includes('[DUPLICATE SKIPPED]'))).toBe(true);
+    
+    // Should still only have 1 file (the original)
+    const files = folder.__getFiles();
+    expect(files.length).toBe(1);
   });
 });
