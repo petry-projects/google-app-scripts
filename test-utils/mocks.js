@@ -44,6 +44,11 @@ function createBlob(bytesOrBuffer, name = 'file.bin') {
     getBytes: () => buf,
     getName: () => name,
     setName: function(newName) { name = newName; },
+    copyBlob: function() { 
+      // Return a new blob with the same content
+      return createBlob(buf, name);
+    },
+    bytes: buf, // For test compatibility
     asBuffer: () => buf
   };
 }
