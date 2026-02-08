@@ -1,4 +1,5 @@
 const { createMessage } = require('../../../test-utils/mocks');
+const { rebuildDoc: rebuildDocCore, rebuildAllDocs: rebuildAllDocsCore } = require('../src/index.js');
 
 // Mock the config
 global.getProcessConfig = jest.fn(() => [
@@ -10,20 +11,23 @@ global.getProcessConfig = jest.fn(() => [
   }
 ]);
 
-// NOTE: These tests are skipped because they try to require('../code.gs') which is a Google Apps Script
-// file and cannot be imported as a Node.js module. The functions being tested (rebuildDoc, rebuildAllDocs)
-// exist in code.gs and work correctly in the GAS runtime environment.
-//
-// To make these tests work, the functions would need to be extracted to src/index.js with module.exports
-// (similar to processMessagesToDoc, sortThreadsByLastMessageDate, etc.) and the tests would need to
-// import from there instead. This is tracked as technical debt for future refactoring.
-//
-// The rebuild functionality can be manually tested in the GAS environment.
+// Helper to wrap rebuildDoc with GAS services
+function rebuildDoc(config) {
+  const services = {
+    GmailApp: global.GmailApp,
+    DocumentApp: global.DocumentApp,
+    PropertiesService: global.PropertiesService
+  };
+  return rebuildDocCore(config, services);
+}
 
-// Load the code after mocks are set up
-// const { rebuildDoc, rebuildAllDocs } = require('../code.gs');
+// Helper to wrap rebuildAllDocs
+function rebuildAllDocs() {
+  const configs = global.getProcessConfig();
+  return rebuildAllDocsCore(configs, rebuildDoc);
+}
 
-describe.skip('rebuildDoc', () => {
+describe('rebuildDoc', () => {
   beforeEach(() => {
     global.GmailApp.__reset();
     global.DocumentApp.__reset();
@@ -353,7 +357,7 @@ describe.skip('rebuildDoc', () => {
   });
 });
 
-describe.skip('rebuildAllDocs', () => {
+describe('rebuildAllDocs', () => {
   beforeEach(() => {
     global.GmailApp.__reset();
     global.DocumentApp.__reset();

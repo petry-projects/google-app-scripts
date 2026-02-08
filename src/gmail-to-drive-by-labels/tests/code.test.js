@@ -1,4 +1,12 @@
 const { createMessage, createBlob } = require('../../../test-utils/mocks');
+const { 
+  storeEmailsAndAttachments: storeEmailsCore, 
+  processLabelGroup: processLabelGroupCore,
+  removeExistingThread,
+  rebuildDoc: rebuildDocCore,
+  rebuildAllDocs: rebuildAllDocsCore
+} = require('../src/index.js');
+const { getCleanBody, getFileHash } = require('../../gas-utils');
 
 // Mock getProcessConfig
 global.getProcessConfig = jest.fn(() => [
@@ -10,20 +18,47 @@ global.getProcessConfig = jest.fn(() => [
   }
 ]);
 
-// NOTE: These tests are skipped because they try to require('../code.gs') which is a Google Apps Script
-// file and cannot be imported as a Node.js module. The functions being tested (storeEmailsAndAttachments,
-// processLabelGroup) exist in code.gs and work correctly in the GAS runtime environment.
-// 
-// To make these tests work, the functions would need to be extracted to src/index.js with module.exports
-// (similar to processMessagesToDoc, sortThreadsByLastMessageDate, etc.) and the tests would need to
-// import from there instead. This is tracked as technical debt for future refactoring.
-//
-// Core functionality IS tested via integration tests in integration.test.js.
+// Helper to wrap processLabelGroup with GAS services
+function processLabelGroup(config) {
+  const services = {
+    GmailApp: global.GmailApp,
+    DocumentApp: global.DocumentApp,
+    DriveApp: global.DriveApp,
+    Logger: global.Logger,
+    Utilities: global.Utilities,
+    Session: global.Session
+  };
+  const helperFns = {
+    getCleanBody,
+    getFileHash,
+    removeExistingThreadFromDoc: (body, threadId) => removeExistingThread(body, threadId)
+  };
+  return processLabelGroupCore(config, services, helperFns);
+}
 
-// Load code.gs functions
-// const { storeEmailsAndAttachments, processLabelGroup } = require('../code.gs');
+// Helper to wrap storeEmailsAndAttachments
+function storeEmailsAndAttachments() {
+  const configs = global.getProcessConfig();
+  return storeEmailsCore(configs, processLabelGroup);
+}
 
-describe.skip('storeEmailsAndAttachments', () => {
+// Helper to wrap rebuildDoc with GAS services
+function rebuildDoc(config) {
+  const services = {
+    GmailApp: global.GmailApp,
+    DocumentApp: global.DocumentApp,
+    PropertiesService: global.PropertiesService
+  };
+  return rebuildDocCore(config, services);
+}
+
+// Helper to wrap rebuildAllDocs
+function rebuildAllDocs() {
+  const configs = global.getProcessConfig();
+  return rebuildAllDocsCore(configs, rebuildDoc);
+}
+
+describe('storeEmailsAndAttachments', () => {
   beforeEach(() => {
     global.__mocks.docs.__reset();
     global.__mocks.gmail.__reset();
@@ -108,9 +143,6 @@ describe.skip('storeEmailsAndAttachments', () => {
   });
 
   test('handles pause when rebuild does not complete', () => {
-    // Import rebuildAllDocs
-    const { rebuildAllDocs } = require('../code.gs');
-    
     // Setup config with many threads to trigger timeout simulation
     global.getProcessConfig.mockReturnValue([
       {
@@ -157,7 +189,7 @@ describe.skip('storeEmailsAndAttachments', () => {
   });
 });
 
-describe.skip('processLabelGroup', () => {
+describe('processLabelGroup', () => {
   beforeEach(() => {
     global.__mocks.docs.__reset();
     global.__mocks.gmail.__reset();
