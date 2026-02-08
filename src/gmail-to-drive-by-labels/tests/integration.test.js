@@ -211,4 +211,283 @@ describe('Gmail to Drive integration with prepend behavior', () => {
     const files = folder.__getFiles();
     expect(files.length).toBe(1);
   });
+
+  test('handles attachment name conflicts with timestamp renaming', () => {
+    // Pre-create a file with same name but different content
+    const existingBlob = createBlob('original content', 'file.txt');
+    folder.createFile(existingBlob);
+    
+    // Create a message with attachment that has same name but different content
+    const newAttachment = createBlob('new content', 'file.txt');
+    const msg = createMessage({
+      subject: 'Email with Name Conflict',
+      body: 'Test name conflict',
+      date: new Date('2024-01-01T10:00:00Z'),
+      attachments: [newAttachment]
+    });
+    
+    global.GmailApp.__addThreadWithLabels(['test-trigger'], [msg]);
+    const threads = global.GmailApp.getUserLabelByName('test-trigger').getThreads();
+    const messages = threads[0].getMessages();
+    
+    processMessagesToDoc(messages, body, folder);
+    
+    // Should have 2 files now (original and renamed new one)
+    const files = folder.__getFiles();
+    expect(files.length).toBe(2);
+    
+    // New file should have timestamp in name
+    const fileNames = files.map(f => f.getName());
+    expect(fileNames).toContain('file.txt');
+    expect(fileNames.some(name => name.startsWith('file_') && name.endsWith('.txt'))).toBe(true);
+  });
+
+  test('handles files with size mismatch correctly', () => {
+    // Pre-create a file
+    const existingBlob = createBlob('short content', 'test.txt');
+    folder.createFile(existingBlob);
+    
+    // Create attachment with same name but different size
+    const newAttachment = createBlob('much longer content here', 'test.txt');
+    const msg = createMessage({
+      subject: 'Email with Different Size',
+      body: 'Test size mismatch',
+      date: new Date('2024-01-01T10:00:00Z'),
+      attachments: [newAttachment]
+    });
+    
+    global.GmailApp.__addThreadWithLabels(['test-trigger'], [msg]);
+    const threads = global.GmailApp.getUserLabelByName('test-trigger').getThreads();
+    const messages = threads[0].getMessages();
+    
+    processMessagesToDoc(messages, body, folder);
+    
+    // Should have 2 files (size mismatch means not a duplicate)
+    const files = folder.__getFiles();
+    expect(files.length).toBe(2);
+  });
+
+  test('handles files with same size but different hash', () => {
+    // Pre-create a file
+    const existingBlob = createBlob('content_a', 'hash-test.txt');
+    folder.createFile(existingBlob);
+    
+    // Create attachment with same name and size but different content
+    const newAttachment = createBlob('content_b', 'hash-test.txt');
+    const msg = createMessage({
+      subject: 'Email with Hash Mismatch',
+      body: 'Test hash comparison',
+      date: new Date('2024-01-01T10:00:00Z'),
+      attachments: [newAttachment]
+    });
+    
+    global.GmailApp.__addThreadWithLabels(['test-trigger'], [msg]);
+    const threads = global.GmailApp.getUserLabelByName('test-trigger').getThreads();
+    const messages = threads[0].getMessages();
+    
+    processMessagesToDoc(messages, body, folder);
+    
+    // Should have 2 files (hash mismatch means different content)
+    const files = folder.__getFiles();
+    expect(files.length).toBe(2);
+  });
+
+  test('handles attachments with no file extension', () => {
+    const attachment = createBlob('file content', 'README');
+    const msg = createMessage({
+      subject: 'Email with No Extension',
+      body: 'Test file without extension',
+      date: new Date('2024-01-01T10:00:00Z'),
+      attachments: [attachment]
+    });
+    
+    // Pre-create a file with same name to trigger renaming
+    folder.createFile(createBlob('different content', 'README'));
+    
+    global.GmailApp.__addThreadWithLabels(['test-trigger'], [msg]);
+    const threads = global.GmailApp.getUserLabelByName('test-trigger').getThreads();
+    const messages = threads[0].getMessages();
+    
+    processMessagesToDoc(messages, body, folder);
+    
+    // Verify paragraph mentions the attachment
+    const paragraphs = body.getParagraphs();
+    expect(paragraphs.some(p => p.getText().includes('README'))).toBe(true);
+    
+    // Should have 2 files (original and new with timestamp)
+    const files = folder.__getFiles();
+    expect(files.length).toBe(2);
+  });
+
+  test('handles messages with Logger and DocumentApp options', () => {
+    const msg = createMessage({
+      subject: 'Test with Options',
+      body: 'Testing Logger and DocumentApp',
+      date: new Date('2024-01-01T10:00:00Z')
+    });
+    
+    // Mock Logger and DocumentApp
+    const mockLogger = {
+      log: jest.fn()
+    };
+    
+    const mockDocumentApp = {
+      ParagraphHeading: { HEADING_3: 'HEADING_3' },
+      Attribute: { BOLD: 'BOLD' }
+    };
+    
+    const options = {
+      Logger: mockLogger,
+      DocumentApp: mockDocumentApp
+    };
+    
+    processMessageToDoc(msg, body, folder, options);
+    
+    // Verify Logger was called
+    expect(mockLogger.log).toHaveBeenCalledWith(expect.stringContaining('Test with Options'));
+    
+    // Verify message was added
+    const paragraphs = body.getParagraphs();
+    expect(paragraphs[0].getText()).toBe('Subject: Test with Options');
+  });
+
+  test('handles DocumentApp setHeading failure with fallback to bold', () => {
+    const msg = createMessage({
+      subject: 'Test Heading Fallback',
+      body: 'Testing fallback',
+      date: new Date('2024-01-01T10:00:00Z')
+    });
+    
+    // Mock DocumentApp with setHeading that throws
+    const mockDocumentApp = {
+      ParagraphHeading: { HEADING_3: 'HEADING_3' },
+      Attribute: { BOLD: 'BOLD' }
+    };
+    
+    // Override insertParagraph to return para with setHeading that throws
+    const originalInsertParagraph = body.insertParagraph;
+    body.insertParagraph = function(index, text) {
+      const para = originalInsertParagraph.call(this, index, text);
+      para.setHeading = function() {
+        throw new Error('Document busy');
+      };
+      return para;
+    };
+    
+    const options = { DocumentApp: mockDocumentApp };
+    
+    processMessageToDoc(msg, body, folder, options);
+    
+    // Restore original
+    body.insertParagraph = originalInsertParagraph;
+    
+    // Verify message was still added despite error
+    const paragraphs = body.getParagraphs();
+    expect(paragraphs[0].getText()).toBe('Subject: Test Heading Fallback');
+  });
+
+  test('handles Utilities.sleep when provided', () => {
+    const msg = createMessage({
+      subject: 'Test with Utilities',
+      body: 'Testing Utilities.sleep',
+      date: new Date('2024-01-01T10:00:00Z')
+    });
+    
+    const mockUtilities = {
+      sleep: jest.fn()
+    };
+    
+    const options = {
+      Utilities: mockUtilities
+    };
+    
+    processMessageToDoc(msg, body, folder, options);
+    
+    // Verify Utilities.sleep was called
+    expect(mockUtilities.sleep).toHaveBeenCalledWith(500);
+  });
+
+  test('handles duplicate detection with Logger option', () => {
+    // Pre-create a file
+    const existingBlob = createBlob('duplicate content', 'dup.txt');
+    folder.createFile(existingBlob);
+    
+    // Create message with duplicate attachment
+    const duplicateAttachment = createBlob('duplicate content', 'dup.txt');
+    const msg = createMessage({
+      subject: 'Email with Duplicate and Logger',
+      body: 'Test Logger on duplicate',
+      date: new Date('2024-01-01T10:00:00Z'),
+      attachments: [duplicateAttachment]
+    });
+    
+    const mockLogger = {
+      log: jest.fn()
+    };
+    
+    const options = {
+      Logger: mockLogger
+    };
+    
+    global.GmailApp.__addThreadWithLabels(['test-trigger'], [msg]);
+    const threads = global.GmailApp.getUserLabelByName('test-trigger').getThreads();
+    const messages = threads[0].getMessages();
+    
+    processMessagesToDoc(messages, body, folder, options);
+    
+    // Verify Logger.log was called for duplicate
+    expect(mockLogger.log).toHaveBeenCalledWith(expect.stringContaining('duplicate'));
+    
+    // Verify duplicate was skipped
+    const paragraphs = body.getParagraphs();
+    expect(paragraphs.some(p => p.getText().includes('[DUPLICATE SKIPPED]'))).toBe(true);
+  });
+
+  test('handles name conflict with Utilities and Session options', () => {
+    // Pre-create a file with same name but different content
+    const existingBlob = createBlob('original content', 'conflict.txt');
+    folder.createFile(existingBlob);
+    
+    // Create message with attachment that has same name but different content
+    const newAttachment = createBlob('new different content', 'conflict.txt');
+    const msg = createMessage({
+      subject: 'Email with Name Conflict and Utilities',
+      body: 'Test Utilities.formatDate',
+      date: new Date('2024-01-01T10:00:00Z'),
+      attachments: [newAttachment]
+    });
+    
+    const mockUtilities = {
+      formatDate: jest.fn().mockReturnValue('_123456'),
+      sleep: jest.fn()
+    };
+    
+    const mockSession = {
+      getScriptTimeZone: jest.fn().mockReturnValue('America/New_York')
+    };
+    
+    const options = {
+      Utilities: mockUtilities,
+      Session: mockSession
+    };
+    
+    global.GmailApp.__addThreadWithLabels(['test-trigger'], [msg]);
+    const threads = global.GmailApp.getUserLabelByName('test-trigger').getThreads();
+    const messages = threads[0].getMessages();
+    
+    processMessagesToDoc(messages, body, folder, options);
+    
+    // Verify Utilities.formatDate was called
+    expect(mockUtilities.formatDate).toHaveBeenCalled();
+    expect(mockSession.getScriptTimeZone).toHaveBeenCalled();
+    
+    // Should have 2 files (original and renamed new one)
+    const files = folder.__getFiles();
+    expect(files.length).toBe(2);
+    
+    // Verify one file has timestamp in name
+    const fileNames = files.map(f => f.getName());
+    expect(fileNames).toContain('conflict.txt');
+    expect(fileNames.some(name => name.includes('_123456'))).toBe(true);
+  });
 });
