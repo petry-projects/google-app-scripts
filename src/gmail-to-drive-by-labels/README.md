@@ -15,6 +15,7 @@ A robust Google Apps Script designed to automate the archiving of Gmail threads.
 * Strips quoted replies (e.g., "On [Date]... wrote:").
 * Removes "Confidentiality Notice" legal footers.
 * Removes lines starting with `>` or `<`.
+* Normalizes excessive line breaks to prevent blank lines in documents.
 
 **Content-Based De-duplication:** 
 * Uses MD5 hashing (digital fingerprinting) to detect if a file is an exact duplicate of one already in the folder, even if the filename is different.
@@ -128,6 +129,39 @@ The script uses regex patterns to clean the email body. It specifically looks fo
 * **Headers:** `On [Date], [Name] wrote:` (Gmail), `From: ... Sent:` (Outlook).
 * **Footers:** Any line containing "Confidentiality Notice" (case-insensitive) and everything following it.
 * **Quote characters:** Any line starting with `>` or `<`.
+
+### Line Break Normalization
+
+To prevent excessive blank lines in the generated documents, the script normalizes line breaks:
+
+* **Behavior:** All consecutive newlines (2 or more) are replaced with a single newline.
+* **Rationale:** When `insertParagraph()` inserts text into Google Docs, each `\n` character creates a paragraph break. Multiple consecutive newlines would create excessive blank lines, making documents unnecessarily long and harder to read.
+* **Impact:** Email signatures and formatted content appear compact without blank lines while preserving all content.
+
+**Example:**
+
+Before normalization:
+```
+Thank you!
+
+
+John Doe
+
+Software Engineer
+
+
+Acme Corp
+```
+
+After normalization (as it appears in the document):
+```
+Thank you!
+John Doe
+Software Engineer
+Acme Corp
+```
+
+This ensures documents remain readable and compact, especially when processing emails with formatted signatures or multiple paragraph breaks.
 
 ## License
 MIT

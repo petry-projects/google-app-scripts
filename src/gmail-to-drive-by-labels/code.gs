@@ -173,6 +173,7 @@ function rebuildDoc(config) {
 }
 
 /**
+>>>>>>> origin/main
  * Processes a single configuration group (Label -> Doc + Folder).
  */
 function processLabelGroup(config) {
@@ -349,6 +350,11 @@ function processLabelGroup(config) {
       Utilities.sleep(500);
     });
 
+    // Add a clear separator between threads (after all messages in a thread are processed)
+    if (messages.length > 0) {
+      body.insertParagraph(0, "==============================");
+    }
+
     // 5. Cleanup Labels
     console.log('[processLabelGroup] Updating labels for thread');
     triggerLabel.removeFromThread(thread);
@@ -394,7 +400,12 @@ function getCleanBody(text) {
     return !(trimmed.startsWith(">") || trimmed.startsWith("<"));
   });
 
-  return cleanLines.join('\n').trim();
+  // 3. THIRD PASS: Normalize line breaks (convert 2+ consecutive to 1)
+  // This prevents excessive blank lines in Google Docs where each \n creates a paragraph break
+  var result = cleanLines.join('\n').trim();
+  result = result.replace(/\n{2,}/g, '\n');
+  
+  return result;
 }
 
 /**
