@@ -160,13 +160,25 @@ describe('processLabelGroup', () => {
     const triggerLabel = global.GmailApp.createLabel('test-trigger');
     global.GmailApp.createLabel('test-archived');
     
-    const msg = createMessage({
-      subject: 'Test Subject',
-      body: 'Test body content',
+    // Create messages with different dates to test sorting
+    const msg1 = createMessage({
+      subject: 'Oldest Email',
+      body: 'Body 1',
       date: new Date('2024-01-01T10:00:00Z')
     });
+    const msg2 = createMessage({
+      subject: 'Newest Email',
+      body: 'Body 2',
+      date: new Date('2024-01-01T12:00:00Z')
+    });
+    const msg3 = createMessage({
+      subject: 'Middle Email',
+      body: 'Body 3',
+      date: new Date('2024-01-01T11:00:00Z')
+    });
     
-    global.GmailApp.__addThreadWithLabels(['test-trigger'], [msg]);
+    // Add in non-sorted order
+    global.GmailApp.__addThreadWithLabels(['test-trigger'], [msg2, msg1, msg3]);
     
     const doc = global.DocumentApp.openById('test-doc');
     const body = doc.getBody();
@@ -188,7 +200,12 @@ describe('processLabelGroup', () => {
     
     const paragraphs = body.getParagraphs();
     expect(paragraphs.length).toBeGreaterThan(0);
-    expect(paragraphs[0].getText()).toContain('Test Subject');
+    
+    // Verify messages are in order (newest first in doc due to prepend)
+    const subjectParas = paragraphs.filter(p => p.getText().includes('Subject:'));
+    expect(subjectParas[0].getText()).toContain('Newest Email');
+    expect(subjectParas[1].getText()).toContain('Middle Email');
+    expect(subjectParas[2].getText()).toContain('Oldest Email');
   });
 
   test('creates processed label if it does not exist', () => {
@@ -490,28 +507,32 @@ describe('processLabelGroup', () => {
     global.GmailApp.createLabel('test-archived');
     
     const msg = createMessage({
-      subject: 'Test',
-      body: 'Body'
+      subject: 'Test Subject',
+      body: 'Test body'
     });
     
     global.GmailApp.__addThreadWithLabels(['test-trigger'], [msg]);
     
     const doc = global.DocumentApp.openById('test-doc');
     const body = doc.getBody();
+    global.DriveApp.getFolderById('test-folder');
     
-    // Mock insertParagraph to return a paragraph that throws on setHeading
-    const originalInsertParagraph = body.insertParagraph;
-    let callCount = 0;
-    body.insertParagraph = function(index, text) {
-      const para = originalInsertParagraph.call(this, index, text);
-      callCount++;
-      if (callCount === 1 && text.includes('Subject:')) {
-        // First call is for subject line, make setHeading throw
+    // Spy on insertParagraph and make setHeading throw for subject line
+    const originalInsertParagraph = body.insertParagraph.bind(body);
+    let setHeadingThrew = false;
+    
+    body.insertParagraph = (index, text) => {
+      const para = originalInsertParagraph(index, text);
+      
+      // Make setHeading throw for subject line
+      if (text && text.includes('Subject:')) {
         const originalSetHeading = para.setHeading;
-        para.setHeading = jest.fn(() => {
-          throw new Error('setHeading failed');
-        });
+        para.setHeading = (heading) => {
+          setHeadingThrew = true;
+          throw new Error('Document is busy');
+        };
       }
+      
       return para;
     };
     
@@ -523,11 +544,60 @@ describe('processLabelGroup', () => {
       folderId: 'test-folder'
     };
     
-    // Should not throw
+    // Should not throw - catch block should handle error
     expect(() => processLabelGroup(config)).not.toThrow();
     
-    // Verify content was added despite error
+    // Verify setHeading was called and threw
+    expect(setHeadingThrew).toBe(true);
+    
+    // Verify content was still added despite the error
     const paragraphs = body.getParagraphs();
     expect(paragraphs.length).toBeGreaterThan(0);
+    
+    // Verify subject paragraph exists
+    const subjectExists = paragraphs.some(p => p.getText().includes('Test Subject'));
+    expect(subjectExists).toBe(true);
+  });
+
+  test('processes email body with reply headers using getCleanBody', () => {
+    // Setup
+    global.GmailApp.createLabel('test-trigger');
+    global.GmailApp.createLabel('test-archived');
+    
+    // Create message with Gmail reply header
+    const bodyWithHeader = `This is the actual content.
+
+On Mon, Jan 1, 2024 at 10:00 AM Someone <someone@example.com> wrote:
+> This is quoted text that should be removed.
+> More quoted text.`;
+    
+    const msg = createMessage({
+      subject: 'Test Email',
+      body: bodyWithHeader
+    });
+    
+    global.GmailApp.__addThreadWithLabels(['test-trigger'], [msg]);
+    
+    const doc = global.DocumentApp.openById('test-doc');
+    const body = doc.getBody();
+    global.DriveApp.getFolderById('test-folder');
+    
+    // Run
+    const config = {
+      triggerLabel: 'test-trigger',
+      processedLabel: 'test-archived',
+      docId: 'test-doc',
+      folderId: 'test-folder'
+    };
+    processLabelGroup(config);
+    
+    // Verify
+    const paragraphs = body.getParagraphs();
+    const bodyText = paragraphs.map(p => p.getText()).join('\n');
+    
+    // Should include the actual content
+    expect(bodyText).toContain('This is the actual content');
+    // Should NOT include the quoted reply
+    expect(bodyText).not.toContain('This is quoted text that should be removed');
   });
 });
