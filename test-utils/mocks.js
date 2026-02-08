@@ -114,7 +114,7 @@ function createDocument(id = 'doc1') {
             getText: () => text
           });
         }
-      }
+      },
       insertParagraph: (childIndex, text) => {
         // Validate childIndex like Apps Script does
         if (typeof childIndex !== 'number' || childIndex < 0 || childIndex > paragraphs.length) {
