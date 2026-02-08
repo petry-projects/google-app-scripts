@@ -44,6 +44,11 @@ function createBlob(bytesOrBuffer, name = 'file.bin') {
     getBytes: () => buf,
     getName: () => name,
     setName: function(newName) { name = newName; },
+    copyBlob: function() { 
+      // Return a new blob with the same content
+      return createBlob(buf, name);
+    },
+    bytes: buf, // Direct buffer access for tests that need it without method call
     asBuffer: () => buf
   };
 }
@@ -87,6 +92,20 @@ function createDocument(id = 'doc1') {
           getText: () => para.text
         };
         paragraphs.push(para);
+        return para;
+      },
+      insertParagraph: (childIndex, text) => {
+        // Validate childIndex like Apps Script does
+        if (typeof childIndex !== 'number' || childIndex < 0 || childIndex > paragraphs.length) {
+          throw new Error('Invalid childIndex: ' + childIndex);
+        }
+        const para = {
+          text,
+          setHeading: (h) => { para.heading = h; },
+          setAttributes: (s) => { para.attrs = s; },
+          getText: () => para.text
+        };
+        paragraphs.splice(childIndex, 0, para);
         return para;
       },
       getParagraphs: () => paragraphs.slice()

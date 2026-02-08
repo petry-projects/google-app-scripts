@@ -74,6 +74,12 @@ function processLabelGroup(config) {
     var messages = thread.getMessages();
     console.log('[processLabelGroup] Thread', threadIndex + 1, 'has', messages.length, 'messages');
     
+    // Sort messages by date (oldest first) so when we prepend (insert at index 0),
+    // the newest messages end up at the top of the document
+    messages.sort(function(a, b) {
+      return a.getDate().getTime() - b.getDate().getTime();
+    });
+    
     messages.forEach((message, msgIndex) => {
       totalMessages++;
       var subject = message.getSubject();
@@ -88,9 +94,14 @@ function processLabelGroup(config) {
       Logger.log("Processing: " + subject);
       console.log('[processLabelGroup] Processing message', msgIndex + 1, ':', subject);
 
-      // --- A. Append Text to Doc ---
+      // --- A. Prepend Text to Doc (insert at top, newest first) ---
+      // Note: currentIndex starts at 0 for each message, so each new message
+      // is inserted at the top of the document, pushing previous content down.
+      // This ensures the most recent emails appear first.
+      var currentIndex = 0;
+      
       var subjectText = "Subject: " + (subject ? subject : "(No Subject)");
-      var headingPara = body.appendParagraph(subjectText);
+      var headingPara = body.insertParagraph(currentIndex++, subjectText);
       
       // Try to set heading, fallback to bold if Doc is busy
       try {
@@ -101,14 +112,14 @@ function processLabelGroup(config) {
         headingPara.setAttributes(style);
       }
       
-      body.appendParagraph("Date: " + timestamp);
-      body.appendParagraph(cleanContent);
+      body.insertParagraph(currentIndex++, "Date: " + timestamp);
+      body.insertParagraph(currentIndex++, cleanContent);
 
       // --- B. Save Attachments (CONTENT-BASED DEDUPLICATION) ---
       var attachments = message.getAttachments();
       console.log('[processLabelGroup] Found', attachments.length, 'attachments');
       if (attachments.length > 0) {
-        body.appendParagraph("[Attachments]:"); 
+        body.insertParagraph(currentIndex++, "[Attachments]:"); 
         
         attachments.forEach((att, attIndex) => {
           console.log('[processLabelGroup] Processing attachment', attIndex + 1, 'of', attachments.length, ':', att.getName());
@@ -149,7 +160,7 @@ function processLabelGroup(config) {
           if (isDuplicate) {
              Logger.log("Skipping exact duplicate: " + fileName);
              console.log('[processLabelGroup] Skipping duplicate:', fileName);
-             body.appendParagraph("- [DUPLICATE SKIPPED] " + fileName);
+             body.insertParagraph(currentIndex++, "- [DUPLICATE SKIPPED] " + fileName);
           } else {
              // It's a new file (or a file with same name but different content)
              
@@ -169,12 +180,12 @@ function processLabelGroup(config) {
 
              console.log('[processLabelGroup] Saving new file:', fileName);
              var file = folder.createFile(newFileBlob);
-             body.appendParagraph("- " + file.getName());
+             body.insertParagraph(currentIndex++, "- " + file.getName());
              console.log('[processLabelGroup] File saved successfully');
           }
         });
       }
-      body.appendParagraph("------------------------------");
+      body.insertParagraph(currentIndex++, "------------------------------");
       
       // Pause briefly to allow Google Doc to save (prevents crash)
       Utilities.sleep(500);
