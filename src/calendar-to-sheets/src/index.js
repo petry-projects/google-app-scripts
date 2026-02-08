@@ -41,10 +41,23 @@ function rowsEqual(a, b) {
   // columns (e.g., user notes) without affecting equality.
   // If b is shorter than a, b[i] will be undefined and won't match a[i].
   for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) {
-      console.log('[rowsEqual] Difference at column', i, ':', { a: a[i], b: b[i] });
-      return false;
+    const valA = a[i];
+    const valB = b[i];
+
+    if (valA === valB) continue;
+
+    // Handle Date comparison (a is ISO string, b is Date object from sheet)
+    if (typeof valA === 'string' && valB instanceof Date) {
+      const dateA = new Date(valA);
+      if (!isNaN(dateA) && dateA.getTime() === valB.getTime()) continue;
     }
+
+    // Handle sanitized formula comparison (a has leading ', b does not)
+    if (typeof valA === 'string' && valA.startsWith("'") && valA.slice(1) === valB) {
+      continue;
+    }
+
+    return false;
   }
   return true;
 }
@@ -96,7 +109,8 @@ async function syncCalendarToSheet(calendar, sheet, { start = new Date(0), end =
 
   // Upsert
   let updateCount = 0;
-  let insertCount = 0;
+  const rowsToInsert = [];
+
   for (const [id, row] of desiredMap.entries()) {
     if (existingMap.has(id)) {
       const ex = existingMap.get(id);
@@ -108,12 +122,16 @@ async function syncCalendarToSheet(calendar, sheet, { start = new Date(0), end =
         updateCount++;
       }
     } else {
-      console.log('[syncCalendarToSheet] Inserting new event:', id);
-      sheet.appendRow(row);
-      insertCount++;
+      rowsToInsert.push(row);
     }
   }
-  console.log('[syncCalendarToSheet] Updates:', updateCount, 'Inserts:', insertCount);
+
+  if (rowsToInsert.length > 0) {
+    console.log('[syncCalendarToSheet] Inserting new events:', rowsToInsert.length);
+    sheet.getRange(sheet.getLastRow() + 1, 1, rowsToInsert.length, rowsToInsert[0].length).setValues(rowsToInsert);
+  }
+
+  console.log('[syncCalendarToSheet] Updates:', updateCount, 'Inserts:', rowsToInsert.length);
 
   // Delete rows for events that no longer exist, but only if they fall within
   // the synced time window to avoid deleting rows from events outside [start,end]
@@ -127,7 +145,7 @@ async function syncCalendarToSheet(calendar, sheet, { start = new Date(0), end =
       if (rowStart && rowEnd) {
         const rowStartTime = new Date(rowStart);
         // Only delete if row's event time falls within our sync window
-        if (rowStartTime >= start && rowStartTime <= end) {
+        if (!isNaN(rowStartTime) && rowStartTime >= start && rowStartTime <= end) {
           console.log('[syncCalendarToSheet] Marking event for deletion:', id);
           toDelete.push(ex.rowIndex);
         } else {

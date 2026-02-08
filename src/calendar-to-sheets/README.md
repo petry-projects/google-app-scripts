@@ -19,18 +19,20 @@ sequenceDiagram
     GAS->>Props: Get last sync timestamp
     Props-->>GAS: Return checkpoint
 
-    GAS->>Cal: Fetch events since<br/>last checkpoint
-    Cal-->>GAS: Return events
+    loop Each SYNC_WINDOW chunk
+        GAS->>Cal: Fetch events for chunk
+        Cal-->>GAS: Return events
 
-    GAS->>GAS: Match events to<br/>existing rows
+        GAS->>GAS: Match events to<br/>existing rows
 
-    GAS->>Sheet: Insert new event rows
-    GAS->>Sheet: Update changed rows
-    GAS->>Sheet: Delete removed rows
-    Sheet-->>GAS: Rows updated
+        GAS->>Sheet: Insert new event rows
+        GAS->>Sheet: Update changed rows
+        GAS->>Sheet: Delete removed rows
+        Sheet-->>GAS: Rows updated
 
-    GAS->>Props: Save new timestamp
-    Props-->>GAS: Checkpoint saved
+        GAS->>Props: Save chunk checkpoint
+        Props-->>GAS: Checkpoint saved
+    end
 ```
 
 Testing & development
