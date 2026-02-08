@@ -14,6 +14,7 @@ function createLabel(name) {
     getName: () => name,
     getThreads: () => threads.slice(),
     addThread: (thread) => { if (!threads.includes(thread)) threads.push(thread); },
+    addToThread: (thread) => { if (!threads.includes(thread)) threads.push(thread); },
     removeFromThread: (thread) => {
       const idx = threads.indexOf(thread);
       if (idx !== -1) threads.splice(idx, 1);
@@ -93,6 +94,26 @@ function createDocument(id = 'doc1') {
         };
         paragraphs.push(para);
         return para;
+      },
+      getParagraphs: () => paragraphs.slice(),
+      getNumChildren: () => paragraphs.length,
+      getChild: (index) => paragraphs[index],
+      removeChild: (child) => {
+        const idx = paragraphs.indexOf(child);
+        if (idx !== -1) paragraphs.splice(idx, 1);
+      },
+      setText: (text) => {
+        // Replace the body content: clear all existing paragraphs
+        paragraphs.length = 0;
+        // If text is non-empty, add it as a single new paragraph
+        if (text) {
+          paragraphs.push({
+            text,
+            setHeading: () => {},
+            setAttributes: () => {},
+            getText: () => text
+          });
+        }
       },
       insertParagraph: (childIndex, text) => {
         // Validate childIndex like Apps Script does
@@ -275,7 +296,10 @@ function createDocumentApp() {
       if (!docs.has(id)) docs.set(id, createDocument(id));
       return docs.get(id);
     },
-    __reset: () => docs.clear()
+    __reset: () => docs.clear(),
+    // Apps Script DocumentApp enums
+    ParagraphHeading: { HEADING_3: 'HEADING_3' },
+    Attribute: { BOLD: 'BOLD' }
   };
 }
 

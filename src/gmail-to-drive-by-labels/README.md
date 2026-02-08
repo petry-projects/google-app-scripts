@@ -77,7 +77,12 @@ function getProcessConfig() {
       docId: "YOUR_GOOGLE_DOC_ID_HERE", 
       
       // The Drive Folder ID found in step 3
-      folderId: "YOUR_DRIVE_FOLDER_ID_HERE" 
+      folderId: "YOUR_DRIVE_FOLDER_ID_HERE",
+      
+      // Optional: Number of threads to process per batch during rebuild
+      // Default is 250 if not specified. Increase for faster rebuilds,
+      // decrease if experiencing timeouts.
+      batchSize: 250
     }
   ];
 }
@@ -86,10 +91,24 @@ function getProcessConfig() {
 
 ## Usage
 
+### Regular Processing
+
 1. Select `storeEmailsAndAttachments` from the function dropdown in the Apps Script toolbar.
 2. Click **Run**.
 3. Grant permissions when prompted (access to Gmail, Drive, and Docs).
 4. Check the **Execution Log** for progress.
+
+### Rebuilding Documents
+
+If you've updated the cleaning logic (e.g., `getCleanBody` function) or want to regenerate documents with new processing rules:
+
+1. Select `rebuildAllDocs` from the function dropdown in the Apps Script toolbar.
+2. Click **Run** - this will:
+   * Clear all configured Google Docs
+   * Move all processed/archived emails back to their trigger labels
+3. Then run `storeEmailsAndAttachments` to reprocess all emails with the updated logic.
+
+**Note:** The rebuild process moves (not copies) emails back to trigger labels, ensuring all emails are reprocessed exactly once with the latest logic while maintaining incremental processing to avoid script timeouts.
 
 ## Automation (Optional)
 
