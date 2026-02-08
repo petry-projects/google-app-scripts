@@ -1,6 +1,6 @@
 # Gmail to Drive By Labels
 
-A robust Google Apps Script designed to automate the archiving of Gmail threads. It appends email body text to a Google Doc and intelligently saves attachments to a specific Google Drive folder based on Gmail labels.
+A robust Google Apps Script designed to automate the archiving of Gmail threads. It prepends email body text to the top of a Google Doc (newest content first) and intelligently saves attachments to a specific Google Drive folder based on Gmail labels.
 
 ## Example Use-Cases
 ### 1. Collect and store all documents related to an ongoing topic into Google Drive which can act as a source of grounding for a Notebook system. Use Gmail Filters to automatically label incoming emails and have them feed into your Notebook RAG.
