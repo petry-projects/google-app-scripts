@@ -137,7 +137,26 @@ function _syncCalendarToSheetGAS(cfg, start, end) {
   const desired = events.map(eventToRowGAS);
   const desiredMap = new Map(desired.map(r => [r[0], r]));
 
-  const data = sheet.getDataRange().getValues();
+  let data = sheet.getDataRange().getValues();
+  // Ensure header row exists; if sheet is empty or first row is blank, create headers.
+  if (!data || data.length === 0 || (data.length === 1 && data[0].every(function (cell) { return cell === '' || cell === null; }))) {
+    // Header titles chosen to be descriptive; they should align with eventToRowGAS's column order.
+    const headerRow = [
+      'Event ID',
+      'Title',
+      'Start',
+      'End',
+      'Duration (hours)',
+      'All Day',
+      'Created',
+      'Last Updated',
+      'Location',
+      'Description',
+      'Guests'
+    ];
+    sheet.getRange(1, 1, 1, headerRow.length).setValues([headerRow]);
+    data = sheet.getDataRange().getValues();
+  }
   const body = data.slice(1);
   console.log('[_syncCalendarToSheetGAS] Existing rows in sheet:', body.length);
 
