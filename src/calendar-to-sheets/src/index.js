@@ -38,7 +38,7 @@ function rowsToMap(rows) {
 function rowsEqual(a, b) {
   // Compare only the first a.length columns. This allows b to have extra trailing
   // columns (e.g., user notes) without affecting equality.
-  // If b is shorter than a, the comparison will fail when we try to access b[i].
+  // If b is shorter than a, b[i] will be undefined and won't match a[i].
   for (let i = 0; i < a.length; i++) {
     if (a[i] !== b[i]) {
       console.log('[rowsEqual] Difference at column', i, ':', { a: a[i], b: b[i] });

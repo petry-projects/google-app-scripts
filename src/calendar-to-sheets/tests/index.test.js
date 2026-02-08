@@ -1436,12 +1436,14 @@ test('syncCalendarToSheet preserves rows with dates outside sync window', async 
   expect(rows.find(r => r[0] === 'old_event')).toBeTruthy();
 });
 
-// Test rowsEqual with longer array having extra truthy values
+// Test rowsEqual ignores extra columns in second argument
 test('rowsEqual ignores extra columns in second argument', () => {
   // Extra columns in b are always ignored
   expect(rowsEqual(['a', 'b'], ['a', 'b', 'c'])).toBe(true);
   expect(rowsEqual(['a', 'b'], ['a', 'b', ''])).toBe(true);
   expect(rowsEqual(['a', 'b'], ['a', 'b', null])).toBe(true);
+  // Works consistently when a has extra columns too
+  expect(rowsEqual(['a', 'b', 'c'], ['a', 'b', 'c', 'd'])).toBe(true);
   // But if a is longer than b, it should fail (comparing against undefined)
   expect(rowsEqual(['a', 'b', 'c'], ['a', 'b'])).toBe(false);
 });
