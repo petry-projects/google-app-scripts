@@ -103,7 +103,7 @@ If you've updated the cleaning logic (e.g., `getCleanBody` function) or want to 
    * Move all processed/archived emails back to their trigger labels
 3. Then run `storeEmailsAndAttachments` to reprocess all emails with the updated logic.
 
-**Note:** The rebuild process moves emails back to trigger labels but doesn't delete them. This ensures all emails are reprocessed with the latest logic while maintaining incremental processing to avoid script timeouts.
+**Note:** The rebuild process moves (not copies) emails back to trigger labels, ensuring all emails are reprocessed exactly once with the latest logic while maintaining incremental processing to avoid script timeouts.
 
 ## Automation (Optional)
 
