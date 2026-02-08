@@ -148,9 +148,9 @@ function rebuildDoc(config) {
       }
     }
     
-    console.log('[rebuildDoc] Processed', threadsProcessed, 'threads,', totalThreads - threadsProcessed, 'remaining');
+    console.log('[rebuildDoc] Processed', threadsProcessed, 'threads in this batch,', totalThreads - threadsToProcess, 'remaining');
     
-    if (threadsProcessed >= totalThreads) {
+    if (threadsToProcess >= totalThreads) {
       // All threads processed
       properties.deleteProperty(stateKey);
       console.log('[rebuildDoc] Moved all threads back to trigger label');
