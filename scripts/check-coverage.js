@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
 /**
- * Verify that test coverage meets 100% across all metrics.
- * Reads coverage-final.json and validates statements, branches, functions, and lines.
- * Exit code 1 if any metric is below 100%, 0 if all pass.
+ * Verify that test coverage meets the configured minimum thresholds across all metrics.
+ * Reads coverage-final.json and validates statements, branches, functions, and lines
+ * against the requiredCoverage configuration. Exits with code 1 if any metric is below
+ * its minimum threshold, or 0 if all pass.
  */
 
 const fs = require('fs');
