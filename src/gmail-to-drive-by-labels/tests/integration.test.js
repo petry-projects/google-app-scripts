@@ -51,6 +51,11 @@ describe('Gmail to Drive integration with prepend behavior', () => {
     threads.forEach((thread) => {
       const messages = thread.getMessages();
       
+      // Sort messages by date (oldest first) like code.gs does
+      messages.sort(function(a, b) {
+        return a.getDate().getTime() - b.getDate().getTime();
+      });
+      
       messages.forEach((message) => {
         var currentIndex = 0;
         const subject = message.getSubject();
@@ -103,7 +108,7 @@ describe('Gmail to Drive integration with prepend behavior', () => {
       attachments: [attachment1, attachment2]
     });
     
-    const thread = global.GmailApp.__addThreadWithLabels(['test-trigger'], [msg]);
+    global.GmailApp.__addThreadWithLabels(['test-trigger'], [msg]);
     
     // Simulate processing
     const threads = triggerLabel.getThreads();
@@ -125,7 +130,6 @@ describe('Gmail to Drive integration with prepend behavior', () => {
       body.insertParagraph(currentIndex++, "[Attachments]:");
       
       attachments.forEach((att) => {
-        const fileName = att.getName();
         const file = folder.createFile(att);
         body.insertParagraph(currentIndex++, "- " + file.getName());
       });
