@@ -74,6 +74,12 @@ function processLabelGroup(config) {
     var messages = thread.getMessages();
     console.log('[processLabelGroup] Thread', threadIndex + 1, 'has', messages.length, 'messages');
     
+    // Sort messages by date (oldest first) so when we prepend (insert at index 0),
+    // the newest messages end up at the top of the document
+    messages.sort(function(a, b) {
+      return a.getDate().getTime() - b.getDate().getTime();
+    });
+    
     messages.forEach((message, msgIndex) => {
       totalMessages++;
       var subject = message.getSubject();

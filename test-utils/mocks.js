@@ -90,6 +90,10 @@ function createDocument(id = 'doc1') {
         return para;
       },
       insertParagraph: (childIndex, text) => {
+        // Validate childIndex like Apps Script does
+        if (typeof childIndex !== 'number' || childIndex < 0 || childIndex > paragraphs.length) {
+          throw new Error('Invalid childIndex: ' + childIndex);
+        }
         const para = {
           text,
           setHeading: (h) => { para.heading = h; },
