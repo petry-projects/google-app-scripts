@@ -36,20 +36,13 @@ function rowsToMap(rows) {
 }
 
 function rowsEqual(a, b) {
-  // Compare only the first minLen columns (ignoring extra cols if they are falsy)
-  const minLen = Math.min(a.length, b.length);
-  for (let i = 0; i < minLen; i++) {
+  // Compare only the first a.length columns. This allows b to have extra trailing
+  // columns (e.g., user notes) without affecting equality.
+  // If b is shorter than a, b[i] will be undefined and won't match a[i].
+  for (let i = 0; i < a.length; i++) {
     if (a[i] !== b[i]) {
       console.log('[rowsEqual] Difference at column', i, ':', { a: a[i], b: b[i] });
       return false;
-    }
-  }
-  // If lengths differ, they're only equal if extra columns are all falsy/empty
-  if (a.length !== b.length) {
-    const longer = a.length > b.length ? a : b;
-    const startIndex = a.length > b.length ? b.length : a.length;
-    for (let i = startIndex; i < longer.length; i++) {
-      if (longer[i]) return false;
     }
   }
   return true;
@@ -106,7 +99,7 @@ async function syncCalendarToSheet(calendar, sheet, { start = new Date(0), end =
   for (const [id, row] of desiredMap.entries()) {
     if (existingMap.has(id)) {
       const ex = existingMap.get(id);
-      if (!rowsEqual(ex.values, row)) {
+      if (!rowsEqual(row, ex.values)) {
         // update
         console.log('[syncCalendarToSheet] Updating row for event:', id);
         const rowIndex = ex.rowIndex;
