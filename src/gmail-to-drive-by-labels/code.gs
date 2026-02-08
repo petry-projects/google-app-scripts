@@ -15,6 +15,98 @@ function storeEmailsAndAttachments() {
 }
 
 /**
+ * Rebuilds all configured documents by clearing them and reprocessing all emails.
+ * This function:
+ * 1. Clears the configured Google Doc
+ * 2. Moves all processed/archived emails back to the trigger label
+ * 3. Allows storeEmailsAndAttachments() to reprocess them
+ * 
+ * Run this when you've updated getCleanBody() or other processing logic
+ * and want to regenerate the documents with the new logic.
+ */
+function rebuildAllDocs() {
+  console.log('[rebuildAllDocs] Starting rebuild process');
+  var PROCESS_CONFIG = getProcessConfig();
+  console.log('[rebuildAllDocs] Rebuilding', PROCESS_CONFIG.length, 'configurations');
+  
+  PROCESS_CONFIG.forEach((config, index) => {
+    console.log('[rebuildAllDocs] Rebuilding config', index + 1, 'of', PROCESS_CONFIG.length, ':', config.triggerLabel);
+    rebuildDoc(config);
+  });
+  
+  console.log('[rebuildAllDocs] Rebuild preparation complete.');
+  console.log('[rebuildAllDocs] Now run storeEmailsAndAttachments() to reprocess all emails.');
+}
+
+/**
+ * Rebuilds a single document by clearing it and moving processed emails back to trigger label.
+ */
+function rebuildDoc(config) {
+  console.log('[rebuildDoc] Starting rebuild for:', config.triggerLabel);
+  
+  var triggerLabelName = config.triggerLabel;
+  var processedLabelName = config.processedLabel;
+  
+  // 1. Validate and get labels
+  console.log('[rebuildDoc] Looking up labels');
+  var triggerLabel = GmailApp.getUserLabelByName(triggerLabelName);
+  var processedLabel = GmailApp.getUserLabelByName(processedLabelName);
+  
+  if (!triggerLabel) {
+    console.error('[rebuildDoc] Trigger label not found:', triggerLabelName);
+    Logger.log("Trigger label not found: " + triggerLabelName);
+    return;
+  }
+  
+  if (!processedLabel) {
+    console.log('[rebuildDoc] Processed label not found:', processedLabelName, '- nothing to unarchive');
+  }
+  
+  // 2. Clear the document
+  console.log('[rebuildDoc] Clearing document:', config.docId);
+  try {
+    var doc = DocumentApp.openById(config.docId);
+    var body = doc.getBody();
+    
+    // Clear all content from the document body
+    var numChildren = body.getNumChildren();
+    console.log('[rebuildDoc] Document has', numChildren, 'elements');
+    
+    // Remove all elements in reverse order (prevents index shifting issues)
+    for (var i = numChildren - 1; i >= 0; i--) {
+      body.removeChild(body.getChild(i));
+    }
+    console.log('[rebuildDoc] Document cleared');
+  } catch (e) {
+    console.error('[rebuildDoc] Error clearing document:', e.message);
+    Logger.log("Error clearing document: " + e.message);
+    return;
+  }
+  
+  // 3. Move emails from processed label back to trigger label
+  if (processedLabel) {
+    console.log('[rebuildDoc] Moving processed emails back to trigger label');
+    var processedThreads = processedLabel.getThreads();
+    console.log('[rebuildDoc] Found', processedThreads.length, 'processed threads to unarchive');
+    
+    processedThreads.forEach((thread, index) => {
+      // Add trigger label and remove processed label
+      triggerLabel.addToThread(thread);
+      processedLabel.removeFromThread(thread);
+      
+      if ((index + 1) % 10 === 0) {
+        console.log('[rebuildDoc] Moved', index + 1, 'of', processedThreads.length, 'threads');
+      }
+    });
+    
+    console.log('[rebuildDoc] Moved all', processedThreads.length, 'threads back to trigger label');
+  }
+  
+  console.log('[rebuildDoc] Rebuild complete for:', config.triggerLabel);
+  console.log('[rebuildDoc] Run storeEmailsAndAttachments() to reprocess these emails');
+}
+
+/**
  * Processes a single configuration group (Label -> Doc + Folder).
  */
 function processLabelGroup(config) {
@@ -237,4 +329,9 @@ function getFileHash(blob) {
   return digest.map(function(byte) {
     return ('0' + (byte & 0xFF).toString(16)).slice(-2);
   }).join('');
+}
+
+// Export functions for testing (Node.js only)
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { rebuildDoc, rebuildAllDocs, processLabelGroup, storeEmailsAndAttachments };
 }

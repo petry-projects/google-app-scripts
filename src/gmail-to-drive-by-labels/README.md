@@ -86,10 +86,24 @@ function getProcessConfig() {
 
 ## Usage
 
+### Regular Processing
+
 1. Select `storeEmailsAndAttachments` from the function dropdown in the Apps Script toolbar.
 2. Click **Run**.
 3. Grant permissions when prompted (access to Gmail, Drive, and Docs).
 4. Check the **Execution Log** for progress.
+
+### Rebuilding Documents
+
+If you've updated the cleaning logic (e.g., `getCleanBody` function) or want to regenerate documents with new processing rules:
+
+1. Select `rebuildAllDocs` from the function dropdown in the Apps Script toolbar.
+2. Click **Run** - this will:
+   * Clear all configured Google Docs
+   * Move all processed/archived emails back to their trigger labels
+3. Then run `storeEmailsAndAttachments` to reprocess all emails with the updated logic.
+
+**Note:** The rebuild process moves emails back to trigger labels but doesn't delete them. This ensures all emails are reprocessed with the latest logic while maintaining incremental processing to avoid script timeouts.
 
 ## Automation (Optional)
 

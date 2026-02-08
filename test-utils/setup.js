@@ -17,6 +17,10 @@ global.Logger = {
   log: () => {}
 };
 
+global.DocumentApp = global.DocumentApp || {};
+global.DocumentApp.ParagraphHeading = { HEADING_3: 'HEADING_3' };
+global.DocumentApp.Attribute = { BOLD: 'BOLD' };
+
 // Install richer mocks for GmailApp, DriveApp and DocumentApp
 const { installGlobals, resetAll } = require('./mocks');
 installGlobals(global);

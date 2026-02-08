@@ -14,6 +14,7 @@ function createLabel(name) {
     getName: () => name,
     getThreads: () => threads.slice(),
     addThread: (thread) => { if (!threads.includes(thread)) threads.push(thread); },
+    addToThread: (thread) => { if (!threads.includes(thread)) threads.push(thread); },
     removeFromThread: (thread) => {
       const idx = threads.indexOf(thread);
       if (idx !== -1) threads.splice(idx, 1);
@@ -89,7 +90,13 @@ function createDocument(id = 'doc1') {
         paragraphs.push(para);
         return para;
       },
-      getParagraphs: () => paragraphs.slice()
+      getParagraphs: () => paragraphs.slice(),
+      getNumChildren: () => paragraphs.length,
+      getChild: (index) => paragraphs[index],
+      removeChild: (child) => {
+        const idx = paragraphs.indexOf(child);
+        if (idx !== -1) paragraphs.splice(idx, 1);
+      }
     })
   };
 }
