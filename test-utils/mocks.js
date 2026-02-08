@@ -149,14 +149,18 @@ function createSheet(name='Sheet1') {
   const rows = [];
   return {
     getName: () => name,
-    getDataRange: () => ({ getValues: () => [headers.slice(), ...rows.map(r=>r.slice())] }),
+    getDataRange: () => ({ getValues: () => headers.length ? [headers.slice(), ...rows.map(r=>r.slice())] : rows.map(r=>r.slice()) }),
     getLastRow: () => rows.length + (headers.length ? 1 : 0),
     appendRow: (row) => { rows.push(row.slice()); },
     insertRowBefore: (rowIndex) => {
       // Insert a new row before the given rowIndex (1-based)
-      if (rowIndex === 1 && headers.length === 0) {
-        // Inserting before row 1 when no header - this will become the header
-        // No-op for now, setValues will handle it
+      if (rowIndex === 1 && headers.length === 0 && rows.length > 0) {
+        // Inserting before row 1 when no header but data exists
+        // Insert empty row at beginning to preserve existing data
+        rows.splice(0, 0, []);
+      } else if (rowIndex === 1 && headers.length === 0) {
+        // Inserting before row 1 when no header and no data - no-op
+        // setValues will handle setting the header
       } else {
         const idx = rowIndex - 1 - (headers.length ? 1 : 0);
         if (idx >= 0) {
@@ -169,10 +173,14 @@ function createSheet(name='Sheet1') {
       return {
         setValues: (vals) => {
           // Special case: if row is 1 and headers are empty, we're setting the header
-          if (row === 1 && headers.length === 0 && rows.length === 0) {
-            // Setting the header row on an empty sheet
+          if (row === 1 && headers.length === 0) {
+            // Setting the header row (works for empty sheet or sheet with data)
             headers.length = 0;
             vals[0].forEach(x => headers.push(x));
+            // If we had a placeholder row from insertRowBefore, remove it
+            if (rows.length > 0 && rows[0].length === 0) {
+              rows.shift();
+            }
           } else if (row === 1 && start === -1) {
             // Setting the header row when it already exists
             headers.length = 0;
