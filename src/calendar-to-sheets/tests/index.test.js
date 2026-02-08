@@ -1315,6 +1315,38 @@ describe('ensureHeader', () => {
     expect(sheet.getRange).toHaveBeenCalledWith(1, 1, 1, 7);
     expect(mockSetValues).toHaveBeenCalledWith([['id', 'title', 'start', 'end', 'description', 'location', 'attendees']]);
   });
+
+  test('sheet mock: insertRowBefore+setValues preserves data when adding header to sheet with existing rows', () => {
+    // This test verifies the fix for the bug where inserting a header into a sheet
+    // with existing data rows would overwrite the first data row
+    const ss = SpreadsheetApp.openById('test-ss');
+    const sheet = ss.getSheetByName('TestSheet');
+    
+    // Add data rows without a header
+    sheet.appendRow(['data1-col1', 'data1-col2', 'data1-col3']);
+    sheet.appendRow(['data2-col1', 'data2-col2', 'data2-col3']);
+    
+    // Verify initial state: 2 data rows, no header
+    let dataRange = sheet.getDataRange().getValues();
+    expect(dataRange).toEqual([
+      ['data1-col1', 'data1-col2', 'data1-col3'],
+      ['data2-col1', 'data2-col2', 'data2-col3']
+    ]);
+    expect(sheet.getLastRow()).toBe(2);
+    
+    // Now insert a header (this is what ensureHeader does)
+    sheet.insertRowBefore(1);
+    sheet.getRange(1, 1, 1, 3).setValues([['Header1', 'Header2', 'Header3']]);
+    
+    // Verify the header was added and data was preserved
+    dataRange = sheet.getDataRange().getValues();
+    expect(dataRange).toEqual([
+      ['Header1', 'Header2', 'Header3'],
+      ['data1-col1', 'data1-col2', 'data1-col3'],
+      ['data2-col1', 'data2-col2', 'data2-col3']
+    ]);
+    expect(sheet.getLastRow()).toBe(3);
+  });
 });
 
 // Test syncCalendarToSheet with empty sheet (no header)
