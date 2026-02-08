@@ -241,9 +241,10 @@ function getCleanBody(text) {
     return !(trimmed.startsWith(">") || trimmed.startsWith("<"));
   });
 
-  // 3. THIRD PASS: Normalize line breaks (max 2 consecutive)
+  // 3. THIRD PASS: Normalize line breaks (convert 2+ consecutive to 1)
+  // This prevents excessive blank lines in Google Docs where each \n creates a paragraph break
   var result = cleanLines.join('\n').trim();
-  result = result.replace(/\n{3,}/g, '\n\n');
+  result = result.replace(/\n{2,}/g, '\n');
   
   return result;
 }

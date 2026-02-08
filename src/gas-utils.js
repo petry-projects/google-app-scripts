@@ -33,9 +33,10 @@ function getCleanBody(text) {
     return !(trimmed.startsWith('>') || trimmed.startsWith('<'));
   });
 
-  // Join lines and normalize line breaks: replace 3+ consecutive line breaks with 2
+  // Join lines and normalize line breaks: replace 2+ consecutive line breaks with 1
+  // This prevents excessive blank lines in Google Docs where each \n creates a paragraph break
   let result = cleanLines.join('\n').trim();
-  result = result.replace(/\n{3,}/g, '\n\n');
+  result = result.replace(/\n{2,}/g, '\n');
   
   return result;
 }
