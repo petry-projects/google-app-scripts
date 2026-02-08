@@ -1596,6 +1596,35 @@ describe('GAS wrapper functions', () => {
     delete global.SHEET_NAME;
   });
 
+  test('syncCalendarToSheetGAS calls ensureHeader when available', async () => {
+    const code = require('../code.gs');
+
+    global.SPREADSHEET_ID = 'ss1';
+    global.SHEET_NAME = 'Sheet1';
+    global.ensureHeader = jest.fn();
+
+    const ss = SpreadsheetApp.openById('ss1');
+    const sheet = ss.getSheetByName('Sheet1');
+    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
+
+    const calendar = CalendarApp.getDefaultCalendar();
+    const evt = createCalendarEvent({
+      id: 'e_header',
+      title: 'Header Test',
+      start: new Date('2026-02-02T10:00:00Z'),
+      end: new Date('2026-02-02T11:00:00Z')
+    });
+    calendar.__addEvent(evt);
+
+    await code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03');
+
+    expect(global.ensureHeader).toHaveBeenCalledWith(sheet);
+
+    delete global.SPREADSHEET_ID;
+    delete global.SHEET_NAME;
+    delete global.ensureHeader;
+  });
+
   test('syncCalendarToSheetGAS handles event deletion', async () => {
     const code = require('../code.gs');
     global.SPREADSHEET_ID = 'ss1';
