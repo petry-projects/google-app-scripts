@@ -73,6 +73,20 @@ test('rowsToMap builds correct mapping and rowsEqual works', () => {
   expect(rowsEqual(['a','b'], ['a','c','extra','columns'])).toBe(false);
 });
 
+test('rowsEqual handles Date objects and escaped strings', () => {
+  const isoString = '2026-02-02T10:00:00.000Z';
+  const dateObj = new Date(isoString);
+
+  // Date comparison (ISO string from event vs Date object from sheet)
+  expect(rowsEqual([isoString], [dateObj])).toBe(true);
+  expect(rowsEqual([isoString], [new Date('2026-02-02T11:00:00.000Z')])).toBe(false);
+
+  // Escaped string comparison (Sanitized string vs Raw string from sheet)
+  expect(rowsEqual(["'=SUM(1,2)"], ["=SUM(1,2)"])).toBe(true);
+  expect(rowsEqual(["'=SUM(1,2)"], ["=SUM(3,4)"])).toBe(false);
+  expect(rowsEqual(['id', isoString, "'=CMD"], ['id', dateObj, "=CMD"])).toBe(true);
+});
+
 test('eventToRow handles missing optional fields', () => {
   const evt = createCalendarEvent({ id: 'e3', title: 'No extras', start: new Date('2026-02-03T10:00:00Z'), end: new Date('2026-02-03T11:00:00Z') });
   const row = eventToRow(evt);
@@ -1711,6 +1725,3 @@ describe('GAS wrapper functions', () => {
     delete global.SYNC_CONFIGS;
   });
 });
-
-
-
