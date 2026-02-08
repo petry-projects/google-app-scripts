@@ -42,7 +42,7 @@ describe('Gmail to Drive integration with prepend behavior', () => {
     });
     
     // Add them to a thread
-    const thread = global.GmailApp.__addThreadWithLabels(['test-trigger'], [msg1, msg2, msg3]);
+    global.GmailApp.__addThreadWithLabels(['test-trigger'], [msg1, msg2, msg3]);
     
     // Simulate processing like code.gs does
     const threads = triggerLabel.getThreads();
