@@ -103,11 +103,12 @@ function clearCheckpoint(cfg) {
 
 /**
  * Sanitize a value to prevent formula injection in spreadsheets.
- * If a string starts with =, +, -, or @, prefix it with a single quote
+ * If a string effectively starts with =, +, -, or @ (ignoring leading
+ * whitespace/control characters), prefix it with a single quote
  * to force it to be treated as literal text rather than a formula.
  */
 function sanitizeValue(val) {
-  if (typeof val === 'string' && /^[=+\-@]/.test(val)) {
+  if (typeof val === 'string' && /^[\x00-\x20]*[=+\-@]/.test(val)) {
     return "'" + val;
   }
   return val;

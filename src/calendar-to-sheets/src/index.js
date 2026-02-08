@@ -7,7 +7,8 @@
 
 function sanitizeValue(val) {
   // Prevent formula injection by prefixing formula metacharacters with '
-  if (typeof val === 'string' && /^[=+\-@]/.test(val)) {
+  // Also catches leading whitespace/control chars followed by formula chars
+  if (typeof val === 'string' && /^[\x00-\x20]*[=+\-@]/.test(val)) {
     return "'" + val;
   }
   return val;
