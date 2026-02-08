@@ -120,6 +120,123 @@ function createGmailApp() {
   };
 }
 
+// Minimal Calendar and Spreadsheet mocks for tests
+function createCalendarEvent({id, title='', start=new Date(), end=new Date(), description='', location='', attendees=[]} = {}) {
+  return {
+    getId: () => id,
+    getTitle: () => title,
+    getStartTime: () => start,
+    getEndTime: () => end,
+    getDescription: () => description,
+    getLocation: () => location,
+    getGuestList: () => (attendees || []).map(a => ({ getEmail: () => a }))
+  };
+}
+
+function createCalendar(id='primary') {
+  const events = [];
+  return {
+    id,
+    __events: events,
+    getEvents: (start, end) => events.filter(e => e.getStartTime() >= start && e.getStartTime() <= end),
+    __addEvent: (evt) => { events.push(evt); },
+    __reset: () => { events.length = 0 }
+  };
+}
+
+function createSheet(name='Sheet1') {
+  const headers = [];
+  const rows = [];
+  return {
+    getName: () => name,
+    getDataRange: () => ({ getValues: () => headers.length ? [headers.slice(), ...rows.map(r=>r.slice())] : rows.map(r=>r.slice()) }),
+    getLastRow: () => rows.length + (headers.length ? 1 : 0),
+    appendRow: (row) => { rows.push(row.slice()); },
+    insertRowBefore: (rowIndex) => {
+      // Insert a new row before the given rowIndex (1-based)
+      if (rowIndex === 1 && headers.length === 0 && rows.length > 0) {
+        // Inserting before row 1 when no header but data exists
+        // Insert empty row at beginning to preserve existing data
+        rows.splice(0, 0, []);
+      } else if (rowIndex === 1 && headers.length === 0) {
+        // Inserting before row 1 when no header and no data - no-op
+        // setValues will handle setting the header
+      } else {
+        const idx = rowIndex - 1 - (headers.length ? 1 : 0);
+        if (idx >= 0) {
+          rows.splice(idx, 0, []);
+        }
+      }
+    },
+    getRange: (row, col, numRows, numCols) => {
+      const start = row - 1 - (headers.length ? 1 : 0);
+      return {
+        setValues: (vals) => {
+          // Special case: if row is 1 and headers are empty, we're setting the header
+          if (row === 1 && headers.length === 0) {
+            // Setting the header row (works for empty sheet or sheet with data)
+            headers.length = 0;
+            vals[0].forEach(x => headers.push(x));
+            // If we had a placeholder row from insertRowBefore, remove it
+            if (rows.length > 0 && rows[0].length === 0) {
+              rows.shift();
+            }
+          } else if (row === 1 && start === -1) {
+            // Setting the header row when it already exists
+            headers.length = 0;
+            vals[0].forEach(x => headers.push(x));
+          } else {
+            for (let r = 0; r < vals.length; r++) {
+              const dest = start + r;
+              rows[dest] = rows[dest] || [];
+              for (let c = 0; c < vals[r].length; c++) rows[dest][col - 1 + c] = vals[r][c];
+            }
+          }
+        }
+      }
+    },
+    deleteRow: (rowIndex) => {
+      const idx = rowIndex - 1 - (headers.length ? 1 : 0);
+      if (idx >= 0 && idx < rows.length) rows.splice(idx,1);
+    },
+    __setHeader: (h) => { headers.length = 0; h.forEach(x=>headers.push(x)) },
+    __getRows: () => rows,
+    __reset: () => { 
+      headers.length = 0; 
+      rows.length = 0; 
+    }
+  };
+}
+
+function createSpreadsheet(id='ss1') {
+  const sheets = new Map();
+  // Always have a default first sheet
+  const firstSheet = createSheet('Sheet1');
+  sheets.set('Sheet1', firstSheet);
+  
+  return {
+    id,
+    getSheetByName: (name) => {
+      if (!sheets.has(name)) {
+        sheets.set(name, createSheet(name));
+      }
+      return sheets.get(name);
+    },
+    insertSheet: (name) => {
+      if (sheets.has(name)) return sheets.get(name);
+      const sheet = createSheet(name);
+      sheets.set(name, sheet);
+      return sheet;
+    },
+    getSheets: () => Array.from(sheets.values()),
+    __reset: () => { 
+      sheets.clear();
+      firstSheet.__reset();
+      sheets.set('Sheet1', firstSheet);
+    }
+  };
+}
+
 function createDriveApp() {
   const folders = new Map();
   return {
@@ -143,16 +260,41 @@ function createDocumentApp() {
   };
 }
 
+function createPropertiesService() {
+  const userProperties = new Map();
+  return {
+    getUserProperties: () => ({
+      getProperty: (key) => userProperties.has(key) ? userProperties.get(key) : null,
+      setProperty: (key, value) => userProperties.set(key, value),
+      deleteProperty: (key) => userProperties.delete(key),
+      __reset: () => userProperties.clear()
+    }),
+    __reset: () => userProperties.clear()
+  };
+}
+
 function installGlobals(globals) {
   const gmail = createGmailApp();
   const drive = createDriveApp();
   const docs = createDocumentApp();
+  const calendar = createCalendar();
+  const spreadsheet = createSpreadsheet();
+  const properties = createPropertiesService();
 
   globals.GmailApp = gmail;
   globals.DriveApp = drive;
   globals.DocumentApp = docs;
+  globals.CalendarApp = { 
+    getDefaultCalendar: () => calendar,
+    getCalendarById: (id) => calendar
+  };
+  globals.SpreadsheetApp = { 
+    openById: (id) => spreadsheet,
+    getActiveSpreadsheet: () => spreadsheet
+  };
+  globals.PropertiesService = properties;
 
-  globals.__mocks = { gmail, drive, docs, createMessage, createBlob };
+  globals.__mocks = { gmail, drive, docs, calendar, spreadsheet, properties, createMessage, createBlob, createCalendarEvent };
 }
 
 function resetAll(globals) {
@@ -160,7 +302,10 @@ function resetAll(globals) {
     globals.__mocks.gmail.__reset();
     globals.__mocks.drive.__reset();
     globals.__mocks.docs.__reset();
+    globals.__mocks.calendar.__reset();
+    globals.__mocks.spreadsheet.__reset();
+    globals.__mocks.properties.__reset();
   }
 }
 
-module.exports = { installGlobals, resetAll, createMessage, createBlob };
+module.exports = { installGlobals, resetAll, createMessage, createBlob, createCalendarEvent };

@@ -1,4 +1,4 @@
-const { createMessage, createBlob } = require('../../test-utils/mocks');
+const { createMessage, createBlob } = require('../../../test-utils/mocks');
 
 describe('Apps Script mocks integration', () => {
   test('GmailApp createLabel and thread handling', () => {
