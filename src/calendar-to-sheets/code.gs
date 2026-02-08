@@ -125,13 +125,22 @@ function eventToRowGAS(event) {
   return [id, title, start, end, description, location, attendees];
 }
 
+function getOrCreateSheet(ss, sheetName) {
+  const resolvedName = sheetName || 'Sheet1';
+  let sheet = ss.getSheetByName(resolvedName);
+  if (!sheet && typeof ss.insertSheet === 'function') {
+    sheet = ss.insertSheet(resolvedName);
+  }
+  return sheet || ss.getSheets()[0];
+}
+
 function _syncCalendarToSheetGAS(cfg, start, end) {
   console.log('[_syncCalendarToSheetGAS] Starting sync with config:', { calendarId: cfg?.calendarId, spreadsheetId: cfg?.spreadsheetId, sheetName: cfg?.sheetName });
   console.log('[_syncCalendarToSheetGAS] Date range:', { start, end });
   
   const calendar = cfg && cfg.calendarId ? CalendarApp.getCalendarById(cfg.calendarId) : CalendarApp.getDefaultCalendar();
   const ss = cfg && cfg.spreadsheetId ? SpreadsheetApp.openById(cfg.spreadsheetId) : SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(cfg && cfg.sheetName ? cfg.sheetName : 'Sheet1') || ss.getSheets()[0];
+  const sheet = getOrCreateSheet(ss, cfg && cfg.sheetName ? cfg.sheetName : 'Sheet1');
 
   const events = calendar.getEvents(start, end);
   console.log('[_syncCalendarToSheetGAS] Fetched events:', events.length);
@@ -342,7 +351,7 @@ function fullResyncCalendarToSheetGAS(configIndex) {
       clearCheckpoint(cfg);
       // Clear sheet content (except header) before full resync
       const ss = cfg && cfg.spreadsheetId ? SpreadsheetApp.openById(cfg.spreadsheetId) : SpreadsheetApp.getActiveSpreadsheet();
-      const sheet = ss.getSheetByName(cfg && cfg.sheetName ? cfg.sheetName : 'Sheet1') || ss.getSheets()[0];
+      const sheet = getOrCreateSheet(ss, cfg && cfg.sheetName ? cfg.sheetName : 'Sheet1');
       const data = sheet.getDataRange().getValues();
       if (data.length > 1) {
         sheet.deleteRows(2, data.length - 1);
@@ -358,7 +367,7 @@ function fullResyncCalendarToSheetGAS(configIndex) {
         clearCheckpoint(cfgs[i]);
         // Clear sheet content (except header) before full resync
         const ss = cfgs[i] && cfgs[i].spreadsheetId ? SpreadsheetApp.openById(cfgs[i].spreadsheetId) : SpreadsheetApp.getActiveSpreadsheet();
-        const sheet = ss.getSheetByName(cfgs[i] && cfgs[i].sheetName ? cfgs[i].sheetName : 'Sheet1') || ss.getSheets()[0];
+        const sheet = getOrCreateSheet(ss, cfgs[i] && cfgs[i].sheetName ? cfgs[i].sheetName : 'Sheet1');
         const data = sheet.getDataRange().getValues();
         if (data.length > 1) {
           sheet.deleteRows(2, data.length - 1);

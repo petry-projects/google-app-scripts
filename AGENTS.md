@@ -40,7 +40,9 @@ AGENTS.md is for precise, agent-focused instructions that complement README file
 ---
 
 ## Code style & commits
-- Follow repository style and lint rules. Run `npm run lint` and `npm test` before committing.
+- Follow repository style and lint rules. 
+ - ALWAYS ensure `npm run lint` and `npm test` passes before committing.
+ - ALWAYS ensure `npm test -- --coverage` passes before committing.
 - Keep commits small and include tests with behavior changes.
 
 ---

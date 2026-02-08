@@ -222,7 +222,13 @@ function createSpreadsheet(id='ss1') {
       }
       return sheets.get(name);
     },
-    getSheets: () => [firstSheet],
+    insertSheet: (name) => {
+      if (sheets.has(name)) return sheets.get(name);
+      const sheet = createSheet(name);
+      sheets.set(name, sheet);
+      return sheet;
+    },
+    getSheets: () => Array.from(sheets.values()),
     __reset: () => { 
       sheets.clear();
       firstSheet.__reset();

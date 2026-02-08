@@ -1066,21 +1066,18 @@ describe('Checkpoint logic (GAS only)', () => {
     delete global.SYNC_CONFIGS;
   });
 
-  test('_syncCalendarToSheetGAS falls back to first sheet when named sheet not found', () => {
+  test('_syncCalendarToSheetGAS creates named sheet when missing', () => {
     const code = require('../code.gs');
     
     global.SYNC_CONFIGS = [{ spreadsheetId: 'ss1', sheetName: 'NonExistent', calendarId: null }];
     
     const ss = SpreadsheetApp.openById('ss1');
-    // Mock getSheetByName to return null for NonExistent sheet
+    // Mock getSheetByName to return null for NonExistent sheet to force creation
     const originalGetSheetByName = ss.getSheetByName.bind(ss);
-    ss.getSheetByName = (name) => {
-      if (name === 'NonExistent') return null;
-      return originalGetSheetByName(name);
-    };
-    
-    const firstSheet = ss.getSheets()[0];
-    firstSheet.__setHeader(['id','title','start','end','description','location','attendees']);
+    const originalInsertSheet = ss.insertSheet.bind(ss);
+    const insertSheetSpy = jest.fn((name) => originalInsertSheet(name));
+    ss.getSheetByName = (name) => (name === 'NonExistent' ? null : originalGetSheetByName(name));
+    ss.insertSheet = insertSheetSpy;
     
     const calendar = CalendarApp.getDefaultCalendar();
     const evt = createCalendarEvent({ id: 'e_fallback', title: 'Fallback Test', start: new Date('2026-02-02T10:00:00Z'), end: new Date('2026-02-02T11:00:00Z'), description: '', location: '', attendees: [] });
@@ -1088,8 +1085,12 @@ describe('Checkpoint logic (GAS only)', () => {
 
     code.syncAllCalendarsToSheetsGAS('2026-02-01', '2026-02-03');
 
-    expect(firstSheet.__getRows().find(r => r[0] === 'e_fallback')).toBeTruthy();
+    expect(insertSheetSpy).toHaveBeenCalledWith('NonExistent');
+    const createdSheet = insertSheetSpy.mock.results[0].value;
+    expect(createdSheet.__getRows().find(r => r[0] === 'e_fallback')).toBeTruthy();
     
+    ss.getSheetByName = originalGetSheetByName;
+    ss.insertSheet = originalInsertSheet;
     delete global.SYNC_CONFIGS;
   });
 
