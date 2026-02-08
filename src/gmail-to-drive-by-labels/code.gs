@@ -15,6 +15,164 @@ function storeEmailsAndAttachments() {
 }
 
 /**
+ * Rebuilds all configured documents by clearing them and reprocessing all emails.
+ * This function:
+ * 1. Clears the configured Google Doc
+ * 2. Moves all processed/archived emails back to the trigger label
+ * 3. Allows storeEmailsAndAttachments() to reprocess them
+ * 
+ * For large label sets, this function uses batching to avoid timeouts.
+ * If interrupted, run again to continue from where it left off.
+ * 
+ * Run this when you've updated getCleanBody() or other processing logic
+ * and want to regenerate the documents with the new logic.
+ */
+function rebuildAllDocs() {
+  console.log('[rebuildAllDocs] Starting rebuild process');
+  var PROCESS_CONFIG = getProcessConfig();
+  console.log('[rebuildAllDocs] Rebuilding', PROCESS_CONFIG.length, 'configurations');
+  
+  var completed = true;
+  for (var i = 0; i < PROCESS_CONFIG.length; i++) {
+    var config = PROCESS_CONFIG[i];
+    console.log('[rebuildAllDocs] Rebuilding config', i + 1, 'of', PROCESS_CONFIG.length, ':', config.triggerLabel);
+    var configCompleted = rebuildDoc(config);
+    if (!configCompleted) {
+      console.log('[rebuildAllDocs] Paused due to time constraints. Run rebuildAllDocs() again to continue.');
+      completed = false;
+      break;
+    }
+  }
+  
+  if (completed) {
+    console.log('[rebuildAllDocs] Rebuild preparation complete.');
+    console.log('[rebuildAllDocs] Now run storeEmailsAndAttachments() to reprocess all emails.');
+  }
+}
+
+/**
+ * Rebuilds a single document by clearing it and moving processed emails back to trigger label.
+ * Uses batching and state tracking to handle large label sets without timing out.
+ * Returns true if completed, false if needs to continue in another execution.
+ */
+function rebuildDoc(config) {
+  var MAX_EXECUTION_TIME = 4 * 60 * 1000; // 4 minutes (leaving 2 min buffer for 6 min limit)
+  var BATCH_SIZE = config.batchSize || 250; // Process threads in batches (default: 250)
+  var startTime = new Date().getTime();
+  
+  console.log('[rebuildDoc] Starting rebuild for:', config.triggerLabel);
+  
+  var triggerLabelName = config.triggerLabel;
+  var processedLabelName = config.processedLabel;
+  var stateKey = 'rebuild_state_' + triggerLabelName.replace(/[^a-zA-Z0-9]/g, '_');
+  
+  // 1. Validate and get labels
+  console.log('[rebuildDoc] Looking up labels');
+  var triggerLabel = GmailApp.getUserLabelByName(triggerLabelName);
+  var processedLabel = GmailApp.getUserLabelByName(processedLabelName);
+  
+  if (!triggerLabel) {
+    console.error('[rebuildDoc] Trigger label not found:', triggerLabelName);
+    Logger.log("Trigger label not found: " + triggerLabelName);
+    return true; // Nothing to do, consider complete
+  }
+  
+  if (!processedLabel) {
+    console.log('[rebuildDoc] Processed label not found:', processedLabelName, '- nothing to unarchive');
+  }
+  
+  // 2. Check if we need to clear the document (only on first run)
+  var properties = PropertiesService.getUserProperties();
+  var rebuildState = properties.getProperty(stateKey);
+  var state = rebuildState ? JSON.parse(rebuildState) : { phase: 'clear_doc' };
+  
+  if (state.phase === 'clear_doc') {
+    console.log('[rebuildDoc] Clearing document:', config.docId);
+    try {
+      var doc = DocumentApp.openById(config.docId);
+      var body = doc.getBody();
+      
+      // Clear all content from the document body in a single operation
+      body.setText('');
+      console.log('[rebuildDoc] Document cleared');
+      
+      // Move to next phase
+      state.phase = 'move_emails';
+      properties.setProperty(stateKey, JSON.stringify(state));
+    } catch (e) {
+      console.error('[rebuildDoc] Error clearing document:', e.message);
+      Logger.log("Error clearing document: " + e.message);
+      properties.deleteProperty(stateKey);
+      return true; // Error, consider done to avoid infinite loop
+    }
+  }
+  
+  // 3. Move emails from processed label back to trigger label (batched)
+  if (state.phase === 'move_emails' && processedLabel) {
+    console.log('[rebuildDoc] Moving processed emails back to trigger label');
+    
+    var allThreads = processedLabel.getThreads();
+    var totalThreads = allThreads.length;
+    console.log('[rebuildDoc] Found', totalThreads, 'processed threads remaining');
+    
+    if (totalThreads === 0) {
+      // No threads to process, we're done
+      properties.deleteProperty(stateKey);
+      console.log('[rebuildDoc] No threads to move');
+      console.log('[rebuildDoc] Rebuild complete for:', config.triggerLabel);
+      console.log('[rebuildDoc] Run storeEmailsAndAttachments() to reprocess these emails');
+      return true;
+    }
+    
+    // Process threads in batches, always starting from index 0
+    // (since we're removing threads as we go, the array shrinks)
+    var threadsToProcess = Math.min(BATCH_SIZE, totalThreads);
+    var threadsProcessed = 0;
+    
+    for (var i = 0; i < threadsToProcess; i++) {
+      // Check if we're approaching time limit
+      var elapsed = new Date().getTime() - startTime;
+      if (elapsed > MAX_EXECUTION_TIME) {
+        console.log('[rebuildDoc] Approaching time limit, saving progress. Processed', threadsProcessed, 'threads this run');
+        properties.setProperty(stateKey, JSON.stringify(state));
+        return false; // Not completed, need another run
+      }
+      
+      var thread = allThreads[i];
+      triggerLabel.addToThread(thread);
+      processedLabel.removeFromThread(thread);
+      threadsProcessed++;
+      
+      if ((i + 1) % 10 === 0 || i === threadsToProcess - 1) {
+        console.log('[rebuildDoc] Moved', i + 1, 'of', threadsToProcess, 'threads in this batch');
+      }
+    }
+    
+    console.log('[rebuildDoc] Processed', threadsProcessed, 'threads in this batch,', totalThreads - threadsToProcess, 'remaining');
+    
+    if (threadsToProcess >= totalThreads) {
+      // All threads processed
+      properties.deleteProperty(stateKey);
+      console.log('[rebuildDoc] Moved all threads back to trigger label');
+      console.log('[rebuildDoc] Rebuild complete for:', config.triggerLabel);
+      console.log('[rebuildDoc] Run storeEmailsAndAttachments() to reprocess these emails');
+      return true;
+    } else {
+      // More threads to process
+      properties.setProperty(stateKey, JSON.stringify(state));
+      console.log('[rebuildDoc] Batch complete. Run rebuildAllDocs() again to continue.');
+      return false;
+    }
+  }
+  
+  // If we got here with no processed label, we're done
+  properties.deleteProperty(stateKey);
+  console.log('[rebuildDoc] Rebuild complete for:', config.triggerLabel);
+  console.log('[rebuildDoc] Run storeEmailsAndAttachments() to reprocess these emails');
+  return true;
+}
+
+/**
  * Processes a single configuration group (Label -> Doc + Folder).
  */
 function processLabelGroup(config) {
@@ -248,4 +406,9 @@ function getFileHash(blob) {
   return digest.map(function(byte) {
     return ('0' + (byte & 0xFF).toString(16)).slice(-2);
   }).join('');
+}
+
+// Export functions for testing (Node.js only)
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { rebuildDoc, rebuildAllDocs, processLabelGroup, storeEmailsAndAttachments };
 }
