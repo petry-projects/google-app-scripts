@@ -276,7 +276,10 @@ function createDocumentApp() {
       if (!docs.has(id)) docs.set(id, createDocument(id));
       return docs.get(id);
     },
-    __reset: () => docs.clear()
+    __reset: () => docs.clear(),
+    // Apps Script DocumentApp enums
+    ParagraphHeading: { HEADING_3: 'HEADING_3' },
+    Attribute: { BOLD: 'BOLD' }
   };
 }
 

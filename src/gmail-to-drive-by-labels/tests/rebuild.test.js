@@ -29,8 +29,8 @@ describe('rebuildDoc', () => {
     // Setup: Add some processed threads
     const msg1 = createMessage({ subject: 'Email 1', body: 'Body 1' });
     const msg2 = createMessage({ subject: 'Email 2', body: 'Body 2' });
-    const thread1 = global.GmailApp.__addThreadWithLabels(['test-label-archived'], [msg1]);
-    const thread2 = global.GmailApp.__addThreadWithLabels(['test-label-archived'], [msg2]);
+    global.GmailApp.__addThreadWithLabels(['test-label-archived'], [msg1]);
+    global.GmailApp.__addThreadWithLabels(['test-label-archived'], [msg2]);
 
     // Setup: Create document with content
     const doc = global.DocumentApp.openById('doc-1');
@@ -166,6 +166,79 @@ describe('rebuildDoc', () => {
     // Verify all threads are moved
     expect(triggerLabel.getThreads().length).toBe(25);
     expect(processedLabel.getThreads().length).toBe(0);
+  });
+
+  test('handles document opening errors gracefully', () => {
+    // Setup: Create labels
+    global.GmailApp.createLabel('test-label');
+    const processedLabel = global.GmailApp.createLabel('test-label-archived');
+
+    // Setup: Add a processed thread
+    const msg = createMessage({ subject: 'Email 1', body: 'Body 1' });
+    global.GmailApp.__addThreadWithLabels(['test-label-archived'], [msg]);
+
+    // Mock DocumentApp.openById to throw an error
+    const originalOpenById = global.DocumentApp.openById;
+    global.DocumentApp.openById = jest.fn(() => {
+      throw new Error('Document not found');
+    });
+
+    // Run rebuild
+    const config = {
+      triggerLabel: 'test-label',
+      processedLabel: 'test-label-archived',
+      docId: 'invalid-doc-id',
+      folderId: 'folder-1'
+    };
+
+    // Should not throw and should return early
+    expect(() => rebuildDoc(config)).not.toThrow();
+
+    // Verify emails were NOT moved (function returned early)
+    expect(processedLabel.getThreads().length).toBe(1);
+
+    // Restore original function
+    global.DocumentApp.openById = originalOpenById;
+  });
+
+  test('handles document setText errors gracefully', () => {
+    // Setup: Create labels
+    global.GmailApp.createLabel('test-label');
+    const processedLabel = global.GmailApp.createLabel('test-label-archived');
+
+    // Setup: Add a processed thread
+    const msg = createMessage({ subject: 'Email 1', body: 'Body 1' });
+    global.GmailApp.__addThreadWithLabels(['test-label-archived'], [msg]);
+
+    // Setup: Create a mock document that throws on setText
+    const mockDoc = {
+      getBody: () => ({
+        setText: jest.fn(() => {
+          throw new Error('Permission denied');
+        })
+      })
+    };
+
+    // Mock DocumentApp.openById to return our mock document
+    const originalOpenById = global.DocumentApp.openById;
+    global.DocumentApp.openById = jest.fn(() => mockDoc);
+
+    // Run rebuild
+    const config = {
+      triggerLabel: 'test-label',
+      processedLabel: 'test-label-archived',
+      docId: 'doc-1',
+      folderId: 'folder-1'
+    };
+
+    // Should not throw and should return early
+    expect(() => rebuildDoc(config)).not.toThrow();
+
+    // Verify emails were NOT moved (function returned early)
+    expect(processedLabel.getThreads().length).toBe(1);
+
+    // Restore original function
+    global.DocumentApp.openById = originalOpenById;
   });
 });
 
