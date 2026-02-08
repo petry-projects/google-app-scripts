@@ -167,6 +167,11 @@ function processMessagesToDoc(messages, body, folder, options = {}) {
     processMessageToDoc(message, body, folder, options);
   });
   
+  // Add a clear separator between threads (after all messages in a thread are processed)
+  if (sortedMessages.length > 0) {
+    body.insertParagraph(0, "==============================");
+  }
+  
   return sortedMessages.length;
 }
 

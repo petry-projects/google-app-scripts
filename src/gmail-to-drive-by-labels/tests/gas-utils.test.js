@@ -30,6 +30,37 @@ describe('getCleanBody', () => {
     const input = 'Regular email content\nNo special patterns here';
     expect(getCleanBody(input)).toBe('Regular email content\nNo special patterns here');
   });
+
+  test('normalizes multiple consecutive line breaks to single line break', () => {
+    const input = 'Paragraph 1\n\n\n\nParagraph 2';
+    const result = getCleanBody(input);
+    // Should normalize to single line break (no blank lines)
+    expect(result).not.toContain('\n\n');
+    expect(result).toBe('Paragraph 1\nParagraph 2');
+  });
+
+  test('handles multiple occurrences of excessive line breaks', () => {
+    const input = 'Line 1\n\n\nLine 2\n\n\n\n\nLine 3';
+    const result = getCleanBody(input);
+    expect(result).toBe('Line 1\nLine 2\nLine 3');
+  });
+
+  test('preserves single line breaks', () => {
+    const input = 'Line 1\nLine 2\nLine 3';
+    expect(getCleanBody(input)).toBe('Line 1\nLine 2\nLine 3');
+  });
+
+  test('normalizes double line breaks to single (for signatures)', () => {
+    const input = 'Paragraph 1\n\nParagraph 2';
+    expect(getCleanBody(input)).toBe('Paragraph 1\nParagraph 2');
+  });
+
+  test('handles email signature with excessive line breaks', () => {
+    const input = 'Thank you!\n\n\n\nJohn Doe\n\nSoftware Engineer\n\n\nAcme Corp';
+    const result = getCleanBody(input);
+    expect(result).toBe('Thank you!\nJohn Doe\nSoftware Engineer\nAcme Corp');
+    expect(result).not.toContain('\n\n');
+  });
 });
 
 describe('getFileHash', () => {
