@@ -18,6 +18,7 @@ describe('rebuildDoc', () => {
     global.GmailApp.__reset();
     global.DocumentApp.__reset();
     global.DriveApp.__reset();
+    global.PropertiesService.__reset();
     jest.clearAllMocks();
   });
 
@@ -51,7 +52,7 @@ describe('rebuildDoc', () => {
       docId: 'doc-1',
       folderId: 'folder-1'
     };
-    rebuildDoc(config);
+    const completed = rebuildDoc(config);
 
     // Verify document is cleared
     expect(body.getParagraphs().length).toBe(0);
@@ -59,6 +60,9 @@ describe('rebuildDoc', () => {
     // Verify emails are moved back to trigger label
     expect(triggerLabel.getThreads().length).toBe(2);
     expect(processedLabel.getThreads().length).toBe(0);
+    
+    // Verify operation completed
+    expect(completed).toBe(true);
   });
 
   test('handles missing processed label gracefully', () => {
@@ -240,6 +244,68 @@ describe('rebuildDoc', () => {
     // Restore original function
     global.DocumentApp.openById = originalOpenById;
   });
+
+  test('handles resumable batching for large label sets', () => {
+    // Setup: Create labels
+    const triggerLabel = global.GmailApp.createLabel('test-label');
+    const processedLabel = global.GmailApp.createLabel('test-label-archived');
+
+    // Setup: Add many processed threads (more than batch size of 100)
+    for (let i = 0; i < 150; i++) {
+      const msg = createMessage({ subject: `Email ${i}`, body: `Body ${i}` });
+      global.GmailApp.__addThreadWithLabels(['test-label-archived'], [msg]);
+    }
+
+    // Setup: Create document
+    const doc = global.DocumentApp.openById('doc-1');
+    doc.getBody().appendParagraph('Content');
+
+    // Verify initial state
+    expect(processedLabel.getThreads().length).toBe(150);
+    expect(triggerLabel.getThreads().length).toBe(0);
+
+    // Run rebuild - should handle batching automatically
+    const config = {
+      triggerLabel: 'test-label',
+      processedLabel: 'test-label-archived',
+      docId: 'doc-1',
+      folderId: 'folder-1'
+    };
+    
+    // First run - processes up to BATCH_SIZE (100)
+    const completed1 = rebuildDoc(config);
+    
+    // Should not complete if there are more than BATCH_SIZE threads
+    expect(completed1).toBe(false);
+    
+    // Document should be cleared
+    expect(doc.getBody().getParagraphs().length).toBe(0);
+    
+    // First batch should be moved (100 threads)
+    expect(triggerLabel.getThreads().length).toBe(100);
+    expect(processedLabel.getThreads().length).toBe(50);
+    
+    // State should be saved
+    const properties = global.PropertiesService.getUserProperties();
+    const stateKey = 'rebuild_state_test_label';
+    let savedState = properties.getProperty(stateKey);
+    expect(savedState).not.toBeNull();
+    let state = JSON.parse(savedState);
+    expect(state.phase).toBe('move_emails');
+    
+    // Second run - processes remaining 50 threads
+    const completed2 = rebuildDoc(config);
+    
+    // Should complete on second run
+    expect(completed2).toBe(true);
+    
+    // All threads should be moved
+    expect(triggerLabel.getThreads().length).toBe(150);
+    expect(processedLabel.getThreads().length).toBe(0);
+    
+    // State should be cleaned up
+    expect(properties.getProperty(stateKey)).toBeNull();
+  });
 });
 
 describe('rebuildAllDocs', () => {
@@ -247,6 +313,7 @@ describe('rebuildAllDocs', () => {
     global.GmailApp.__reset();
     global.DocumentApp.__reset();
     global.DriveApp.__reset();
+    global.PropertiesService.__reset();
     jest.clearAllMocks();
   });
 
