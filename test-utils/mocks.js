@@ -26,12 +26,13 @@ let threadIdCounter = 0;
 
 function createThread(messages, id) {
   const threadId = id || `thread_${++threadIdCounter}`;
-  return {
+  const thread = {
     getId: () => threadId,
     getMessages: () => messages.slice(),
-    addLabel: (label) => label.addThread(this),
     // The real API uses Label methods to add/remove; we keep simple
   };
+  thread.addLabel = (label) => label.addThread(thread);
+  return thread;
 }
 
 function createMessage({subject = '', body = '', date = new Date(), attachments = []} = {}) {
