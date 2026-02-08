@@ -1231,7 +1231,7 @@ describe('Checkpoint logic (GAS only)', () => {
     delete global.SHEET_NAME;
   });
 
-  test('incremental sync handles events with missing start dates gracefully', () => {
+  test('incremental sync sanitizes formula injection in title, description, and location', () => {
     const code = require('../code.gs');
     
     global.SPREADSHEET_ID = 'ss1';
