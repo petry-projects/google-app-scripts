@@ -68,14 +68,8 @@ function rebuildDoc(config) {
     var doc = DocumentApp.openById(config.docId);
     var body = doc.getBody();
     
-    // Clear all content from the document body
-    var numChildren = body.getNumChildren();
-    console.log('[rebuildDoc] Document has', numChildren, 'elements');
-    
-    // Remove all elements in reverse order (prevents index shifting issues)
-    for (var i = numChildren - 1; i >= 0; i--) {
-      body.removeChild(body.getChild(i));
-    }
+    // Clear all content from the document body in a single operation
+    body.setText('');
     console.log('[rebuildDoc] Document cleared');
   } catch (e) {
     console.error('[rebuildDoc] Error clearing document:', e.message);

@@ -96,6 +96,19 @@ function createDocument(id = 'doc1') {
       removeChild: (child) => {
         const idx = paragraphs.indexOf(child);
         if (idx !== -1) paragraphs.splice(idx, 1);
+      },
+      setText: (text) => {
+        // Clear all paragraphs when setText is called with empty string
+        paragraphs.length = 0;
+        // If text is provided, add it as a new paragraph
+        if (text) {
+          paragraphs.push({
+            text,
+            setHeading: () => {},
+            setAttributes: () => {},
+            getText: () => text
+          });
+        }
       }
     })
   };
