@@ -191,6 +191,11 @@ function processLabelGroup(config) {
       Utilities.sleep(500);
     });
 
+    // Add a clear separator between threads (after all messages in a thread are processed)
+    if (messages.length > 0) {
+      body.insertParagraph(0, "==============================");
+    }
+
     // 5. Cleanup Labels
     console.log('[processLabelGroup] Updating labels for thread');
     triggerLabel.removeFromThread(thread);
@@ -236,7 +241,11 @@ function getCleanBody(text) {
     return !(trimmed.startsWith(">") || trimmed.startsWith("<"));
   });
 
-  return cleanLines.join('\n').trim();
+  // 3. THIRD PASS: Normalize line breaks (max 2 consecutive)
+  var result = cleanLines.join('\n').trim();
+  result = result.replace(/\n{3,}/g, '\n\n');
+  
+  return result;
 }
 
 /**

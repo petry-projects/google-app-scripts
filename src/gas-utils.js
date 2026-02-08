@@ -33,7 +33,11 @@ function getCleanBody(text) {
     return !(trimmed.startsWith('>') || trimmed.startsWith('<'));
   });
 
-  return cleanLines.join('\n').trim();
+  // Join lines and normalize line breaks: replace 3+ consecutive line breaks with 2
+  let result = cleanLines.join('\n').trim();
+  result = result.replace(/\n{3,}/g, '\n\n');
+  
+  return result;
 }
 
 /**

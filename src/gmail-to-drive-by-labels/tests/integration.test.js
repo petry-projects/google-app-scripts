@@ -57,22 +57,25 @@ describe('Gmail to Drive integration with prepend behavior', () => {
     // Verify: Most recent email should be at the top
     const paragraphs = body.getParagraphs();
     
-    // Should have 4 paragraphs per email (subject, date, content, separator) × 3 emails = 12 paragraphs
-    expect(paragraphs.length).toBe(12);
+    // Should have 4 paragraphs per email (subject, date, content, separator) × 3 emails + 1 thread separator = 13 paragraphs
+    expect(paragraphs.length).toBe(13);
     
-    // Third (most recent) email should be at top
-    expect(paragraphs[0].getText()).toBe('Subject: Third Email');
-    expect(paragraphs[1].getText()).toContain('2024');
-    expect(paragraphs[2].getText()).toBe('Content of third email');
-    expect(paragraphs[3].getText()).toBe('------------------------------');
+    // Thread separator should be at top
+    expect(paragraphs[0].getText()).toBe('==============================');
+    
+    // Third (most recent) email should be at top (after thread separator)
+    expect(paragraphs[1].getText()).toBe('Subject: Third Email');
+    expect(paragraphs[2].getText()).toContain('2024');
+    expect(paragraphs[3].getText()).toBe('Content of third email');
+    expect(paragraphs[4].getText()).toBe('------------------------------');
     
     // Second email should be in middle
-    expect(paragraphs[4].getText()).toBe('Subject: Second Email');
-    expect(paragraphs[6].getText()).toBe('Content of second email');
+    expect(paragraphs[5].getText()).toBe('Subject: Second Email');
+    expect(paragraphs[7].getText()).toBe('Content of second email');
     
     // First email should be at bottom
-    expect(paragraphs[8].getText()).toBe('Subject: First Email');
-    expect(paragraphs[10].getText()).toBe('Content of first email');
+    expect(paragraphs[9].getText()).toBe('Subject: First Email');
+    expect(paragraphs[11].getText()).toBe('Content of first email');
   });
 
   test('prepends email with attachments correctly using production deduplication logic', () => {
@@ -99,11 +102,13 @@ describe('Gmail to Drive integration with prepend behavior', () => {
     
     // Verify structure
     const paragraphs = body.getParagraphs();
-    expect(paragraphs[0].getText()).toBe('Subject: Email with Attachments');
-    expect(paragraphs[3].getText()).toBe('[Attachments]:');
-    expect(paragraphs[4].getText()).toBe('- file1.txt');
-    expect(paragraphs[5].getText()).toBe('- file2.pdf');
-    expect(paragraphs[6].getText()).toBe('------------------------------');
+    // Thread separator + Subject + Date + Content + [Attachments] + file1 + file2 + separator = 8 paragraphs
+    expect(paragraphs[0].getText()).toBe('==============================');
+    expect(paragraphs[1].getText()).toBe('Subject: Email with Attachments');
+    expect(paragraphs[4].getText()).toBe('[Attachments]:');
+    expect(paragraphs[5].getText()).toBe('- file1.txt');
+    expect(paragraphs[6].getText()).toBe('- file2.pdf');
+    expect(paragraphs[7].getText()).toBe('------------------------------');
     
     // Verify files were created
     const files = folder.__getFiles();
@@ -176,11 +181,14 @@ describe('Gmail to Drive integration with prepend behavior', () => {
     
     // Verify both threads are in document
     const paragraphs = body.getParagraphs();
-    expect(paragraphs.length).toBe(8);
+    // Each thread has: separator + subject + date + content + message separator = 5 paragraphs × 2 threads = 10 paragraphs
+    expect(paragraphs.length).toBe(10);
     
-    // Most recently processed thread should be at top
-    expect(paragraphs[0].getText()).toBe('Subject: Thread 2 Email');
-    expect(paragraphs[4].getText()).toBe('Subject: Thread 1 Email');
+    // Most recently processed thread should be at top (after thread separator)
+    expect(paragraphs[0].getText()).toBe('==============================');
+    expect(paragraphs[1].getText()).toBe('Subject: Thread 2 Email');
+    expect(paragraphs[5].getText()).toBe('==============================');
+    expect(paragraphs[6].getText()).toBe('Subject: Thread 1 Email');
   });
 
   test('handles attachment deduplication correctly', () => {
