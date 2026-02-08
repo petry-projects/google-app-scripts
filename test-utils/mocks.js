@@ -98,9 +98,9 @@ function createDocument(id = 'doc1') {
         if (idx !== -1) paragraphs.splice(idx, 1);
       },
       setText: (text) => {
-        // Clear all paragraphs when setText is called with empty string
+        // Replace the body content: clear all existing paragraphs
         paragraphs.length = 0;
-        // If text is provided, add it as a new paragraph
+        // If text is non-empty, add it as a single new paragraph
         if (text) {
           paragraphs.push({
             text,
