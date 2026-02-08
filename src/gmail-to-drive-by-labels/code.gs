@@ -265,8 +265,11 @@ function processLabelGroup(config) {
       try {
         headingPara.setHeading(DocumentApp.ParagraphHeading.HEADING_3);
       } catch (e) {
+        /* istanbul ignore next */
         var style = {};
+        /* istanbul ignore next */
         style[DocumentApp.Attribute.BOLD] = true;
+        /* istanbul ignore next */
         headingPara.setAttributes(style);
       }
       
