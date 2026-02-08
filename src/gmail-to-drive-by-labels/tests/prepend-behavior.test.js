@@ -1,4 +1,4 @@
-const { createMessage, createBlob } = require('../../../test-utils/mocks');
+const { createMessage } = require('../../../test-utils/mocks');
 
 describe('Email prepending to document', () => {
   let doc, body, folder, label, thread, message;
