@@ -250,7 +250,7 @@ describe('rebuildDoc', () => {
     const triggerLabel = global.GmailApp.createLabel('test-label');
     const processedLabel = global.GmailApp.createLabel('test-label-archived');
 
-    // Setup: Add many processed threads (more than batch size of 100)
+    // Setup: Add many processed threads (more than batch size)
     for (let i = 0; i < 150; i++) {
       const msg = createMessage({ subject: `Email ${i}`, body: `Body ${i}` });
       global.GmailApp.__addThreadWithLabels(['test-label-archived'], [msg]);
@@ -269,13 +269,14 @@ describe('rebuildDoc', () => {
       triggerLabel: 'test-label',
       processedLabel: 'test-label-archived',
       docId: 'doc-1',
-      folderId: 'folder-1'
+      folderId: 'folder-1',
+      batchSize: 100 // Use smaller batch size for testing
     };
     
-    // First run - processes up to BATCH_SIZE (100)
+    // First run - processes up to batchSize (100)
     const completed1 = rebuildDoc(config);
     
-    // Should not complete if there are more than BATCH_SIZE threads
+    // Should not complete if there are more than batchSize threads
     expect(completed1).toBe(false);
     
     // Document should be cleared
@@ -305,6 +306,40 @@ describe('rebuildDoc', () => {
     
     // State should be cleaned up
     expect(properties.getProperty(stateKey)).toBeNull();
+  });
+
+  test('uses default batch size of 250 when not specified', () => {
+    // Setup
+    const triggerLabel = global.GmailApp.createLabel('test-label');
+    const processedLabel = global.GmailApp.createLabel('test-label-archived');
+
+    // Setup: Add 200 threads (less than default batch size of 250)
+    for (let i = 0; i < 200; i++) {
+      const msg = createMessage({ subject: `Email ${i}`, body: `Body ${i}` });
+      global.GmailApp.__addThreadWithLabels(['test-label-archived'], [msg]);
+    }
+
+    // Setup: Create document
+    const doc = global.DocumentApp.openById('doc-1');
+
+    // Config without batchSize specified
+    const config = {
+      triggerLabel: 'test-label',
+      processedLabel: 'test-label-archived',
+      docId: 'doc-1',
+      folderId: 'folder-1'
+      // No batchSize - should default to 250
+    };
+    
+    // Run - should complete in one batch since 200 < 250
+    const completed = rebuildDoc(config);
+    
+    // Should complete because all threads fit in default batch size
+    expect(completed).toBe(true);
+    
+    // All threads should be moved
+    expect(triggerLabel.getThreads().length).toBe(200);
+    expect(processedLabel.getThreads().length).toBe(0);
   });
 });
 

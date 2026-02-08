@@ -77,7 +77,12 @@ function getProcessConfig() {
       docId: "YOUR_GOOGLE_DOC_ID_HERE", 
       
       // The Drive Folder ID found in step 3
-      folderId: "YOUR_DRIVE_FOLDER_ID_HERE" 
+      folderId: "YOUR_DRIVE_FOLDER_ID_HERE",
+      
+      // Optional: Number of threads to process per batch during rebuild
+      // Default is 250 if not specified. Increase for faster rebuilds,
+      // decrease if experiencing timeouts.
+      batchSize: 250
     }
   ];
 }

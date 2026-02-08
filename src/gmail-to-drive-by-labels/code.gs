@@ -57,7 +57,7 @@ function rebuildAllDocs() {
  */
 function rebuildDoc(config) {
   var MAX_EXECUTION_TIME = 4 * 60 * 1000; // 4 minutes (leaving 2 min buffer for 6 min limit)
-  var BATCH_SIZE = 100; // Process 100 threads at a time
+  var BATCH_SIZE = config.batchSize || 250; // Process threads in batches (default: 250)
   var startTime = new Date().getTime();
   
   console.log('[rebuildDoc] Starting rebuild for:', config.triggerLabel);
