@@ -15,6 +15,66 @@ function storeEmailsAndAttachments() {
 }
 
 /**
+ * Remove existing thread content from the document by finding and deleting
+ * all paragraphs between the thread's separator and the next separator (or start).
+ * 
+ * @param {Object} body - Document body object
+ * @param {string} threadId - The thread ID to search for
+ * @returns {boolean} True if thread was found and removed, false otherwise
+ */
+function removeExistingThreadFromDoc(body, threadId) {
+  if (!threadId) return false;
+  
+  var threadMarker = "[THREAD:" + threadId + "]";
+  var numChildren = body.getNumChildren();
+  
+  // Find the separator containing this thread ID
+  var threadSeparatorIndex = -1;
+  for (var i = 0; i < numChildren; i++) {
+    var child = body.getChild(i);
+    if (child.getType() === DocumentApp.ElementType.PARAGRAPH) {
+      var text = child.asParagraph().getText();
+      if (text.indexOf(threadMarker) !== -1) {
+        threadSeparatorIndex = i;
+        break;
+      }
+    }
+  }
+  
+  if (threadSeparatorIndex === -1) {
+    console.log('[removeExistingThreadFromDoc] Thread not found:', threadId);
+    return false; // Thread not found in document
+  }
+  
+  console.log('[removeExistingThreadFromDoc] Found thread separator at index', threadSeparatorIndex);
+  
+  // Find the start of this thread's content (search backwards from thread separator to previous thread separator or start)
+  var threadStartIndex = 0;
+  for (var i = threadSeparatorIndex - 1; i >= 0; i--) {
+    var child = body.getChild(i);
+    if (child.getType() === DocumentApp.ElementType.PARAGRAPH) {
+      var text = child.asParagraph().getText();
+      // Stop when we hit another thread separator (indicated by [THREAD:])
+      if (text.indexOf('[THREAD:') !== -1) {
+        threadStartIndex = i + 1; // Start after the previous thread separator
+        break;
+      }
+    }
+  }
+  
+  console.log('[removeExistingThreadFromDoc] Removing elements from', threadStartIndex, 'to', threadSeparatorIndex);
+  
+  // Remove all elements from threadStartIndex to threadSeparatorIndex (inclusive)
+  // Remove in reverse order to avoid index shifting issues
+  for (var i = threadSeparatorIndex; i >= threadStartIndex; i--) {
+    body.removeChild(body.getChild(i));
+  }
+  
+  console.log('[removeExistingThreadFromDoc] Successfully removed thread:', threadId);
+  return true;
+}
+
+/**
  * Processes a single configuration group (Label -> Doc + Folder).
  */
 function processLabelGroup(config) {
@@ -83,7 +143,11 @@ function processLabelGroup(config) {
   var totalMessages = 0;
   threads.forEach((thread, threadIndex) => {
     var messages = thread.getMessages();
-    console.log('[processLabelGroup] Thread', threadIndex + 1, 'has', messages.length, 'messages');
+    var threadId = thread.getId();
+    console.log('[processLabelGroup] Thread', threadIndex + 1, 'has', messages.length, 'messages, ID:', threadId);
+    
+    // Remove existing thread content if it already exists in the document
+    removeExistingThreadFromDoc(body, threadId);
     
     // Sort messages by date (oldest first) so when we prepend (insert at index 0),
     // the newest messages end up at the top of the document
@@ -196,7 +260,16 @@ function processLabelGroup(config) {
           }
         });
       }
-      body.insertParagraph(currentIndex++, "------------------------------");
+      
+      // Add separator - use thread separator for oldest message (first in sorted array)
+      var isOldestMessage = (msgIndex === 0);
+      if (isOldestMessage) {
+        var threadSeparator = "------------------------------[THREAD:" + threadId + "]";
+        body.insertParagraph(currentIndex++, threadSeparator);
+        console.log('[processLabelGroup] Added thread separator for thread:', threadId);
+      } else {
+        body.insertParagraph(currentIndex++, "------------------------------");
+      }
       
       // Pause briefly to allow Google Doc to save (prevents crash)
       Utilities.sleep(500);
