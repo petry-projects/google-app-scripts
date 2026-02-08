@@ -89,6 +89,9 @@ function processLabelGroup(config) {
       console.log('[processLabelGroup] Processing message', msgIndex + 1, ':', subject);
 
       // --- A. Prepend Text to Doc (insert at top, newest first) ---
+      // Note: currentIndex starts at 0 for each message, so each new message
+      // is inserted at the top of the document, pushing previous content down.
+      // This ensures the most recent emails appear first.
       var currentIndex = 0;
       
       var subjectText = "Subject: " + (subject ? subject : "(No Subject)");
