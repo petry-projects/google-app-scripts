@@ -11,6 +11,12 @@ A robust Google Apps Script designed to automate the archiving of Gmail threads.
 * Scans for emails with a specific "Trigger Label" and processes them automatically.
 * Processing is performed on a per-item basis allowing resumption after timeouts
 
+**Thread Deduplication:**
+* Prevents duplicate content when new messages arrive on existing threads
+* Each thread is identified by a unique ID embedded in its separator
+* Existing thread content is automatically removed and replaced with updated content
+* Ensures each thread appears exactly once in the document with the latest messages
+
 **Clean Output:**
 * Strips quoted replies (e.g., "On [Date]... wrote:").
 * Removes "Confidentiality Notice" legal footers.
@@ -27,6 +33,129 @@ A robust Google Apps Script designed to automate the archiving of Gmail threads.
 
 **Label Management:**
 * Automatically removes the trigger label and applies an "Archived" label after processing.
+
+## How It Works
+
+### End-to-End Processing Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Script
+    participant Gmail
+    participant Doc
+    participant Drive
+    
+    User->>Script: Trigger storeEmailsAndAttachments()
+    Script->>Gmail: Get threads with trigger label
+    Gmail-->>Script: Return threads (unordered)
+    
+    Script->>Script: Sort threads by last message date (newest first)
+    
+    loop For each thread
+        Script->>Gmail: Get thread ID
+        Script->>Doc: Search for existing thread by ID
+        
+        alt Thread exists in document
+            Doc-->>Script: Return thread location
+            Script->>Doc: Remove old thread content
+        end
+        
+        Script->>Gmail: Get all messages in thread
+        Script->>Script: Sort messages by date (oldest first)
+        
+        loop For each message (oldest to newest)
+            Script->>Script: Clean message body
+            Script->>Doc: Insert at top (prepend):<br/>- Subject<br/>- Date<br/>- Content
+            
+            alt Message has attachments
+                loop For each attachment
+                    Script->>Drive: Check if file exists (by name)
+                    
+                    alt File exists
+                        Script->>Drive: Compare MD5 hashes
+                        
+                        alt Hashes match (duplicate)
+                            Script->>Doc: Insert "[DUPLICATE SKIPPED]"
+                        else Different content
+                            Script->>Drive: Save with timestamp in filename
+                            Script->>Doc: Insert attachment reference
+                        end
+                    else New file
+                        Script->>Drive: Save attachment
+                        Script->>Doc: Insert attachment reference
+                    end
+                end
+            end
+            
+            alt Is oldest message in thread
+                Script->>Doc: Insert separator with thread ID:<br/>------------------------------[THREAD:id]
+            else
+                Script->>Doc: Insert regular separator:<br/>------------------------------
+            end
+        end
+        
+        Script->>Gmail: Remove trigger label from thread
+        Script->>Gmail: Add processed label to thread
+    end
+    
+    Script-->>User: Processing complete
+```
+
+### Thread Deduplication Logic
+
+The script prevents duplicate thread content when new messages arrive on existing threads:
+
+1. **Thread Identification**: Each thread is assigned a unique ID (via Gmail API's `thread.getId()`)
+
+2. **Separator Marking**: The thread ID is embedded in a separator at the bottom of each thread:
+   ```
+   ------------------------------[THREAD:1234567890abcdef]
+   ```
+
+3. **Duplicate Detection**: Before inserting a thread, the script searches the document for the thread ID marker
+
+4. **Content Removal**: If found, all paragraphs from the thread separator backwards to the previous separator (or document start) are removed
+
+5. **Updated Insertion**: The complete thread with all messages (including new ones) is inserted at the top
+
+**Result**: Each thread appears exactly once in the document, always showing the latest content.
+
+### Message and Thread Ordering
+
+**Thread Order** (in document):
+* Threads are sorted by last message date
+* Newest threads appear at the top
+* Sorting happens before processing to ensure consistent order regardless of Gmail API's return order
+
+**Message Order** (within each thread):
+* Messages are sorted oldest-first before insertion
+* Since messages are prepended (inserted at index 0), newest messages end up at the top
+* Final result: Newest message at top, oldest at bottom of each thread
+
+### Example Document Structure
+
+```
+Subject: Re: Important Update
+Date: 2024-01-15 10:00
+Newest reply content
+------------------------------
+
+Subject: Re: Important Update  
+Date: 2024-01-10 15:00
+Second reply content
+------------------------------
+
+Subject: Important Update
+Date: 2024-01-05 09:00
+Original message content
+------------------------------[THREAD:abc123def456]
+
+Subject: Another Thread
+Date: 2024-01-03 14:00
+Different thread content
+------------------------------[THREAD:xyz789uvw012]
+```
 
 ## Setup Instructions
 
