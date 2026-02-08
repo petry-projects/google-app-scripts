@@ -137,6 +137,11 @@ function _syncCalendarToSheetGAS(cfg, start, end) {
   const desired = events.map(eventToRowGAS);
   const desiredMap = new Map(desired.map(r => [r[0], r]));
 
+  // Ensure the header row exists before reading data so the first event
+  // row is never mistaken for a header on a brand-new/empty sheet.
+  if (typeof ensureHeader === 'function') {
+    ensureHeader(sheet);
+  }
   let data = sheet.getDataRange().getValues();
   // Ensure header row exists; if sheet is empty or first row is blank, create headers.
   if (!data || data.length === 0 || (data.length === 1 && data[0].every(function (cell) { return cell === '' || cell === null; }))) {
