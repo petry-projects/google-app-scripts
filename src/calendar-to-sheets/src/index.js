@@ -128,7 +128,11 @@ async function syncCalendarToSheet(calendar, sheet, { start = new Date(0), end =
 
   if (rowsToInsert.length > 0) {
     console.log('[syncCalendarToSheet] Inserting new events:', rowsToInsert.length);
-    sheet.getRange(sheet.getLastRow() + 1, 1, rowsToInsert.length, rowsToInsert[0].length).setValues(rowsToInsert);
+    if (typeof sheet.getLastRow === 'function') {
+      sheet.getRange(sheet.getLastRow() + 1, 1, rowsToInsert.length, rowsToInsert[0].length).setValues(rowsToInsert);
+    } else {
+      rowsToInsert.forEach((row) => sheet.appendRow(row));
+    }
   }
 
   console.log('[syncCalendarToSheet] Updates:', updateCount, 'Inserts:', rowsToInsert.length);
