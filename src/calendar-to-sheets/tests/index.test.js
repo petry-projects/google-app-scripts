@@ -68,8 +68,8 @@ test('rowsToMap builds correct mapping and rowsEqual works', () => {
   expect(m.get('e2').rowIndex).toBe(3); // header row considered
   expect(rowsEqual(['a','b'], ['a','b'])).toBe(true);
   expect(rowsEqual(['a','b'], ['a','c'])).toBe(false);
-  // extra trailing columns only allowed if they are falsy/empty
-  expect(rowsEqual(['a','b'], ['a','b','extra','columns'])).toBe(false);
+  // extra trailing columns in b are ignored
+  expect(rowsEqual(['a','b'], ['a','b','extra','columns'])).toBe(true);
   expect(rowsEqual(['a','b'], ['a','c','extra','columns'])).toBe(false);
 });
 
@@ -1437,12 +1437,13 @@ test('syncCalendarToSheet preserves rows with dates outside sync window', async 
 });
 
 // Test rowsEqual with longer array having extra truthy values
-test('rowsEqual returns false when longer array has extra truthy values', () => {
-  expect(rowsEqual(['a', 'b'], ['a', 'b', 'c'])).toBe(false);
-  expect(rowsEqual(['a', 'b', 'c'], ['a', 'b'])).toBe(false);
-  // But should return true if extra values are falsy
+test('rowsEqual ignores extra columns in second argument', () => {
+  // Extra columns in b are always ignored
+  expect(rowsEqual(['a', 'b'], ['a', 'b', 'c'])).toBe(true);
   expect(rowsEqual(['a', 'b'], ['a', 'b', ''])).toBe(true);
   expect(rowsEqual(['a', 'b'], ['a', 'b', null])).toBe(true);
+  // But if a is longer than b, it should fail (comparing against undefined)
+  expect(rowsEqual(['a', 'b', 'c'], ['a', 'b'])).toBe(false);
 });
 
 // Test code.gs functions for coverage
