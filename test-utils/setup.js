@@ -10,7 +10,19 @@ global.Utilities = {
     return d.toISOString();
   },
   // Provide a simple sleep stub used in code
-  sleep: (ms) => {}
+  sleep: (ms) => {},
+  // Mock MD5 hash computation
+  computeDigest: (algorithm, bytes) => {
+    // Simple deterministic hash for testing
+    // Convert bytes to a string and create a fake hash
+    const crypto = require('crypto');
+    const hash = crypto.createHash('md5').update(Buffer.from(bytes)).digest();
+    // Return as array of numbers (like GAS does)
+    return Array.from(hash);
+  },
+  DigestAlgorithm: {
+    MD5: 'MD5'
+  }
 };
 
 global.Logger = {
