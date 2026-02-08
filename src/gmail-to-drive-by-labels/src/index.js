@@ -8,6 +8,61 @@
 const { getCleanBody, getFileHash } = require('../../gas-utils');
 
 /**
+ * Remove existing thread content from the document by finding and deleting
+ * all paragraphs between the thread's separator and the next separator (or start).
+ * 
+ * @param {Object} body - Document body object
+ * @param {string} threadId - The thread ID to search for
+ * @returns {boolean} True if thread was found and removed, false otherwise
+ */
+function removeExistingThread(body, threadId) {
+  if (!threadId) return false;
+  
+  const paragraphs = body.getParagraphs();
+  const threadMarker = `[THREAD:${threadId}]`;
+  
+  // Find the separator containing this thread ID
+  let threadSeparatorIndex = -1;
+  for (let i = 0; i < paragraphs.length; i++) {
+    const text = paragraphs[i].getText();
+    if (text.includes(threadMarker)) {
+      threadSeparatorIndex = i;
+      break;
+    }
+  }
+  
+  if (threadSeparatorIndex === -1) {
+    console.log('[removeExistingThread] Thread not found:', threadId);
+    return false; // Thread not found in document
+  }
+  
+  console.log('[removeExistingThread] Found thread separator at paragraph', threadSeparatorIndex);
+  
+  // Find the start of this thread's content (search backwards from thread separator to previous thread separator or start)
+  let threadStartIndex = 0;
+  for (let i = threadSeparatorIndex - 1; i >= 0; i--) {
+    const text = paragraphs[i].getText();
+    // Stop when we hit another thread separator (indicated by [THREAD:])
+    if (text.includes('[THREAD:')) {
+      threadStartIndex = i + 1; // Start after the previous thread separator
+      break;
+    }
+  }
+  
+  console.log('[removeExistingThread] Removing paragraphs from', threadStartIndex, 'to', threadSeparatorIndex);
+  
+  // Remove all paragraphs from threadStartIndex to threadSeparatorIndex (inclusive)
+  // Remove in reverse order to avoid index shifting issues
+  for (let i = threadSeparatorIndex; i >= threadStartIndex; i--) {
+    const para = paragraphs[i];
+    para.removeFromParent();
+  }
+  
+  console.log('[removeExistingThread] Successfully removed thread:', threadId);
+  return true;
+}
+
+/**
  * Process a single message and prepend its content to the document body.
  * Returns the number of paragraphs inserted.
  * 
@@ -134,8 +189,15 @@ function processMessageToDoc(message, body, folder, options = {}) {
     });
   }
   
-  // Insert separator
-  body.insertParagraph(currentIndex++, "------------------------------");
+  // Insert separator - use thread separator for bottom message (oldest, first in sorted array) if threadId provided
+  const { threadId, isBottomMessage } = options;
+  if (threadId && isBottomMessage) {
+    const separator = `------------------------------[THREAD:${threadId}]`;
+    body.insertParagraph(currentIndex++, separator);
+    console.log('[processMessageToDoc] Added thread separator:', threadId);
+  } else {
+    body.insertParagraph(currentIndex++, "------------------------------");
+  }
   
   // Pause in GAS environment to prevent crashes
   if (Utilities) {
@@ -148,14 +210,23 @@ function processMessageToDoc(message, body, folder, options = {}) {
 /**
  * Process multiple messages from a thread, prepending them to the document.
  * Messages are sorted by date (oldest first) so newest appear at top.
+ * If a threadId is provided, any existing content for that thread will be removed first,
+ * and the last message separator will be replaced with a thread separator containing the ID.
  * 
  * @param {Array} messages - Array of Gmail message objects
  * @param {Object} body - Document body object
  * @param {Object} folder - Drive folder object
- * @param {Object} options - Optional settings for GAS environment
+ * @param {Object} options - Optional settings (threadId, DocumentApp, Utilities, Logger, Session for GAS)
  * @returns {number} Total number of messages processed
  */
 function processMessagesToDoc(messages, body, folder, options = {}) {
+  const { threadId } = options;
+  
+  // If threadId is provided, remove any existing content for this thread
+  if (threadId) {
+    removeExistingThread(body, threadId);
+  }
+  
   // Sort messages by date (oldest first) so when we prepend (insert at index 0),
   // the newest messages end up at the top of the document
   const sortedMessages = messages.slice().sort(function(a, b) {
@@ -164,7 +235,10 @@ function processMessagesToDoc(messages, body, folder, options = {}) {
   
   sortedMessages.forEach((message, msgIndex) => {
     console.log('[processMessagesToDoc] Processing message', msgIndex + 1, 'of', sortedMessages.length);
-    processMessageToDoc(message, body, folder, options);
+    // The first message in sorted array (oldest) will be inserted last and end up at bottom
+    // So it should get the thread separator
+    const isBottomMessage = (msgIndex === 0);
+    processMessageToDoc(message, body, folder, { ...options, isBottomMessage });
   });
   
   return sortedMessages.length;
@@ -188,4 +262,4 @@ function sortThreadsByLastMessageDate(threads) {
   });
 }
 
-module.exports = { processMessageToDoc, processMessagesToDoc, sortThreadsByLastMessageDate };
+module.exports = { processMessageToDoc, processMessagesToDoc, sortThreadsByLastMessageDate, removeExistingThread };

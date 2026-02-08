@@ -21,8 +21,13 @@ function createLabel(name) {
   };
 }
 
-function createThread(messages) {
+// Counter for generating unique thread IDs
+let threadIdCounter = 0;
+
+function createThread(messages, id) {
+  const threadId = id || `thread_${++threadIdCounter}`;
   return {
+    getId: () => threadId,
     getMessages: () => messages.slice(),
     addLabel: (label) => label.addThread(this),
     // The real API uses Label methods to add/remove; we keep simple
@@ -89,7 +94,11 @@ function createDocument(id = 'doc1') {
           text,
           setHeading: (h) => { para.heading = h; },
           setAttributes: (s) => { para.attrs = s; },
-          getText: () => para.text
+          getText: () => para.text,
+          removeFromParent: () => {
+            const idx = paragraphs.indexOf(para);
+            if (idx !== -1) paragraphs.splice(idx, 1);
+          }
         };
         paragraphs.push(para);
         return para;
@@ -103,7 +112,11 @@ function createDocument(id = 'doc1') {
           text,
           setHeading: (h) => { para.heading = h; },
           setAttributes: (s) => { para.attrs = s; },
-          getText: () => para.text
+          getText: () => para.text,
+          removeFromParent: () => {
+            const idx = paragraphs.indexOf(para);
+            if (idx !== -1) paragraphs.splice(idx, 1);
+          }
         };
         paragraphs.splice(childIndex, 0, para);
         return para;
@@ -135,7 +148,10 @@ function createGmailApp() {
       return thread;
     },
     // Reset
-    __reset: () => labels.clear()
+    __reset: () => {
+      labels.clear();
+      threadIdCounter = 0;
+    }
   };
 }
 
