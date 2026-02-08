@@ -1,4 +1,4 @@
-const { createMessage, createBlob } = require('../../../test-utils/mocks');
+const { createMessage } = require('../../../test-utils/mocks');
 
 // Mock the config
 global.getProcessConfig = jest.fn(() => [
