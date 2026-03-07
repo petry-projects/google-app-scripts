@@ -59,11 +59,13 @@ AGENTS.md is for precise, agent-focused instructions that complement README file
 ### Testing GAS functions
 
 Google Apps Script `.gs` files cannot be `require()`-d in Jest. To test GAS logic:
+
 1. Extract the function to `src/index.js` and export it with `module.exports`.
 2. Accept GAS services (`GmailApp`, `DocumentApp`, etc.) as parameters rather than accessing globals.
 3. In the test file, create a wrapper function that injects `global.GmailApp`, `global.DocumentApp`, etc.
 
 GAS `code.gs` files may optionally include a guard for Jest imports:
+
 ```js
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { ... };
