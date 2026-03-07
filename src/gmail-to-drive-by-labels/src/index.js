@@ -331,13 +331,7 @@ function processLabelGroup(config, services, helperFns) {
   
   // Sort threads by last message date (newest first) to ensure reverse chronological order
   // This handles cases where Gmail API returns threads in random order or when older threads are labeled
-  threads.sort(function(a, b) {
-    const aMessages = a.getMessages();
-    const bMessages = b.getMessages();
-    const aLastDate = aMessages[aMessages.length - 1].getDate().getTime();
-    const bLastDate = bMessages[bMessages.length - 1].getDate().getTime();
-    return bLastDate - aLastDate; // Descending order (newest first)
-  });
+  const sortedThreads = sortThreadsByLastMessageDate(threads);
   console.log('[processLabelGroup] Sorted threads by last message date (newest first)');
 
   // 3. Open Destination Doc and Folder
@@ -356,7 +350,7 @@ function processLabelGroup(config, services, helperFns) {
 
   // 4. Process Emails
   let totalMessages = 0;
-  threads.forEach((thread, threadIndex) => {
+  sortedThreads.forEach((thread, threadIndex) => {
     const messages = thread.getMessages();
     const threadId = thread.getId();
     console.log('[processLabelGroup] Thread', threadIndex + 1, 'has', messages.length, 'messages, ID:', threadId);
