@@ -161,7 +161,6 @@ function createDocument(id = 'doc1') {
         paragraphs.splice(childIndex, 0, para)
         return para
       },
-      getParagraphs: () => paragraphs.slice(),
     }),
   }
 }
