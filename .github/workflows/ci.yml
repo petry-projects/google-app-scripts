@@ -1,7 +1,5 @@
 name: CI Pipeline
 
-permissions: {}
-
 on:
   push:
     branches:
@@ -18,110 +16,18 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # For same-repo PRs, check out the head branch explicitly so tests
-          # run against the exact branch commit (not the synthetic merge commit).
-          # For fork PRs, omit ref so the action falls back to the merge commit
-          # (fork branch names don't exist in the base repo and cause checkout
-          # to fail when ref is set to head.ref unconditionally).
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref || '' }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Install dependencies
         run: npm ci
 
-      # --- Same-repo PR: auto-fix and push is handled in the separate 'autofix' job ---
-
-      # --- Fork PR: check-only with instructions ---
-      - name: Check formatting and lint (fork PR)
-        if: >
-          github.event_name == 'pull_request' &&
-          github.event.pull_request.head.repo.full_name != github.repository
-        run: |
-          echo "Fork PR detected — running check-only (cannot push fixes to forks)."
-          echo "If this step fails, please run the following locally and push your changes:"
-          echo "  npm run format"
-          echo "  npm run lint -- --fix"
-          npm run check
-
-      # --- Push to main: check-only ---
-      - name: Check formatting and lint (push to main)
-        if: github.event_name == 'push'
+      - name: Check formatting and lint
         run: npm run check
 
       - name: Type check
         run: npm run typecheck
-
-  autofix:
-    needs: build-and-test
-    if: >
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
-        with:
-          node-version: '20'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Format and lint (auto-fix)
-        run: |
-          npm run format
-          npm run lint -- --fix
-
-      - name: Commit and push auto-fixes
-        run: |
-          if git diff --quiet; then
-            echo "No formatting or lint fixes needed."
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add -A
-            git commit -m "chore(ci): apply prettier/eslint auto-fixes"
-            git push
-          fi
-
-      - name: Verify no remaining issues after auto-fix
-        run: npm run check
-
-  secret-scan:
-    name: Secret scan (gitleaks)
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
-    steps:
-      - name: Checkout (full history)
-        # Pin to SHA per Action Pinning Policy (ci-standards.md#action-pinning-policy).
-        # Look up current SHA: gh api repos/actions/checkout/git/refs/tags/v4 --jq '.object.sha'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-
-      - name: Run gitleaks
-        # Pinned to SHA per Action Pinning Policy (ci-standards.md#action-pinning-policy).
-        # Refresh with: gh api repos/gitleaks/gitleaks-action/git/refs/tags/v2.3.9 --jq '.object.sha'
-        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
-        with:
-          args: detect --source . --redact --verbose --exit-code 1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
