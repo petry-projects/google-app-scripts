@@ -2,17 +2,16 @@
 
 ![googleappscripts](header.jpg)
 
-
 A collection of personal productivity scripts built on Google Apps Script. These tools are designed to automate repetitive tasks across Gmail, Google Drive, and Google Docs, helping you reclaim your time and keep your digital workspace organized.
 
 Open sourced under the MIT License to help others build their own automation workflows.
 
 ## 📂 Script Catalog
 
-| Script Name | Description | Documentation |
-| :--- | :--- | :--- |
+| Script Name                  | Description                                                                                                                                                                                                                                       | Documentation                                           |
+| :--------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :------------------------------------------------------ |
 | **Gmail to Drive By Labels** | Automatically archives emails from specific Gmail labels into a Google Doc (text) and Google Drive Folder (attachments). Features robust text cleaning (removing quoted replies/legal footers) and smart content-based attachment de-duplication. | [View Readme](./src/gmail-to-drive-by-labels/README.md) |
-| **Calendar to Sheets** | Syncs Google Calendar events into a Google Sheet, keeping rows up to date on changes and deletions. | [View Readme](./src/calendar-to-sheets/README.md) |
+| **Calendar to Sheets**       | Syncs Google Calendar events into a Google Sheet, keeping rows up to date on changes and deletions.                                                                                                                                               | [View Readme](./src/calendar-to-sheets/README.md)       |
 
 ## 🚀 Getting Started
 
@@ -37,4 +36,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-*Note: These scripts are provided "as is". Always test on a small batch of data before running on important files.*
+_Note: These scripts are provided "as is". Always test on a small batch of data before running on important files._
