@@ -19,20 +19,24 @@ This file follows the AGENTS.md conventions (see https://agents.md/) and provide
 ---
 
 ## Quick setup
+
 - Install dependencies (root):
   - `npm install`
 - Run the test suite locally:
   - `npm test`
 - Run a specific package/tests (replace `<agent-folder>` with the folder path):
-  - `npx jest "<agent-folder>/tests"`
-- Run tests with coverage report:
-  - `npm test -- --coverage`
-- Verify coverage meets thresholds:
-  - `node scripts/check-coverage.js`
+  - npx jest "<agent-folder>/tests"
+
+---
+
+## Why AGENTS.md?
+
+AGENTS.md is for precise, agent-focused instructions that complement README files. Use it to document build steps, dev commands, test steps, and any non-obvious processes an automated tool should know.
 
 ---
 
 ## Agent operation guidance (canonical guidance adapted)
+
 - Prefer interactive or dev commands when iterating (e.g., `npm run dev`) and avoid running production-only commands (e.g., `npm run build`) from an interactive agent session.
 - Keep dependencies and lockfiles in sync. If you update deps, update the lockfile and restart relevant dev/test processes.
 - Prefer small, focused commands for iterative work (run the specific tests you care about rather than the full suite when possible).
@@ -42,6 +46,7 @@ This file follows the AGENTS.md conventions (see https://agents.md/) and provide
 ---
 
 ## Tests & CI (repo conventions)
+
 - **Follow Test-Driven Development (TDD): write tests before implementing features or bug fixes.** Add tests first and iterate until they pass; include the tests in the same PR as the implementation.
 - **Achieve and maintain excellent test coverage.** Minimum thresholds: 100% lines, 95% statements/functions, 85% branches. Verify locally with `npm test -- --coverage` (or `npx jest --coverage`) and ensure CI coverage meets these requirements. PRs that reduce coverage below these thresholds will be rejected.
 - **NEVER add coverage "ignore" comments (e.g., `/* istanbul ignore next */`) to artificially boost test coverage.** If code is truly difficult to test, adjust coverage thresholds or improve mocking strategies instead. Coverage ignore comments mask untested code and are not acceptable.
@@ -54,11 +59,13 @@ This file follows the AGENTS.md conventions (see https://agents.md/) and provide
 ### Testing GAS functions
 
 Google Apps Script `.gs` files cannot be `require()`-d in Jest. To test GAS logic:
+
 1. Extract the function to `src/index.js` and export it with `module.exports`.
 2. Accept GAS services (`GmailApp`, `DocumentApp`, etc.) as parameters rather than accessing globals.
 3. In the test file, create a wrapper function that injects `global.GmailApp`, `global.DocumentApp`, etc.
 
 GAS `code.gs` files may optionally include a guard for Jest imports:
+
 ```js
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { ... };
@@ -68,9 +75,10 @@ if (typeof module !== 'undefined' && module.exports) {
 ---
 
 ## Code style & commits
+
 - Follow repository style and lint rules.
-  - ALWAYS ensure `npm run lint` and `npm test` passes before committing.
-  - ALWAYS ensure `npm test -- --coverage` passes before committing.
+- ALWAYS ensure `npm run lint` and `npm test` passes before committing.
+- ALWAYS ensure `npm test -- --coverage` passes before committing.
 - Keep commits small and include tests with behavior changes.
 - Follow existing code style — no new linting or build tooling unless essential.
 
@@ -88,17 +96,20 @@ if (typeof module !== 'undefined' && module.exports) {
 ---
 
 ## Security & secrets
+
 - Never commit secrets. Use GitHub Actions secrets or an external secret manager and document required secrets in `<agent-folder>/README.md`.
 - Request maintainer review for agents requiring elevated permissions or access to sensitive data.
 
 ---
 
 ## How to use this file
+
 - Agents will read the nearest AGENTS.md (this one is at the repo root).
 - If a subproject needs different guidance, it may include its own `AGENTS.md` or a clear `README.md` explaining the differences.
 
 ---
 
 ## References
+
 - AGENTS.md canonical guidance: https://agents.md/
 - Example repository: https://github.com/agentsmd/agents.md/blob/main/AGENTS.md
