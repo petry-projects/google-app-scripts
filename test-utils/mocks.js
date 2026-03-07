@@ -27,11 +27,12 @@ function createLabel(name) {
 }
 
 function createThread(messages) {
-  return {
+  const thread = {
     getMessages: () => messages.slice(),
-    addLabel: (label) => label.addThread(this),
+    addLabel: (label) => label.addThread(thread),
     // The real API uses Label methods to add/remove; we keep simple
   }
+  return thread
 }
 
 function createMessage({
