@@ -10,56 +10,64 @@ const { getCleanBody, getFileHash } = require('../../gas-utils')
 /**
  * Remove existing thread content from the document by finding and deleting
  * all paragraphs between the thread's separator and the next separator (or start).
- * 
+ *
  * @param {Object} body - Document body object
  * @param {string} threadId - The thread ID to search for
  * @returns {boolean} True if thread was found and removed, false otherwise
  */
 function removeExistingThread(body, threadId) {
-  if (!threadId) return false;
-  
-  const paragraphs = body.getParagraphs();
-  const threadMarker = `[THREAD:${threadId}]`;
-  
+  if (!threadId) return false
+
+  const paragraphs = body.getParagraphs()
+  const threadMarker = `[THREAD:${threadId}]`
+
   // Find the separator containing this thread ID
-  let threadSeparatorIndex = -1;
+  let threadSeparatorIndex = -1
   for (let i = 0; i < paragraphs.length; i++) {
-    const text = paragraphs[i].getText();
+    const text = paragraphs[i].getText()
     if (text.includes(threadMarker)) {
-      threadSeparatorIndex = i;
-      break;
+      threadSeparatorIndex = i
+      break
     }
   }
-  
+
   if (threadSeparatorIndex === -1) {
-    console.log('[removeExistingThread] Thread not found:', threadId);
-    return false; // Thread not found in document
+    console.log('[removeExistingThread] Thread not found:', threadId)
+    return false // Thread not found in document
   }
-  
-  console.log('[removeExistingThread] Found thread separator at paragraph', threadSeparatorIndex);
-  
+
+  console.log(
+    '[removeExistingThread] Found thread separator at paragraph',
+    threadSeparatorIndex
+  )
+
   // Find the start of this thread's content (search backwards from thread separator to previous thread separator or start)
-  let threadStartIndex = 0;
+  let threadStartIndex = 0
   for (let i = threadSeparatorIndex - 1; i >= 0; i--) {
-    const text = paragraphs[i].getText();
+    const text = paragraphs[i].getText()
     // Stop when we hit another thread separator (indicated by [THREAD:])
     if (text.includes('[THREAD:')) {
-      threadStartIndex = i + 1; // Start after the previous thread separator
-      break;
+      threadStartIndex = i + 1 // Start after the previous thread separator
+      break
     }
   }
-  
-  console.log('[removeExistingThread] Removing paragraphs from', threadStartIndex, 'to', threadSeparatorIndex);
-  
+
+  console.log(
+    '[removeExistingThread] Removing paragraphs from',
+    threadStartIndex,
+    'to',
+    threadSeparatorIndex
+  )
+
   // Remove all paragraphs from threadStartIndex to threadSeparatorIndex (inclusive)
   // Remove in reverse order to avoid index shifting issues
   for (let i = threadSeparatorIndex; i >= threadStartIndex; i--) {
-    const para = paragraphs[i];
-    para.removeFromParent();
+    const para = paragraphs[i]
+    para.removeFromParent()
   }
-  
-  console.log('[removeExistingThread] Successfully removed thread:', threadId);
-  return true;
+
+  console.log('[removeExistingThread] Successfully removed thread:', threadId)
+  return true
 }
 
 /**
@@ -246,13 +254,13 @@ function processMessageToDoc(message, body, folder, options = {}) {
  * @returns {number} Total number of messages processed
  */
 function processMessagesToDoc(messages, body, folder, options = {}) {
-  const { threadId } = options;
-  
+  const { threadId } = options
+
   // If threadId is provided, remove any existing content for this thread
   if (threadId) {
-    removeExistingThread(body, threadId);
+    removeExistingThread(body, threadId)
   }
-  
+
   // Sort messages by date (oldest first) so when we prepend (insert at index 0),
   // the newest messages end up at the top of the document
   const sortedMessages = messages.slice().sort(function (a, b) {
@@ -272,6 +280,11 @@ function processMessagesToDoc(messages, body, folder, options = {}) {
     processMessageToDoc(message, body, folder, { ...options, isBottomMessage })
   })
 
+  // Add a clear separator between threads (after all messages in a thread are processed)
+  if (sortedMessages.length > 0) {
+    body.insertParagraph(0, '==============================')
+  }
+
   return sortedMessages.length
 }
 
@@ -284,392 +297,509 @@ function processMessagesToDoc(messages, body, folder, options = {}) {
  * @returns {Array} Sorted array of threads (newest first)
  */
 function sortThreadsByLastMessageDate(threads) {
-  return threads.slice().sort(function(a, b) {
-    const aMessages = a.getMessages();
-    const bMessages = b.getMessages();
-    const aLastDate = aMessages[aMessages.length - 1].getDate().getTime();
-    const bLastDate = bMessages[bMessages.length - 1].getDate().getTime();
-    return bLastDate - aLastDate; // Descending order (newest first)
-  });
+  return threads.slice().sort(function (a, b) {
+    const aMessages = a.getMessages()
+    const bMessages = b.getMessages()
+    const aLastDate = aMessages[aMessages.length - 1].getDate().getTime()
+    const bLastDate = bMessages[bMessages.length - 1].getDate().getTime()
+    return bLastDate - aLastDate // Descending order (newest first)
+  })
 }
 
 /**
  * Main function to process all configurations.
  * Reads settings and processes each label group.
- * 
+ *
  * @param {Array} configs - Array of configuration objects
  * @param {Function} processLabelGroupFn - Function to process each label group
  */
 function storeEmailsAndAttachments(configs, processLabelGroupFn) {
-  console.log('[storeEmailsAndAttachments] Starting email processing');
-  console.log('[storeEmailsAndAttachments] Processing', configs.length, 'configurations');
+  console.log('[storeEmailsAndAttachments] Starting email processing')
+  console.log(
+    '[storeEmailsAndAttachments] Processing',
+    configs.length,
+    'configurations'
+  )
 
   configs.forEach((config, index) => {
-    console.log('[storeEmailsAndAttachments] Processing config', index + 1, 'of', configs.length, ':', config.triggerLabel);
-    processLabelGroupFn(config);
-  });
-  console.log('[storeEmailsAndAttachments] Completed all processing');
+    console.log(
+      '[storeEmailsAndAttachments] Processing config',
+      index + 1,
+      'of',
+      configs.length,
+      ':',
+      config.triggerLabel
+    )
+    processLabelGroupFn(config)
+  })
+  console.log('[storeEmailsAndAttachments] Completed all processing')
 }
 
 /**
  * Processes a single configuration group (Label -> Doc + Folder).
  * Extracts threads from trigger label, processes them, and moves to processed label.
- * 
+ *
  * @param {Object} config - Configuration object with triggerLabel, processedLabel, docId, folderId
  * @param {Object} services - GAS services object with GmailApp, DocumentApp, DriveApp, Logger, Utilities, Session
  * @param {Object} helperFns - Helper functions object with getCleanBody, getFileHash, removeExistingThreadFromDoc
  */
 function processLabelGroup(config, services, helperFns) {
-  const { GmailApp, DocumentApp, DriveApp, Logger, Utilities, Session } = services;
-  const { getCleanBody, getFileHash, removeExistingThreadFromDoc } = helperFns;
-  
-  console.log('[processLabelGroup] Starting processing for:', config.triggerLabel);
-  const triggerLabelName = config.triggerLabel;
-  const processedLabelName = config.processedLabel;
+  const { GmailApp, DocumentApp, DriveApp, Logger, Utilities, Session } =
+    services
+  const { getCleanBody, getFileHash, removeExistingThreadFromDoc } = helperFns
+
+  console.log(
+    '[processLabelGroup] Starting processing for:',
+    config.triggerLabel
+  )
+  const triggerLabelName = config.triggerLabel
+  const processedLabelName = config.processedLabel
 
   // 1. Validate Labels
-  console.log('[processLabelGroup] Looking up trigger label:', triggerLabelName);
-  const triggerLabel = GmailApp.getUserLabelByName(triggerLabelName);
-  let processedLabel = GmailApp.getUserLabelByName(processedLabelName);
-  
+  console.log('[processLabelGroup] Looking up trigger label:', triggerLabelName)
+  const triggerLabel = GmailApp.getUserLabelByName(triggerLabelName)
+  let processedLabel = GmailApp.getUserLabelByName(processedLabelName)
+
   // Create processed label if it doesn't exist
   if (!processedLabel) {
-    console.log('[processLabelGroup] Processed label not found, creating:', processedLabelName);
+    console.log(
+      '[processLabelGroup] Processed label not found, creating:',
+      processedLabelName
+    )
     try {
-      processedLabel = GmailApp.createLabel(processedLabelName);
-      console.log('[processLabelGroup] Created label:', processedLabelName);
-    } catch(e) {
-      Logger.log("Could not create label: " + processedLabelName);
-      console.error('[processLabelGroup] Error creating label:', e.message);
+      processedLabel = GmailApp.createLabel(processedLabelName)
+      console.log('[processLabelGroup] Created label:', processedLabelName)
+    } catch (e) {
+      Logger.log('Could not create label: ' + processedLabelName)
+      console.error('[processLabelGroup] Error creating label:', e.message)
     }
   }
 
   if (!triggerLabel) {
-    Logger.log("Trigger label not found: " + triggerLabelName);
-    console.error('[processLabelGroup] Trigger label not found:', triggerLabelName);
-    return;
+    Logger.log('Trigger label not found: ' + triggerLabelName)
+    console.error(
+      '[processLabelGroup] Trigger label not found:',
+      triggerLabelName
+    )
+    return
   }
 
   // 2. Get Threads
-  console.log('[processLabelGroup] Retrieving threads for label:', triggerLabelName);
-  const threads = triggerLabel.getThreads();
+  console.log(
+    '[processLabelGroup] Retrieving threads for label:',
+    triggerLabelName
+  )
+  const threads = triggerLabel.getThreads()
   if (!threads || threads.length === 0) {
-    Logger.log("No emails found for: " + triggerLabelName);
-    console.log('[processLabelGroup] No threads found for label:', triggerLabelName);
-    return;
+    Logger.log('No emails found for: ' + triggerLabelName)
+    console.log(
+      '[processLabelGroup] No threads found for label:',
+      triggerLabelName
+    )
+    return
   }
-  console.log('[processLabelGroup] Found', threads.length, 'threads to process');
-  
+  console.log('[processLabelGroup] Found', threads.length, 'threads to process')
+
   // Sort threads by last message date (newest first) to ensure reverse chronological order
   // This handles cases where Gmail API returns threads in random order or when older threads are labeled
-  const sortedThreads = sortThreadsByLastMessageDate(threads);
-  console.log('[processLabelGroup] Sorted threads by last message date (newest first)');
+  const sortedThreads = sortThreadsByLastMessageDate(threads)
+  console.log(
+    '[processLabelGroup] Sorted threads by last message date (newest first)'
+  )
 
   // 3. Open Destination Doc and Folder
-  console.log('[processLabelGroup] Opening doc:', config.docId, 'and folder:', config.folderId);
-  let doc, body, folder;
+  console.log(
+    '[processLabelGroup] Opening doc:',
+    config.docId,
+    'and folder:',
+    config.folderId
+  )
+  let doc, body, folder
   try {
-    doc = DocumentApp.openById(config.docId);
-    body = doc.getBody();
-    folder = DriveApp.getFolderById(config.folderId);
-    console.log('[processLabelGroup] Successfully opened doc and folder');
+    doc = DocumentApp.openById(config.docId)
+    body = doc.getBody()
+    folder = DriveApp.getFolderById(config.folderId)
+    console.log('[processLabelGroup] Successfully opened doc and folder')
   } catch (e) {
-    Logger.log("Error opening Doc or Folder. Check IDs in Config.gs. Error: " + e.message);
-    console.error('[processLabelGroup] Error opening Doc/Folder:', e.message);
-    return;
+    Logger.log(
+      'Error opening Doc or Folder. Check IDs in Config.gs. Error: ' + e.message
+    )
+    console.error('[processLabelGroup] Error opening Doc/Folder:', e.message)
+    return
   }
 
   // 4. Process Emails
-  let totalMessages = 0;
+  let totalMessages = 0
   sortedThreads.forEach((thread, threadIndex) => {
-    const messages = thread.getMessages();
-    const threadId = thread.getId();
-    console.log('[processLabelGroup] Thread', threadIndex + 1, 'has', messages.length, 'messages, ID:', threadId);
-    
+    const messages = thread.getMessages()
+    const threadId = thread.getId()
+    console.log(
+      '[processLabelGroup] Thread',
+      threadIndex + 1,
+      'has',
+      messages.length,
+      'messages, ID:',
+      threadId
+    )
+
     // Remove existing thread content if it already exists in the document
-    removeExistingThreadFromDoc(body, threadId);
-    
+    removeExistingThreadFromDoc(body, threadId)
+
     // Sort messages by date (oldest first) so when we prepend (insert at index 0),
     // the newest messages end up at the top of the document
-    messages.sort(function(a, b) {
-      return a.getDate().getTime() - b.getDate().getTime();
-    });
-    
+    messages.sort(function (a, b) {
+      return a.getDate().getTime() - b.getDate().getTime()
+    })
+
     messages.forEach((message, msgIndex) => {
-      totalMessages++;
-      const subject = message.getSubject();
-      const rawContent = message.getPlainBody();
-      
+      totalMessages++
+      const subject = message.getSubject()
+      const rawContent = message.getPlainBody()
+
       // Clean Content (removes replies, quote lines, and legal footers)
-      const cleanContent = getCleanBody(rawContent);
-      console.log('[processLabelGroup] Cleaned content length:', cleanContent.length, 'chars (from', rawContent.length, ')');
-      
-      const timestamp = message.getDate();
-      
-      Logger.log("Processing: " + subject);
-      console.log('[processLabelGroup] Processing message', msgIndex + 1, ':', subject);
+      const cleanContent = getCleanBody(rawContent)
+      console.log(
+        '[processLabelGroup] Cleaned content length:',
+        cleanContent.length,
+        'chars (from',
+        rawContent.length,
+        ')'
+      )
+
+      const timestamp = message.getDate()
+
+      Logger.log('Processing: ' + subject)
+      console.log(
+        '[processLabelGroup] Processing message',
+        msgIndex + 1,
+        ':',
+        subject
+      )
 
       // --- A. Prepend Text to Doc (insert at top, newest first) ---
       // Note: currentIndex starts at 0 for each message, so each new message
       // is inserted at the top of the document, pushing previous content down.
       // This ensures the most recent emails appear first.
-      let currentIndex = 0;
-      
-      const subjectText = "Subject: " + (subject ? subject : "(No Subject)");
-      const headingPara = body.insertParagraph(currentIndex++, subjectText);
-      
+      let currentIndex = 0
+
+      const subjectText = 'Subject: ' + (subject ? subject : '(No Subject)')
+      const headingPara = body.insertParagraph(currentIndex++, subjectText)
+
       // Try to set heading, fallback to bold if Doc is busy
       try {
-        headingPara.setHeading(DocumentApp.ParagraphHeading.HEADING_3);
+        headingPara.setHeading(DocumentApp.ParagraphHeading.HEADING_3)
       } catch (e) {
-        const style = {};
-        style[DocumentApp.Attribute.BOLD] = true;
-        headingPara.setAttributes(style);
+        const style = {}
+        style[DocumentApp.Attribute.BOLD] = true
+        headingPara.setAttributes(style)
       }
-      
-      body.insertParagraph(currentIndex++, "Date: " + timestamp);
-      body.insertParagraph(currentIndex++, cleanContent);
+
+      body.insertParagraph(currentIndex++, 'Date: ' + timestamp)
+      body.insertParagraph(currentIndex++, cleanContent)
 
       // --- B. Save Attachments (CONTENT-BASED DEDUPLICATION) ---
-      const attachments = message.getAttachments();
-      console.log('[processLabelGroup] Found', attachments.length, 'attachments');
+      const attachments = message.getAttachments()
+      console.log(
+        '[processLabelGroup] Found',
+        attachments.length,
+        'attachments'
+      )
       if (attachments.length > 0) {
-        body.insertParagraph(currentIndex++, "[Attachments]:"); 
-        
+        body.insertParagraph(currentIndex++, '[Attachments]:')
+
         attachments.forEach((att, attIndex) => {
-          console.log('[processLabelGroup] Processing attachment', attIndex + 1, 'of', attachments.length, ':', att.getName());
-          let fileName = att.getName();
-          const newFileBlob = att.copyBlob();
-          let isDuplicate = false;
-          
+          console.log(
+            '[processLabelGroup] Processing attachment',
+            attIndex + 1,
+            'of',
+            attachments.length,
+            ':',
+            att.getName()
+          )
+          let fileName = att.getName()
+          const newFileBlob = att.copyBlob()
+          let isDuplicate = false
+
           // 1. Get all files in folder with this name
-          const existingFiles = folder.getFilesByName(fileName);
-          console.log('[processLabelGroup] Checking for existing files named:', fileName);
-          
-          let existingCount = 0;
+          const existingFiles = folder.getFilesByName(fileName)
+          console.log(
+            '[processLabelGroup] Checking for existing files named:',
+            fileName
+          )
+
+          let existingCount = 0
           while (existingFiles.hasNext()) {
-            existingCount++;
-            const existingFile = existingFiles.next();
-            console.log('[processLabelGroup] Comparing with existing file', existingCount);
-            
+            existingCount++
+            const existingFile = existingFiles.next()
+            console.log(
+              '[processLabelGroup] Comparing with existing file',
+              existingCount
+            )
+
             // 2. Fast Fail: Compare sizes first
             if (existingFile.getSize() === newFileBlob.getBytes().length) {
-              console.log('[processLabelGroup] Size match, checking hash');
-              
+              console.log('[processLabelGroup] Size match, checking hash')
+
               // 3. Deep Check: Compare MD5 Hashes (The "Fingerprint")
-              const existingHash = getFileHash(existingFile.getBlob());
-              const newHash = getFileHash(newFileBlob);
-              
+              const existingHash = getFileHash(existingFile.getBlob())
+              const newHash = getFileHash(newFileBlob)
+
               if (existingHash === newHash) {
-                console.log('[processLabelGroup] Hash match - duplicate detected');
-                isDuplicate = true;
-                break; // Stop checking, we found the twin
+                console.log(
+                  '[processLabelGroup] Hash match - duplicate detected'
+                )
+                isDuplicate = true
+                break // Stop checking, we found the twin
               } else {
-                console.log('[processLabelGroup] Hash mismatch - different content');
+                console.log(
+                  '[processLabelGroup] Hash mismatch - different content'
+                )
               }
             } else {
-              console.log('[processLabelGroup] Size mismatch - different file');
+              console.log('[processLabelGroup] Size mismatch - different file')
             }
           }
-          
-          if (isDuplicate) {
-             Logger.log("Skipping exact duplicate: " + fileName);
-             console.log('[processLabelGroup] Skipping duplicate:', fileName);
-             body.insertParagraph(currentIndex++, "- [DUPLICATE SKIPPED] " + fileName);
-          } else {
-             // It's a new file (or a file with same name but different content)
-             
-             // If name exists but content is different, rename to avoid overwrite
-             if (folder.getFilesByName(fileName).hasNext()) {
-               console.log('[processLabelGroup] Name conflict detected, adding timestamp');
-               const timeTag = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "_HHmmss");
-               // Insert timestamp before the file extension
-               let newName = fileName.replace(/(\.[\w\d_-]+)$/i, timeTag + '$1'); 
-               // Fallback if regex fails (files without extension)
-               if(newName === fileName) newName += timeTag;
-               
-               newFileBlob.setName(newName);
-               fileName = newName; // Update for log
-               console.log('[processLabelGroup] Renamed to:', fileName);
-             }
 
-             console.log('[processLabelGroup] Saving new file:', fileName);
-             const file = folder.createFile(newFileBlob);
-             body.insertParagraph(currentIndex++, "- " + file.getName());
-             console.log('[processLabelGroup] File saved successfully');
+          if (isDuplicate) {
+            Logger.log('Skipping exact duplicate: ' + fileName)
+            console.log('[processLabelGroup] Skipping duplicate:', fileName)
+            body.insertParagraph(
+              currentIndex++,
+              '- [DUPLICATE SKIPPED] ' + fileName
+            )
+          } else {
+            // It's a new file (or a file with same name but different content)
+
+            // If name exists but content is different, rename to avoid overwrite
+            if (folder.getFilesByName(fileName).hasNext()) {
+              console.log(
+                '[processLabelGroup] Name conflict detected, adding timestamp'
+              )
+              const timeTag = Utilities.formatDate(
+                new Date(),
+                Session.getScriptTimeZone(),
+                '_HHmmss'
+              )
+              // Insert timestamp before the file extension
+              let newName = fileName.replace(/(\.[\w\d_-]+)$/i, timeTag + '$1')
+              // Fallback if regex fails (files without extension)
+              if (newName === fileName) newName += timeTag
+
+              newFileBlob.setName(newName)
+              fileName = newName // Update for log
+              console.log('[processLabelGroup] Renamed to:', fileName)
+            }
+
+            console.log('[processLabelGroup] Saving new file:', fileName)
+            const file = folder.createFile(newFileBlob)
+            body.insertParagraph(currentIndex++, '- ' + file.getName())
+            console.log('[processLabelGroup] File saved successfully')
           }
-        });
+        })
       }
-      
+
       // Add separator - use thread separator for oldest message (first in sorted array)
-      const isOldestMessage = (msgIndex === 0);
+      const isOldestMessage = msgIndex === 0
       if (isOldestMessage) {
-        const threadSeparator = "------------------------------[THREAD:" + threadId + "]";
-        body.insertParagraph(currentIndex++, threadSeparator);
-        console.log('[processLabelGroup] Added thread separator for thread:', threadId);
+        const threadSeparator =
+          '------------------------------[THREAD:' + threadId + ']'
+        body.insertParagraph(currentIndex++, threadSeparator)
+        console.log(
+          '[processLabelGroup] Added thread separator for thread:',
+          threadId
+        )
       } else {
-        body.insertParagraph(currentIndex++, "------------------------------");
+        body.insertParagraph(currentIndex++, '------------------------------')
       }
-      
+
       // Pause briefly to allow Google Doc to save (prevents crash)
-      Utilities.sleep(500);
-    });
+      Utilities.sleep(500)
+    })
 
     // 5. Cleanup Labels
-    console.log('[processLabelGroup] Updating labels for thread');
-    triggerLabel.removeFromThread(thread);
-    if(processedLabel) processedLabel.addToThread(thread);
-  });
-  console.log('[processLabelGroup] Processed', totalMessages, 'total messages');
-  console.log('[processLabelGroup] Completed processing for:', config.triggerLabel);
+    console.log('[processLabelGroup] Updating labels for thread')
+    triggerLabel.removeFromThread(thread)
+    if (processedLabel) processedLabel.addToThread(thread)
+  })
+  console.log('[processLabelGroup] Processed', totalMessages, 'total messages')
+  console.log(
+    '[processLabelGroup] Completed processing for:',
+    config.triggerLabel
+  )
 }
 
 /**
  * Rebuild all configured documents.
- * 
+ *
  * @param {Array} configs - Array of configuration objects
  * @param {Function} rebuildDocFn - Function to rebuild a single doc
  * @returns {boolean} True if all completed, false if paused
  */
 function rebuildAllDocs(configs, rebuildDocFn) {
-  console.log('[rebuildAllDocs] Starting rebuild process');
-  console.log('[rebuildAllDocs] Rebuilding', configs.length, 'configurations');
-  
-  let completed = true;
+  console.log('[rebuildAllDocs] Starting rebuild process')
+  console.log('[rebuildAllDocs] Rebuilding', configs.length, 'configurations')
+
+  let completed = true
   for (let i = 0; i < configs.length; i++) {
-    const config = configs[i];
-    console.log('[rebuildAllDocs] Rebuilding config', i + 1, 'of', configs.length, ':', config.triggerLabel);
-    const configCompleted = rebuildDocFn(config);
+    const config = configs[i]
+    console.log(
+      '[rebuildAllDocs] Rebuilding config',
+      i + 1,
+      'of',
+      configs.length,
+      ':',
+      config.triggerLabel
+    )
+    const configCompleted = rebuildDocFn(config)
     if (!configCompleted) {
-      console.log('[rebuildAllDocs] Paused due to time constraints. Run rebuildAllDocs() again to continue.');
-      completed = false;
-      break;
+      console.log(
+        '[rebuildAllDocs] Paused due to time constraints. Run rebuildAllDocs() again to continue.'
+      )
+      completed = false
+      break
     }
   }
-  
+
   if (completed) {
-    console.log('[rebuildAllDocs] Rebuild preparation complete.');
-    console.log('[rebuildAllDocs] Now run storeEmailsAndAttachments() to reprocess all emails.');
+    console.log('[rebuildAllDocs] Rebuild preparation complete.')
+    console.log(
+      '[rebuildAllDocs] Now run storeEmailsAndAttachments() to reprocess all emails.'
+    )
   }
-  
-  return completed;
+
+  return completed
 }
 
 /**
  * Rebuilds a single document by clearing it and moving processed emails back to trigger label.
  * Uses batching and state tracking to handle large label sets without timing out.
- * 
+ *
  * @param {Object} config - Configuration object
  * @param {Object} services - GAS services object with GmailApp, DocumentApp, PropertiesService
  * @returns {boolean} True if completed, false if needs to continue in another execution
  */
 function rebuildDoc(config, services) {
-  const { GmailApp, DocumentApp, PropertiesService } = services;
-  const MAX_EXECUTION_TIME = 4 * 60 * 1000; // 4 minutes (leaving 2 min buffer for 6 min limit)
-  const BATCH_SIZE = config.batchSize || 250; // Process threads in batches (default: 250)
-  const startTime = new Date().getTime();
-  
-  console.log('[rebuildDoc] Starting rebuild for:', config.triggerLabel);
-  
-  const triggerLabelName = config.triggerLabel;
-  const processedLabelName = config.processedLabel;
-  const stateKey = 'rebuild_state_' + triggerLabelName.replace(/[^a-zA-Z0-9]/g, '_');
-  
+  const { GmailApp, DocumentApp, PropertiesService } = services
+  const MAX_EXECUTION_TIME = 4 * 60 * 1000 // 4 minutes (leaving 2 min buffer for 6 min limit)
+  const BATCH_SIZE = config.batchSize || 250 // Process threads in batches (default: 250)
+  const startTime = new Date().getTime()
+
+  console.log('[rebuildDoc] Starting rebuild for:', config.triggerLabel)
+
+  const triggerLabelName = config.triggerLabel
+  const processedLabelName = config.processedLabel
+  const stateKey =
+    'rebuild_state_' + triggerLabelName.replace(/[^a-zA-Z0-9]/g, '_')
+
   // 1. Validate and get labels
-  console.log('[rebuildDoc] Looking up labels');
-  const triggerLabel = GmailApp.getUserLabelByName(triggerLabelName);
-  const processedLabel = GmailApp.getUserLabelByName(processedLabelName);
-  
+  console.log('[rebuildDoc] Looking up labels')
+  const triggerLabel = GmailApp.getUserLabelByName(triggerLabelName)
+  const processedLabel = GmailApp.getUserLabelByName(processedLabelName)
+
   if (!triggerLabel) {
-    console.error('[rebuildDoc] Trigger label not found:', triggerLabelName);
-    return true; // Nothing to do, consider complete
+    console.error('[rebuildDoc] Trigger label not found:', triggerLabelName)
+    return true // Nothing to do, consider complete
   }
-  
+
   if (!processedLabel) {
-    console.log('[rebuildDoc] Processed label not found:', processedLabelName, '- nothing to unarchive');
+    console.log(
+      '[rebuildDoc] Processed label not found:',
+      processedLabelName,
+      '- nothing to unarchive'
+    )
   }
-  
+
   // 2. Check if we need to clear the document (only on first run)
-  const properties = PropertiesService.getUserProperties();
-  const rebuildState = properties.getProperty(stateKey);
-  const state = rebuildState ? JSON.parse(rebuildState) : { phase: 'clear_doc' };
-  
+  const properties = PropertiesService.getUserProperties()
+  const rebuildState = properties.getProperty(stateKey)
+  const state = rebuildState ? JSON.parse(rebuildState) : { phase: 'clear_doc' }
+
   if (state.phase === 'clear_doc') {
-    console.log('[rebuildDoc] Clearing document:', config.docId);
+    console.log('[rebuildDoc] Clearing document:', config.docId)
     try {
-      const doc = DocumentApp.openById(config.docId);
-      const body = doc.getBody();
-      
+      const doc = DocumentApp.openById(config.docId)
+      const body = doc.getBody()
+
       // Clear all content from the document body in a single operation
-      body.setText('');
-      console.log('[rebuildDoc] Document cleared');
-      
+      body.setText('')
+      console.log('[rebuildDoc] Document cleared')
+
       // Move to next phase
-      state.phase = 'move_emails';
-      state.processedCount = 0;
-      properties.setProperty(stateKey, JSON.stringify(state));
-      console.log('[rebuildDoc] Saved state, moving to email processing phase');
+      state.phase = 'move_emails'
+      state.processedCount = 0
+      properties.setProperty(stateKey, JSON.stringify(state))
+      console.log('[rebuildDoc] Saved state, moving to email processing phase')
     } catch (e) {
-      console.error('[rebuildDoc] Error clearing document:', e.message);
+      console.error('[rebuildDoc] Error clearing document:', e.message)
       // Try again next time
-      return false;
+      return false
     }
   }
-  
+
   // 3. Move emails from processed back to trigger label (batched)
   if (state.phase === 'move_emails' && processedLabel) {
-    console.log('[rebuildDoc] Moving emails from processed to trigger label');
-    console.log('[rebuildDoc] Resuming from:', state.processedCount, 'threads processed');
-    
-    const threads = processedLabel.getThreads();
-    console.log('[rebuildDoc] Found', threads.length, 'threads to move');
-    
+    console.log('[rebuildDoc] Moving emails from processed to trigger label')
+    console.log(
+      '[rebuildDoc] Resuming from:',
+      state.processedCount,
+      'threads processed'
+    )
+
+    const threads = processedLabel.getThreads()
+    console.log('[rebuildDoc] Found', threads.length, 'threads to move')
+
     // Process in batches, always from index 0 since we're removing items
-    let batchCount = 0;
+    let batchCount = 0
     while (batchCount < BATCH_SIZE && threads.length > 0) {
       // Check if we're running out of time
-      const elapsed = new Date().getTime() - startTime;
+      const elapsed = new Date().getTime() - startTime
       if (elapsed > MAX_EXECUTION_TIME) {
-        console.log('[rebuildDoc] Approaching time limit, saving progress');
-        state.processedCount += batchCount;
-        properties.setProperty(stateKey, JSON.stringify(state));
-        return false; // Not complete, run again
+        console.log('[rebuildDoc] Approaching time limit, saving progress')
+        state.processedCount += batchCount
+        properties.setProperty(stateKey, JSON.stringify(state))
+        return false // Not complete, run again
       }
-      
+
       // Always process index 0 since removing items shrinks the array
-      const thread = threads[0];
-      processedLabel.removeFromThread(thread);
-      triggerLabel.addToThread(thread);
-      batchCount++;
-      
+      const thread = threads[0]
+      processedLabel.removeFromThread(thread)
+      triggerLabel.addToThread(thread)
+      batchCount++
+
       // Refresh threads array
-      threads.splice(0, 1);
+      threads.splice(0, 1)
     }
-    
-    console.log('[rebuildDoc] Moved', batchCount, 'threads in this batch');
-    state.processedCount += batchCount;
-    
+
+    console.log('[rebuildDoc] Moved', batchCount, 'threads in this batch')
+    state.processedCount += batchCount
+
     // Check if we're done
     if (processedLabel.getThreads().length === 0) {
-      console.log('[rebuildDoc] All threads moved');
-      state.phase = 'complete';
-      properties.setProperty(stateKey, JSON.stringify(state));
+      console.log('[rebuildDoc] All threads moved')
+      state.phase = 'complete'
+      properties.setProperty(stateKey, JSON.stringify(state))
     } else {
       // Still more threads to process
-      console.log('[rebuildDoc] Still', processedLabel.getThreads().length, 'threads remaining');
-      properties.setProperty(stateKey, JSON.stringify(state));
-      return false; // Not complete, need to run again
+      console.log(
+        '[rebuildDoc] Still',
+        processedLabel.getThreads().length,
+        'threads remaining'
+      )
+      properties.setProperty(stateKey, JSON.stringify(state))
+      return false // Not complete, need to run again
     }
   }
-  
+
   // If we got here, we're done
-  properties.deleteProperty(stateKey);
-  console.log('[rebuildDoc] Rebuild complete for:', config.triggerLabel);
-  console.log('[rebuildDoc] Run storeEmailsAndAttachments() to reprocess these emails');
-  return true;
+  properties.deleteProperty(stateKey)
+  console.log('[rebuildDoc] Rebuild complete for:', config.triggerLabel)
+  console.log(
+    '[rebuildDoc] Run storeEmailsAndAttachments() to reprocess these emails'
+  )
+  return true
 }
 
-module.exports = { 
+module.exports = {
   processMessageToDoc,
   processMessagesToDoc,
   sortThreadsByLastMessageDate,
