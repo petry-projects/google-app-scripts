@@ -89,7 +89,10 @@ function removeExistingThreadFromDoc(body, threadId) {
     body.removeChild(body.getChild(i))
   }
 
-  console.log('[removeExistingThreadFromDoc] Successfully removed thread:', threadId)
+  console.log(
+    '[removeExistingThreadFromDoc] Successfully removed thread:',
+    threadId
+  )
   return true
 }
 
@@ -660,4 +663,3 @@ function getFileHash(blob) {
     })
     .join('')
 }
-

@@ -8,8 +8,9 @@
 const { getCleanBody, getFileHash } = require('../../gas-utils')
 
 /**
- * Remove existing thread content from the document by finding and deleting
- * all paragraphs between the thread's separator and the next separator (or start).
+ * Remove existing thread content from the document by finding the separator
+ * containing the given thread ID and deleting all paragraphs from the previous
+ * thread separator (or start of the document) through that separator (inclusive).
  *
  * @param {Object} body - Document body object
  * @param {string} threadId - The thread ID to search for
@@ -296,13 +297,21 @@ function processMessagesToDoc(messages, body, folder, options = {}) {
  * @param {Array} threads - Array of Gmail thread objects
  * @returns {Array} Sorted array of threads (newest first)
  */
+/**
+ * Sort threads by last message date (oldest first) for prepend-based processing.
+ * Since messages are prepended at index 0, sorting oldest-first ensures the newest
+ * thread is processed last and ends up at the top of the document.
+ *
+ * @param {Array} threads - Array of Gmail thread objects
+ * @returns {Array} Sorted array of threads (oldest first)
+ */
 function sortThreadsByLastMessageDate(threads) {
   return threads.slice().sort(function (a, b) {
     const aMessages = a.getMessages()
     const bMessages = b.getMessages()
     const aLastDate = aMessages[aMessages.length - 1].getDate().getTime()
     const bLastDate = bMessages[bMessages.length - 1].getDate().getTime()
-    return bLastDate - aLastDate // Descending order (newest first)
+    return aLastDate - bLastDate // Ascending order (oldest first)
   })
 }
 
