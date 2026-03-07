@@ -58,7 +58,7 @@ describe('Thread ordering for prepending', () => {
 
   test('threads with multiple messages should use last message date for sorting', () => {
     // Thread 1: Started old but has recent messages
-    const thread1 = global.GmailApp.__addThreadWithLabels(['test-label'], [
+    global.GmailApp.__addThreadWithLabels(['test-label'], [
       createMessage({
         subject: 'Thread with recent reply',
         body: 'Initial message',
