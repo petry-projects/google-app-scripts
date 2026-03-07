@@ -6,7 +6,13 @@
     "test": "jest --runInBand",
     "lint": "eslint src",
     "format": "prettier --write .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check": "prettier --check . && npm run lint",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "**/*.{js,ts,gs,json,md,yml,yaml}": "prettier --write",
+    "**/*.{js,ts}": "eslint --fix"
   },
   "devDependencies": {
     "@types/google-apps-script": "^2.0.8",
@@ -16,7 +22,9 @@
     "eslint": "^10.0.3",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.5",
+    "husky": "^9.1.7",
     "jest": "^30.2.0",
+    "lint-staged": "^16.3.2",
     "prettier": "^3.8.1",
     "ts-jest": "^29.4.6",
     "typescript": "^5.9.3"
