@@ -16,6 +16,19 @@ Open sourced under the MIT License to help others build their own automation wor
 
 ## 🚀 Getting Started
 
+### Option A — Browser-based deployment (recommended)
+
+Deploy any script directly from your browser in four steps — no command line required.
+
+1.  **Open the deployment page** — `deploy/index.html` (or the hosted GitHub Pages version if available).
+2.  **Enter your OAuth Client ID** — a *Web application* client ID from a Google Cloud project with the Apps Script API enabled. See [deploy/index.html](./deploy/index.html) for step-by-step instructions on creating one.
+3.  **Sign in with Google** — authorise the page to create Apps Script projects on your behalf.
+4.  **Select a script, name your project, and click Deploy** — the page fetches the latest source files from this repository and uploads them to your account. A direct link to the new Apps Script project is shown on success.
+
+After deployment, open the project in Google Apps Script and update the `config.gs` values (IDs, label names, etc.) following the specific script's `README.md`.
+
+### Option B — Manual copy-paste
+
 1.  **Browse the Catalog:** Check the table above to find a script that fits your needs.
 2.  **Open the Folder:** Navigate to the specific script folder (e.g., `/src/gmail-to-drive-by-labels`).
 3.  **Code & Config Convention:** Each script places the runnable code in `code.gs` and configuration values in `config.gs`.
