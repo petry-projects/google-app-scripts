@@ -4,6 +4,7 @@ module.exports = {
   testMatch: ['**/tests/**/*.test.[jt]s?(x)'],
   collectCoverageFrom: [
     'src/**/*.{js,gs}',
+    'gas-installer/src/**/*.{js,gs}',
     '!**/node_modules/**',
     '!**/coverage/**',
     '!**/tests/**'
