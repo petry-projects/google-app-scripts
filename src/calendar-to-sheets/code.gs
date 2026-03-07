@@ -140,9 +140,11 @@ function eventToRowGAS(event) {
   const end = event.getEndTime().toISOString()
   const description = sanitizeValue(event.getDescription() || '')
   const location = sanitizeValue(event.getLocation() || '')
-  const attendees = (event.getGuestList() || [])
-    .map((g) => g.getEmail())
-    .join(',')
+  const attendees = sanitizeValue(
+    (event.getGuestList() || [])
+      .map((g) => g.getEmail())
+      .join(',')
+  )
   return [id, title, start, end, description, location, attendees]
 }
 
