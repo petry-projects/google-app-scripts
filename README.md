@@ -34,6 +34,19 @@ After deployment, open the project in Google Apps Script and update the `config.
 4.  **Copy the Code:** Open `code.gs` (and `config.gs`) in the folder and copy them into a new [Google Apps Script project](https://script.google.com/).
 5.  **Configure:** Update `config.gs` values (spreadsheet id, sheet name, etc.) and follow the specific setup instructions in that script's `README.md`.
 
+## ⚙️ One-Time GCP Setup (For Fork Maintainers)
+
+If you fork this repository and want to use the browser-based deployment page or the GAS Installer Web App, you must manually configure your Google Cloud Platform project once before anything will work.
+
+### Step 1: The One-Time GCP Setup
+
+1. Go to your [Google Cloud Console](https://console.cloud.google.com/).
+2. Navigate to **APIs & Services → Library** and enable the **Google Apps Script API**.
+3. Navigate to **APIs & Services → OAuth consent screen**. Set it to **External** (so anyone can use it).
+4. Add this specific scope so the app can create projects:
+   `https://www.googleapis.com/auth/script.projects`
+5. Note your **Project Number** from the GCP dashboard. You will enter this into the **Settings → "Google Cloud Platform (GCP) Project"** section of your Installer GAS project.
+
 ## 🤝 Contributing
 
 Contributions are welcome! If you have ideas for improvements or new scripts to add to the suite:

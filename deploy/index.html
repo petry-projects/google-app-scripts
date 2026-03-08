@@ -294,7 +294,13 @@
             </li>
             <li>
               Go to <strong>APIs &amp; Services → Library</strong> and enable
-              the <strong>Apps Script API</strong>.
+              the <strong>Google Apps Script API</strong>.
+            </li>
+            <li>
+              Go to <strong>APIs &amp; Services → OAuth consent screen</strong>.
+              Set it to <strong>External</strong> (so anyone can use it). Under
+              <strong>Scopes</strong>, add:
+              <code>https://www.googleapis.com/auth/script.projects</code>
             </li>
             <li>
               Go to <strong>APIs &amp; Services → Credentials</strong> and click
@@ -310,6 +316,14 @@
               <code>http://localhost</code>).
             </li>
             <li>Click <strong>Create</strong> and copy the Client ID shown.</li>
+            <li>
+              Note your <strong>Project Number</strong> from the GCP dashboard
+              (visible on the home page or under
+              <strong>IAM &amp; Admin → Settings</strong>). You will enter this
+              into
+              <strong>Settings → "Google Cloud Platform (GCP) Project"</strong>
+              in your Installer GAS project.
+            </li>
           </ol>
         </details>
       </div>
