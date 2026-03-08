@@ -9,9 +9,9 @@
  * remain fully testable in Jest without mocking global `fetch`.
  */
 
-'use strict';
+'use strict'
 
-const APPS_SCRIPT_API_BASE = 'https://script.googleapis.com/v1';
+const APPS_SCRIPT_API_BASE = 'https://script.googleapis.com/v1'
 
 /**
  * Returns the catalog of deployable scripts included in this repository.
@@ -34,8 +34,8 @@ function getScriptCatalog() {
         'https://www.googleapis.com/auth/gmail.modify',
         'https://www.googleapis.com/auth/drive',
         'https://www.googleapis.com/auth/documents',
-        'https://www.googleapis.com/auth/script.external_request'
-      ]
+        'https://www.googleapis.com/auth/script.external_request',
+      ],
     },
     {
       id: 'calendar-to-sheets',
@@ -46,10 +46,10 @@ function getScriptCatalog() {
       files: ['code.gs', 'config.gs'],
       scopes: [
         'https://www.googleapis.com/auth/calendar.readonly',
-        'https://www.googleapis.com/auth/spreadsheets'
-      ]
-    }
-  ];
+        'https://www.googleapis.com/auth/spreadsheets',
+      ],
+    },
+  ]
 }
 
 /**
@@ -60,9 +60,9 @@ function getScriptCatalog() {
  *   The catalog entry, or `null` if not found.
  */
 function getScriptById(scriptId) {
-  if (!scriptId) return null;
-  const catalog = getScriptCatalog();
-  return catalog.find((s) => s.id === scriptId) || null;
+  if (!scriptId) return null
+  const catalog = getScriptCatalog()
+  return catalog.find((s) => s.id === scriptId) || null
 }
 
 /**
@@ -80,23 +80,23 @@ function getScriptById(scriptId) {
  */
 function buildProjectContent(files) {
   if (!Array.isArray(files) || files.length === 0) {
-    throw new Error('files must be a non-empty array');
+    throw new Error('files must be a non-empty array')
   }
   for (const f of files) {
     if (!f || typeof f.name !== 'string' || !f.name) {
-      throw new Error('Each file must have a non-empty string name');
+      throw new Error('Each file must have a non-empty string name')
     }
     if (typeof f.source !== 'string') {
-      throw new Error('Each file must have a string source');
+      throw new Error('Each file must have a string source')
     }
   }
   return {
     files: files.map((f) => ({
       name: f.name,
       type: 'SERVER_JS',
-      source: f.source
-    }))
-  };
+      source: f.source,
+    })),
+  }
 }
 
 /**
@@ -110,25 +110,26 @@ function buildProjectContent(files) {
  * @throws {Error} On missing arguments or a non-OK HTTP response.
  */
 async function createProject(fetchFn, accessToken, title) {
-  if (typeof fetchFn !== 'function') throw new Error('fetchFn must be a function');
-  if (!accessToken) throw new Error('accessToken is required');
-  if (!title) throw new Error('title is required');
+  if (typeof fetchFn !== 'function')
+    throw new Error('fetchFn must be a function')
+  if (!accessToken) throw new Error('accessToken is required')
+  if (!title) throw new Error('title is required')
 
   const response = await fetchFn(`${APPS_SCRIPT_API_BASE}/projects`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ title })
-  });
+    body: JSON.stringify({ title }),
+  })
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Failed to create project: ${response.status} ${text}`);
+    const text = await response.text()
+    throw new Error(`Failed to create project: ${response.status} ${text}`)
   }
 
-  return response.json();
+  return response.json()
 }
 
 /**
@@ -144,11 +145,12 @@ async function createProject(fetchFn, accessToken, title) {
  * @throws {Error} On missing arguments or a non-OK HTTP response.
  */
 async function updateProjectContent(fetchFn, accessToken, scriptId, content) {
-  if (typeof fetchFn !== 'function') throw new Error('fetchFn must be a function');
-  if (!accessToken) throw new Error('accessToken is required');
-  if (!scriptId) throw new Error('scriptId is required');
+  if (typeof fetchFn !== 'function')
+    throw new Error('fetchFn must be a function')
+  if (!accessToken) throw new Error('accessToken is required')
+  if (!scriptId) throw new Error('scriptId is required')
   if (!content || !Array.isArray(content.files)) {
-    throw new Error('content must be an object with a files array');
+    throw new Error('content must be an object with a files array')
   }
 
   const response = await fetchFn(
@@ -157,18 +159,20 @@ async function updateProjectContent(fetchFn, accessToken, scriptId, content) {
       method: 'PUT',
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
       },
-      body: JSON.stringify(content)
+      body: JSON.stringify(content),
     }
-  );
+  )
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Failed to update project content: ${response.status} ${text}`);
+    const text = await response.text()
+    throw new Error(
+      `Failed to update project content: ${response.status} ${text}`
+    )
   }
 
-  return response.json();
+  return response.json()
 }
 
 /**
@@ -185,14 +189,14 @@ async function updateProjectContent(fetchFn, accessToken, scriptId, content) {
  * @throws {Error} On any API or validation failure.
  */
 async function deployScript(fetchFn, accessToken, title, files) {
-  const project = await createProject(fetchFn, accessToken, title);
-  const content = buildProjectContent(files);
-  await updateProjectContent(fetchFn, accessToken, project.scriptId, content);
+  const project = await createProject(fetchFn, accessToken, title)
+  const content = buildProjectContent(files)
+  await updateProjectContent(fetchFn, accessToken, project.scriptId, content)
   return {
     scriptId: project.scriptId,
     title: project.title,
-    appsScriptUrl: `https://script.google.com/d/${project.scriptId}/edit`
-  };
+    appsScriptUrl: `https://script.google.com/d/${project.scriptId}/edit`,
+  }
 }
 
 module.exports = {
@@ -202,5 +206,5 @@ module.exports = {
   buildProjectContent,
   createProject,
   updateProjectContent,
-  deployScript
-};
+  deployScript,
+}

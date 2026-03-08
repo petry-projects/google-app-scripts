@@ -5,12 +5,12 @@
  * requiring any Google Apps Script runtime globals.
  */
 
-'use strict';
+'use strict'
 
 const GITHUB_API_BASE =
-  'https://api.github.com/repos/petry-projects/google-app-scripts/contents/src';
+  'https://api.github.com/repos/petry-projects/google-app-scripts/contents/src'
 
-const APPS_SCRIPT_API_BASE = 'https://script.googleapis.com/v1';
+const APPS_SCRIPT_API_BASE = 'https://script.googleapis.com/v1'
 
 /**
  * Maps a filename extension to the Apps Script REST API `type` enum value.
@@ -20,10 +20,10 @@ const APPS_SCRIPT_API_BASE = 'https://script.googleapis.com/v1';
  *   supported and should be skipped.
  */
 function getFileType(filename) {
-  if (!filename || typeof filename !== 'string') return null;
-  if (/\.gs$/.test(filename)) return 'SERVER_JS';
-  if (/\.html$/.test(filename)) return 'HTML';
-  return null;
+  if (!filename || typeof filename !== 'string') return null
+  if (/\.gs$/.test(filename)) return 'SERVER_JS'
+  if (/\.html$/.test(filename)) return 'HTML'
+  return null
 }
 
 /**
@@ -38,7 +38,7 @@ function getFileType(filename) {
  * @returns {Array<{name: string, type: string, download_url: string}>}
  */
 function filterGithubItems(items) {
-  if (!Array.isArray(items)) return [];
+  if (!Array.isArray(items)) return []
   return items
     .filter(
       (item) =>
@@ -50,9 +50,9 @@ function filterGithubItems(items) {
     .map((item) => ({
       name: item.name.replace(/\.(gs|html)$/, ''),
       type: getFileType(item.name),
-      download_url: item.download_url
+      download_url: item.download_url,
     }))
-    .filter((item) => item.type !== null);
+    .filter((item) => item.type !== null)
 }
 
 /**
@@ -70,12 +70,12 @@ function buildManifestFile() {
         timeZone: 'America/New_York',
         dependencies: {},
         exceptionLogging: 'STACKDRIVER',
-        runtimeVersion: 'V8'
+        runtimeVersion: 'V8',
       },
       null,
       2
-    )
-  };
+    ),
+  }
 }
 
 /**
@@ -90,9 +90,9 @@ function buildManifestFile() {
  */
 function buildDeploymentPayload(sourceFiles) {
   if (!Array.isArray(sourceFiles) || sourceFiles.length === 0) {
-    throw new Error('sourceFiles must be a non-empty array');
+    throw new Error('sourceFiles must be a non-empty array')
   }
-  return [buildManifestFile(), ...sourceFiles];
+  return [buildManifestFile(), ...sourceFiles]
 }
 
 module.exports = {
@@ -101,5 +101,5 @@ module.exports = {
   getFileType,
   filterGithubItems,
   buildManifestFile,
-  buildDeploymentPayload
-};
+  buildDeploymentPayload,
+}

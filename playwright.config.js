@@ -1,5 +1,5 @@
 // @ts-check
-const { defineConfig } = require('@playwright/test');
+const { defineConfig } = require('@playwright/test')
 
 module.exports = defineConfig({
   // Only pick up .spec.js files (Jest picks up .test.js — no overlap).
@@ -20,4 +20,4 @@ module.exports = defineConfig({
   // Playwright tests run in isolation — no shared browser between tests.
   fullyParallel: false,
   workers: 1,
-});
+})

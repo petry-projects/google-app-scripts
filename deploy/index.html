@@ -1,341 +1,469 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Deploy Google Apps Scripts</title>
-  <style>
-    /* ── Reset & base ────────────────────────────────────────────────────── */
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: 'Google Sans', Roboto, Arial, sans-serif;
-      background: #f8f9fa;
-      color: #202124;
-      min-height: 100vh;
-    }
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Deploy Google Apps Scripts</title>
+    <style>
+      /* ── Reset & base ────────────────────────────────────────────────────── */
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: 'Google Sans', Roboto, Arial, sans-serif;
+        background: #f8f9fa;
+        color: #202124;
+        min-height: 100vh;
+      }
 
-    /* ── Layout ──────────────────────────────────────────────────────────── */
-    .container {
-      max-width: 760px;
-      margin: 0 auto;
-      padding: 40px 24px 80px;
-    }
-    header {
-      text-align: center;
-      margin-bottom: 40px;
-    }
-    header h1 {
-      font-size: 28px;
-      font-weight: 400;
-      color: #1a73e8;
-      margin-bottom: 8px;
-    }
-    header p {
-      font-size: 15px;
-      color: #5f6368;
-    }
+      /* ── Layout ──────────────────────────────────────────────────────────── */
+      .container {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 40px 24px 80px;
+      }
+      header {
+        text-align: center;
+        margin-bottom: 40px;
+      }
+      header h1 {
+        font-size: 28px;
+        font-weight: 400;
+        color: #1a73e8;
+        margin-bottom: 8px;
+      }
+      header p {
+        font-size: 15px;
+        color: #5f6368;
+      }
 
-    /* ── Cards ───────────────────────────────────────────────────────────── */
-    .card {
-      background: #fff;
-      border-radius: 8px;
-      box-shadow: 0 1px 3px rgba(60,64,67,.15), 0 1px 2px rgba(60,64,67,.3);
-      padding: 24px;
-      margin-bottom: 20px;
-    }
-    .card h2 {
-      font-size: 16px;
-      font-weight: 500;
-      margin-bottom: 16px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .card h2 .step-badge {
-      background: #1a73e8;
-      color: #fff;
-      border-radius: 50%;
-      width: 24px;
-      height: 24px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 13px;
-      flex-shrink: 0;
-    }
+      /* ── Cards ───────────────────────────────────────────────────────────── */
+      .card {
+        background: #fff;
+        border-radius: 8px;
+        box-shadow:
+          0 1px 3px rgba(60, 64, 67, 0.15),
+          0 1px 2px rgba(60, 64, 67, 0.3);
+        padding: 24px;
+        margin-bottom: 20px;
+      }
+      .card h2 {
+        font-size: 16px;
+        font-weight: 500;
+        margin-bottom: 16px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .card h2 .step-badge {
+        background: #1a73e8;
+        color: #fff;
+        border-radius: 50%;
+        width: 24px;
+        height: 24px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        flex-shrink: 0;
+      }
 
-    /* ── Inputs ──────────────────────────────────────────────────────────── */
-    label {
-      display: block;
-      font-size: 13px;
-      color: #5f6368;
-      margin-bottom: 4px;
-    }
-    input[type="text"] {
-      width: 100%;
-      padding: 10px 12px;
-      border: 1px solid #dadce0;
-      border-radius: 4px;
-      font-size: 14px;
-      color: #202124;
-      transition: border-color .15s;
-    }
-    input[type="text"]:focus {
-      outline: none;
-      border-color: #1a73e8;
-      box-shadow: 0 0 0 2px rgba(26,115,232,.2);
-    }
+      /* ── Inputs ──────────────────────────────────────────────────────────── */
+      label {
+        display: block;
+        font-size: 13px;
+        color: #5f6368;
+        margin-bottom: 4px;
+      }
+      input[type='text'] {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #dadce0;
+        border-radius: 4px;
+        font-size: 14px;
+        color: #202124;
+        transition: border-color 0.15s;
+      }
+      input[type='text']:focus {
+        outline: none;
+        border-color: #1a73e8;
+        box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+      }
 
-    /* ── Script list ─────────────────────────────────────────────────────── */
-    .script-list { display: flex; flex-direction: column; gap: 12px; }
-    .script-option {
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-      padding: 14px;
-      border: 1px solid #dadce0;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: border-color .15s, background .15s;
-    }
-    .script-option:hover { background: #f1f3f4; }
-    .script-option input[type="radio"] { margin-top: 3px; flex-shrink: 0; accent-color: #1a73e8; }
-    .script-option .script-info strong { display: block; font-size: 14px; }
-    .script-option .script-info span { font-size: 13px; color: #5f6368; }
+      /* ── Script list ─────────────────────────────────────────────────────── */
+      .script-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .script-option {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 14px;
+        border: 1px solid #dadce0;
+        border-radius: 6px;
+        cursor: pointer;
+        transition:
+          border-color 0.15s,
+          background 0.15s;
+      }
+      .script-option:hover {
+        background: #f1f3f4;
+      }
+      .script-option input[type='radio'] {
+        margin-top: 3px;
+        flex-shrink: 0;
+        accent-color: #1a73e8;
+      }
+      .script-option .script-info strong {
+        display: block;
+        font-size: 14px;
+      }
+      .script-option .script-info span {
+        font-size: 13px;
+        color: #5f6368;
+      }
 
-    /* ── Buttons ─────────────────────────────────────────────────────────── */
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 20px;
-      border: none;
-      border-radius: 4px;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: background .15s, box-shadow .15s;
-    }
-    .btn-primary {
-      background: #1a73e8;
-      color: #fff;
-    }
-    .btn-primary:hover { background: #1765cc; }
-    .btn-primary:disabled { background: #a8c7fa; cursor: not-allowed; }
-    .btn-outline {
-      background: #fff;
-      color: #1a73e8;
-      border: 1px solid #dadce0;
-    }
-    .btn-outline:hover { background: #f1f3f4; }
+      /* ── Buttons ─────────────────────────────────────────────────────────── */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 4px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition:
+          background 0.15s,
+          box-shadow 0.15s;
+      }
+      .btn-primary {
+        background: #1a73e8;
+        color: #fff;
+      }
+      .btn-primary:hover {
+        background: #1765cc;
+      }
+      .btn-primary:disabled {
+        background: #a8c7fa;
+        cursor: not-allowed;
+      }
+      .btn-outline {
+        background: #fff;
+        color: #1a73e8;
+        border: 1px solid #dadce0;
+      }
+      .btn-outline:hover {
+        background: #f1f3f4;
+      }
 
-    /* ── Status / result ─────────────────────────────────────────────────── */
-    #status-area { display: none; }
-    .status-msg {
-      padding: 14px 16px;
-      border-radius: 6px;
-      font-size: 14px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .status-info  { background: #e8f0fe; color: #1a73e8; }
-    .status-ok    { background: #e6f4ea; color: #137333; }
-    .status-error { background: #fce8e6; color: #c5221f; }
+      /* ── Status / result ─────────────────────────────────────────────────── */
+      #status-area {
+        display: none;
+      }
+      .status-msg {
+        padding: 14px 16px;
+        border-radius: 6px;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .status-info {
+        background: #e8f0fe;
+        color: #1a73e8;
+      }
+      .status-ok {
+        background: #e6f4ea;
+        color: #137333;
+      }
+      .status-error {
+        background: #fce8e6;
+        color: #c5221f;
+      }
 
-    .result-link {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      color: #1a73e8;
-      text-decoration: none;
-      font-weight: 500;
-    }
-    .result-link:hover { text-decoration: underline; }
+      .result-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: #1a73e8;
+        text-decoration: none;
+        font-weight: 500;
+      }
+      .result-link:hover {
+        text-decoration: underline;
+      }
 
-    /* ── Setup instructions ───────────────────────────────────────────────── */
-    details summary {
-      cursor: pointer;
-      font-size: 14px;
-      color: #1a73e8;
-      user-select: none;
-      margin-top: 12px;
-    }
-    details[open] summary { margin-bottom: 12px; }
-    .setup-steps { padding-left: 20px; }
-    .setup-steps li { font-size: 13px; margin-bottom: 8px; line-height: 1.5; }
-    .setup-steps a { color: #1a73e8; }
-    code {
-      background: #f1f3f4;
-      padding: 2px 6px;
-      border-radius: 3px;
-      font-size: 12px;
-    }
+      /* ── Setup instructions ───────────────────────────────────────────────── */
+      details summary {
+        cursor: pointer;
+        font-size: 14px;
+        color: #1a73e8;
+        user-select: none;
+        margin-top: 12px;
+      }
+      details[open] summary {
+        margin-bottom: 12px;
+      }
+      .setup-steps {
+        padding-left: 20px;
+      }
+      .setup-steps li {
+        font-size: 13px;
+        margin-bottom: 8px;
+        line-height: 1.5;
+      }
+      .setup-steps a {
+        color: #1a73e8;
+      }
+      code {
+        background: #f1f3f4;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 12px;
+      }
 
-    /* ── Spinner ─────────────────────────────────────────────────────────── */
-    .spinner {
-      width: 18px; height: 18px;
-      border: 2px solid rgba(255,255,255,.4);
-      border-top-color: #fff;
-      border-radius: 50%;
-      animation: spin .7s linear infinite;
-      flex-shrink: 0;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-  </style>
-</head>
-<body>
-<div class="container">
-  <header>
-    <h1>🚀 Deploy Google Apps Scripts</h1>
-    <p>Deploy a script from this repository directly to your Google account using your browser.</p>
-  </header>
+      /* ── Spinner ─────────────────────────────────────────────────────────── */
+      .spinner {
+        width: 18px;
+        height: 18px;
+        border: 2px solid rgba(255, 255, 255, 0.4);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        flex-shrink: 0;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>🚀 Deploy Google Apps Scripts</h1>
+        <p>
+          Deploy a script from this repository directly to your Google account
+          using your browser.
+        </p>
+      </header>
 
-  <!-- Step 1 – OAuth Client ID -->
-  <div class="card" id="card-auth">
-    <h2><span class="step-badge">1</span>Enter your OAuth Client ID</h2>
-    <p style="font-size:13px;color:#5f6368;margin-bottom:14px;">
-      A <strong>Web application</strong> OAuth 2.0 client ID from a Google Cloud project is required.
-      The client ID is used only to sign you in and request permission to create Apps Script projects
-      — no credentials are sent to any server.
-    </p>
-    <label for="client-id-input">OAuth 2.0 Client ID</label>
-    <input type="text" id="client-id-input" placeholder="123456789-abc.apps.googleusercontent.com" />
+      <!-- Step 1 – OAuth Client ID -->
+      <div class="card" id="card-auth">
+        <h2><span class="step-badge">1</span>Enter your OAuth Client ID</h2>
+        <p style="font-size: 13px; color: #5f6368; margin-bottom: 14px">
+          A <strong>Web application</strong> OAuth 2.0 client ID from a Google
+          Cloud project is required. The client ID is used only to sign you in
+          and request permission to create Apps Script projects — no credentials
+          are sent to any server.
+        </p>
+        <label for="client-id-input">OAuth 2.0 Client ID</label>
+        <input
+          type="text"
+          id="client-id-input"
+          placeholder="123456789-abc.apps.googleusercontent.com"
+        />
 
-    <details style="margin-top:14px;">
-      <summary>How do I get a Client ID?</summary>
-      <ol class="setup-steps">
-        <li>Open the <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a>
-            and create or select a project.</li>
-        <li>Go to <strong>APIs &amp; Services → Library</strong> and enable the
-            <strong>Apps Script API</strong>.</li>
-        <li>Go to <strong>APIs &amp; Services → Credentials</strong> and click
-            <strong>Create Credentials → OAuth client ID</strong>.</li>
-        <li>Choose <strong>Web application</strong> as the application type.</li>
-        <li>Under <strong>Authorised JavaScript origins</strong>, add the origin you are
-            running this page from (e.g. <code>https://&lt;your-username&gt;.github.io</code>
-            or <code>http://localhost</code>).</li>
-        <li>Click <strong>Create</strong> and copy the Client ID shown.</li>
-      </ol>
-    </details>
-  </div>
+        <details style="margin-top: 14px">
+          <summary>How do I get a Client ID?</summary>
+          <ol class="setup-steps">
+            <li>
+              Open the
+              <a
+                href="https://console.cloud.google.com/"
+                target="_blank"
+                rel="noopener"
+                >Google Cloud Console</a
+              >
+              and create or select a project.
+            </li>
+            <li>
+              Go to <strong>APIs &amp; Services → Library</strong> and enable
+              the <strong>Apps Script API</strong>.
+            </li>
+            <li>
+              Go to <strong>APIs &amp; Services → Credentials</strong> and click
+              <strong>Create Credentials → OAuth client ID</strong>.
+            </li>
+            <li>
+              Choose <strong>Web application</strong> as the application type.
+            </li>
+            <li>
+              Under <strong>Authorised JavaScript origins</strong>, add the
+              origin you are running this page from (e.g.
+              <code>https://&lt;your-username&gt;.github.io</code> or
+              <code>http://localhost</code>).
+            </li>
+            <li>Click <strong>Create</strong> and copy the Client ID shown.</li>
+          </ol>
+        </details>
+      </div>
 
-  <!-- Step 2 – Sign in -->
-  <div class="card">
-    <h2><span class="step-badge">2</span>Sign in with Google</h2>
-    <p style="font-size:13px;color:#5f6368;margin-bottom:14px;">
-      Sign in to the Google account where you want the script project created.
-      You will be asked to grant permission to create and edit Apps Script projects.
-    </p>
-    <button class="btn btn-outline" id="btn-signin" onclick="handleSignIn()">
-      <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
-        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-      </svg>
-      Sign in with Google
-    </button>
-    <span id="auth-status" style="font-size:13px;margin-left:12px;color:#5f6368;"></span>
-  </div>
+      <!-- Step 2 – Sign in -->
+      <div class="card">
+        <h2><span class="step-badge">2</span>Sign in with Google</h2>
+        <p style="font-size: 13px; color: #5f6368; margin-bottom: 14px">
+          Sign in to the Google account where you want the script project
+          created. You will be asked to grant permission to create and edit Apps
+          Script projects.
+        </p>
+        <button
+          class="btn btn-outline"
+          id="btn-signin"
+          onclick="handleSignIn()"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              fill="#4285F4"
+              d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+            />
+            <path
+              fill="#34A853"
+              d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+            />
+            <path
+              fill="#FBBC05"
+              d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"
+            />
+            <path
+              fill="#EA4335"
+              d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+            />
+          </svg>
+          Sign in with Google
+        </button>
+        <span
+          id="auth-status"
+          style="font-size: 13px; margin-left: 12px; color: #5f6368"
+        ></span>
+      </div>
 
-  <!-- Step 3 – Choose script -->
-  <div class="card">
-    <h2><span class="step-badge">3</span>Choose a script to deploy</h2>
-    <div class="script-list" id="script-list">
-      <!-- populated by JS -->
+      <!-- Step 3 – Choose script -->
+      <div class="card">
+        <h2><span class="step-badge">3</span>Choose a script to deploy</h2>
+        <div class="script-list" id="script-list">
+          <!-- populated by JS -->
+        </div>
+      </div>
+
+      <!-- Step 4 – Project title -->
+      <div class="card">
+        <h2><span class="step-badge">4</span>Name your Apps Script project</h2>
+        <label for="project-title-input"
+          >Project title (shown in Google Apps Script)</label
+        >
+        <input
+          type="text"
+          id="project-title-input"
+          placeholder="My Gmail Archiver"
+          value="My Google Apps Script"
+        />
+      </div>
+
+      <!-- Deploy button -->
+      <div style="text-align: right; margin-bottom: 20px">
+        <button
+          class="btn btn-primary"
+          id="btn-deploy"
+          onclick="handleDeploy()"
+          disabled
+        >
+          Deploy to my account
+        </button>
+      </div>
+
+      <!-- Status / result area -->
+      <div id="status-area">
+        <div id="status-msg" class="status-msg"></div>
+      </div>
     </div>
-  </div>
 
-  <!-- Step 4 – Project title -->
-  <div class="card">
-    <h2><span class="step-badge">4</span>Name your Apps Script project</h2>
-    <label for="project-title-input">Project title (shown in Google Apps Script)</label>
-    <input type="text" id="project-title-input" placeholder="My Gmail Archiver" value="My Google Apps Script" />
-  </div>
+    <!-- Google Identity Services -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
 
-  <!-- Deploy button -->
-  <div style="text-align:right;margin-bottom:20px;">
-    <button class="btn btn-primary" id="btn-deploy" onclick="handleDeploy()" disabled>
-      Deploy to my account
-    </button>
-  </div>
+    <script>
+      /**
+       * Deployment page for the Google Apps Script Productivity Suite.
+       *
+       * Uses the Google Identity Services (GIS) token-based OAuth flow to obtain
+       * an access token, then calls the Apps Script REST API to create a new project
+       * and upload the selected script's source files.
+       */
 
-  <!-- Status / result area -->
-  <div id="status-area">
-    <div id="status-msg" class="status-msg"></div>
-  </div>
-</div>
+      // ── Constants ────────────────────────────────────────────────────────────────
 
-<!-- Google Identity Services -->
-<script src="https://accounts.google.com/gsi/client" async defer></script>
+      const APPS_SCRIPT_API = 'https://script.googleapis.com/v1'
 
-<script>
-/**
- * Deployment page for the Google Apps Script Productivity Suite.
- *
- * Uses the Google Identity Services (GIS) token-based OAuth flow to obtain
- * an access token, then calls the Apps Script REST API to create a new project
- * and upload the selected script's source files.
- */
+      // Required OAuth scope: create and edit Apps Script projects.
+      const OAUTH_SCOPE = 'https://www.googleapis.com/auth/script.projects'
 
-// ── Constants ────────────────────────────────────────────────────────────────
+      // Script catalog — mirrors src/deploy/index.js getScriptCatalog().
+      const SCRIPT_CATALOG = [
+        {
+          id: 'gmail-to-drive-by-labels',
+          name: 'Gmail to Drive By Labels',
+          description:
+            'Archives emails from specific Gmail labels into a Google Doc ' +
+            '(text) and a Google Drive Folder (attachments).',
+        },
+        {
+          id: 'calendar-to-sheets',
+          name: 'Calendar to Sheets',
+          description:
+            'Syncs Google Calendar events into a Google Sheet, keeping rows ' +
+            'up to date on changes and deletions.',
+        },
+      ]
 
-const APPS_SCRIPT_API = 'https://script.googleapis.com/v1';
+      // Base URL for fetching raw script files from this repository on GitHub.
+      const GITHUB_RAW_BASE =
+        'https://raw.githubusercontent.com/petry-projects/google-app-scripts/main/src'
 
-// Required OAuth scope: create and edit Apps Script projects.
-const OAUTH_SCOPE = 'https://www.googleapis.com/auth/script.projects';
+      // ── State ─────────────────────────────────────────────────────────────────────
 
-// Script catalog — mirrors src/deploy/index.js getScriptCatalog().
-const SCRIPT_CATALOG = [
-  {
-    id: 'gmail-to-drive-by-labels',
-    name: 'Gmail to Drive By Labels',
-    description:
-      'Archives emails from specific Gmail labels into a Google Doc ' +
-      '(text) and a Google Drive Folder (attachments).'
-  },
-  {
-    id: 'calendar-to-sheets',
-    name: 'Calendar to Sheets',
-    description:
-      'Syncs Google Calendar events into a Google Sheet, keeping rows ' +
-      'up to date on changes and deletions.'
-  }
-];
+      let tokenClient = null
+      let accessToken = null
 
-// Base URL for fetching raw script files from this repository on GitHub.
-const GITHUB_RAW_BASE =
-  'https://raw.githubusercontent.com/petry-projects/google-app-scripts/main/src';
+      // ── DOM helpers ───────────────────────────────────────────────────────────────
 
-// ── State ─────────────────────────────────────────────────────────────────────
+      function showStatus(type, html) {
+        const area = document.getElementById('status-area')
+        const msg = document.getElementById('status-msg')
+        area.style.display = 'block'
+        msg.className = `status-msg status-${type}`
+        msg.innerHTML = html
+        area.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }
 
-let tokenClient = null;
-let accessToken = null;
+      function setDeployEnabled() {
+        const hasToken = !!accessToken
+        const hasScript = !!document.querySelector(
+          'input[name="script"]:checked'
+        )
+        const hasTitle =
+          document.getElementById('project-title-input').value.trim().length > 0
+        document.getElementById('btn-deploy').disabled = !(
+          hasToken &&
+          hasScript &&
+          hasTitle
+        )
+      }
 
-// ── DOM helpers ───────────────────────────────────────────────────────────────
+      // ── Script list ───────────────────────────────────────────────────────────────
 
-function showStatus(type, html) {
-  const area = document.getElementById('status-area');
-  const msg  = document.getElementById('status-msg');
-  area.style.display = 'block';
-  msg.className = `status-msg status-${type}`;
-  msg.innerHTML = html;
-  area.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-}
-
-function setDeployEnabled() {
-  const hasToken    = !!accessToken;
-  const hasScript   = !!document.querySelector('input[name="script"]:checked');
-  const hasTitle    = document.getElementById('project-title-input').value.trim().length > 0;
-  document.getElementById('btn-deploy').disabled = !(hasToken && hasScript && hasTitle);
-}
-
-// ── Script list ───────────────────────────────────────────────────────────────
-
-function renderScriptList() {
-  const container = document.getElementById('script-list');
-  container.innerHTML = SCRIPT_CATALOG.map((s) => `
+      function renderScriptList() {
+        const container = document.getElementById('script-list')
+        container.innerHTML = SCRIPT_CATALOG.map(
+          (s) => `
     <label class="script-option" for="script-${s.id}">
       <input type="radio" name="script" id="script-${s.id}" value="${s.id}"
              onchange="setDeployEnabled()" />
@@ -344,95 +472,124 @@ function renderScriptList() {
         <span>${escapeHtml(s.description)}</span>
       </span>
     </label>
-  `).join('');
-}
-
-function escapeHtml(str) {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-// ── OAuth sign-in ─────────────────────────────────────────────────────────────
-
-function handleSignIn() {
-  const clientId = document.getElementById('client-id-input').value.trim();
-  if (!clientId) {
-    showStatus('error', '⚠️ Please enter your OAuth 2.0 Client ID in Step 1 before signing in.');
-    return;
-  }
-
-  // (Re)initialise the token client each time so users can change their Client ID.
-  tokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: clientId,
-    scope: OAUTH_SCOPE,
-    callback: (tokenResponse) => {
-      if (tokenResponse.error) {
-        showStatus('error', `❌ Sign-in failed: ${escapeHtml(tokenResponse.error)}`);
-        return;
+  `
+        ).join('')
       }
-      accessToken = tokenResponse.access_token;
-      document.getElementById('auth-status').textContent = '✅ Signed in';
-      document.getElementById('btn-signin').textContent  = '✅ Signed in — click to re-authenticate';
-      setDeployEnabled();
-    }
-  });
 
-  tokenClient.requestAccessToken();
-}
-
-// ── Deployment ────────────────────────────────────────────────────────────────
-
-async function handleDeploy() {
-  const scriptId   = document.querySelector('input[name="script"]:checked').value;
-  const title      = document.getElementById('project-title-input').value.trim();
-
-  if (!accessToken) { showStatus('error', '⚠️ Please sign in first.'); return; }
-  if (!scriptId)    { showStatus('error', '⚠️ Please select a script.'); return; }
-  if (!title)       { showStatus('error', '⚠️ Please enter a project title.'); return; }
-
-  const btn = document.getElementById('btn-deploy');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Deploying…';
-
-  try {
-    showStatus('info', '<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Fetching script source files from GitHub…');
-
-    // Fetch source files for the selected script.
-    const files = await fetchScriptFiles(scriptId);
-
-    showStatus('info', '<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Creating Apps Script project…');
-
-    // Create the project.
-    const project = await apiFetch(
-      `${APPS_SCRIPT_API}/projects`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ title })
+      function escapeHtml(str) {
+        return str
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
       }
-    );
 
-    showStatus('info', '<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Uploading script files…');
+      // ── OAuth sign-in ─────────────────────────────────────────────────────────────
 
-    // Upload the source files.
-    await apiFetch(
-      `${APPS_SCRIPT_API}/projects/${project.scriptId}/content`,
-      {
-        method: 'PUT',
-        body: JSON.stringify({
-          files: files.map((f) => ({
-            name: f.name,
-            type: 'SERVER_JS',
-            source: f.source
-          }))
+      function handleSignIn() {
+        const clientId = document.getElementById('client-id-input').value.trim()
+        if (!clientId) {
+          showStatus(
+            'error',
+            '⚠️ Please enter your OAuth 2.0 Client ID in Step 1 before signing in.'
+          )
+          return
+        }
+
+        // (Re)initialise the token client each time so users can change their Client ID.
+        tokenClient = google.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: OAUTH_SCOPE,
+          callback: (tokenResponse) => {
+            if (tokenResponse.error) {
+              showStatus(
+                'error',
+                `❌ Sign-in failed: ${escapeHtml(tokenResponse.error)}`
+              )
+              return
+            }
+            accessToken = tokenResponse.access_token
+            document.getElementById('auth-status').textContent = '✅ Signed in'
+            document.getElementById('btn-signin').textContent =
+              '✅ Signed in — click to re-authenticate'
+            setDeployEnabled()
+          },
         })
-      }
-    );
 
-    const url = `https://script.google.com/d/${project.scriptId}/edit`;
-    showStatus('ok', `
+        tokenClient.requestAccessToken()
+      }
+
+      // ── Deployment ────────────────────────────────────────────────────────────────
+
+      async function handleDeploy() {
+        const scriptId = document.querySelector(
+          'input[name="script"]:checked'
+        ).value
+        const title = document
+          .getElementById('project-title-input')
+          .value.trim()
+
+        if (!accessToken) {
+          showStatus('error', '⚠️ Please sign in first.')
+          return
+        }
+        if (!scriptId) {
+          showStatus('error', '⚠️ Please select a script.')
+          return
+        }
+        if (!title) {
+          showStatus('error', '⚠️ Please enter a project title.')
+          return
+        }
+
+        const btn = document.getElementById('btn-deploy')
+        btn.disabled = true
+        btn.innerHTML = '<span class="spinner"></span> Deploying…'
+
+        try {
+          showStatus(
+            'info',
+            '<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Fetching script source files from GitHub…'
+          )
+
+          // Fetch source files for the selected script.
+          const files = await fetchScriptFiles(scriptId)
+
+          showStatus(
+            'info',
+            '<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Creating Apps Script project…'
+          )
+
+          // Create the project.
+          const project = await apiFetch(`${APPS_SCRIPT_API}/projects`, {
+            method: 'POST',
+            body: JSON.stringify({ title }),
+          })
+
+          showStatus(
+            'info',
+            '<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Uploading script files…'
+          )
+
+          // Upload the source files.
+          await apiFetch(
+            `${APPS_SCRIPT_API}/projects/${project.scriptId}/content`,
+            {
+              method: 'PUT',
+              body: JSON.stringify({
+                files: files.map((f) => ({
+                  name: f.name,
+                  type: 'SERVER_JS',
+                  source: f.source,
+                })),
+              }),
+            }
+          )
+
+          const url = `https://script.google.com/d/${project.scriptId}/edit`
+          showStatus(
+            'ok',
+            `
       ✅ <strong>Deployed successfully!</strong><br/>
       <span style="font-size:13px;color:#137333;display:block;margin-top:8px;">
         Your project <em>${escapeHtml(title)}</em> is ready. Open it below and
@@ -442,67 +599,74 @@ async function handleDeploy() {
       <a class="result-link" href="${url}" target="_blank" rel="noopener" style="margin-top:12px;">
         Open in Google Apps Script ↗
       </a>
-    `);
-  } catch (err) {
-    showStatus('error', `❌ Deployment failed: ${escapeHtml(err.message)}`);
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = 'Deploy to my account';
-    setDeployEnabled();
-  }
-}
+    `
+          )
+        } catch (err) {
+          showStatus(
+            'error',
+            `❌ Deployment failed: ${escapeHtml(err.message)}`
+          )
+        } finally {
+          btn.disabled = false
+          btn.innerHTML = 'Deploy to my account'
+          setDeployEnabled()
+        }
+      }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+      // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/**
- * Fetches the code.gs and config.gs source files for `scriptId` from GitHub.
- * Returns an array of `{ name, source }` objects ready for the API.
- */
-async function fetchScriptFiles(scriptId) {
-  const fileNames = ['code', 'config'];
-  const results = await Promise.all(
-    fileNames.map(async (name) => {
-      const url = `${GITHUB_RAW_BASE}/${scriptId}/${name}.gs`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Could not fetch ${name}.gs (${res.status})`);
-      return { name, source: await res.text() };
-    })
-  );
-  return results;
-}
+      /**
+       * Fetches the code.gs and config.gs source files for `scriptId` from GitHub.
+       * Returns an array of `{ name, source }` objects ready for the API.
+       */
+      async function fetchScriptFiles(scriptId) {
+        const fileNames = ['code', 'config']
+        const results = await Promise.all(
+          fileNames.map(async (name) => {
+            const url = `${GITHUB_RAW_BASE}/${scriptId}/${name}.gs`
+            const res = await fetch(url)
+            if (!res.ok)
+              throw new Error(`Could not fetch ${name}.gs (${res.status})`)
+            return { name, source: await res.text() }
+          })
+        )
+        return results
+      }
 
-/**
- * Thin wrapper around fetch that attaches the Bearer token and
- * Content-Type header, then throws on non-OK responses.
- */
-async function apiFetch(url, options = {}) {
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-      ...(options.headers || {})
-    }
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    let message = `HTTP ${res.status}`;
-    try {
-      const json = JSON.parse(body);
-      if (json.error && json.error.message) message = json.error.message;
-    } catch (_) { /* ignore parse errors */ }
-    throw new Error(message);
-  }
-  return res.json();
-}
+      /**
+       * Thin wrapper around fetch that attaches the Bearer token and
+       * Content-Type header, then throws on non-OK responses.
+       */
+      async function apiFetch(url, options = {}) {
+        const res = await fetch(url, {
+          ...options,
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            ...(options.headers || {}),
+          },
+        })
+        if (!res.ok) {
+          const body = await res.text()
+          let message = `HTTP ${res.status}`
+          try {
+            const json = JSON.parse(body)
+            if (json.error && json.error.message) message = json.error.message
+          } catch (_) {
+            /* ignore parse errors */
+          }
+          throw new Error(message)
+        }
+        return res.json()
+      }
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+      // ── Init ──────────────────────────────────────────────────────────────────────
 
-renderScriptList();
+      renderScriptList()
 
-document.getElementById('project-title-input').addEventListener(
-  'input', setDeployEnabled
-);
-</script>
-</body>
+      document
+        .getElementById('project-title-input')
+        .addEventListener('input', setDeployEnabled)
+    </script>
+  </body>
 </html>

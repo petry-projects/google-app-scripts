@@ -12,8 +12,8 @@
  */
 
 var GITHUB_API_BASE =
-  'https://api.github.com/repos/petry-projects/google-app-scripts/contents/src';
-var APPS_SCRIPT_API = 'https://script.googleapis.com/v1';
+  'https://api.github.com/repos/petry-projects/google-app-scripts/contents/src'
+var APPS_SCRIPT_API = 'https://script.googleapis.com/v1'
 
 /**
  * Entry point — serves the installer HTML page.
@@ -24,7 +24,7 @@ var APPS_SCRIPT_API = 'https://script.googleapis.com/v1';
 function doGet(e) {
   return HtmlService.createHtmlOutputFromFile('Index')
     .setTitle('Google Apps Script Installer')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
 }
 
 /**
@@ -39,11 +39,11 @@ function doGet(e) {
  * @throws {Error} On GitHub API errors or failed file fetches.
  */
 function getFilesFromGithub(scriptFolderName) {
-  var url = GITHUB_API_BASE + '/' + scriptFolderName;
+  var url = GITHUB_API_BASE + '/' + scriptFolderName
   var listResponse = UrlFetchApp.fetch(url, {
     headers: { 'User-Agent': 'gas-installer/1.0' },
-    muteHttpExceptions: true
-  });
+    muteHttpExceptions: true,
+  })
 
   if (listResponse.getResponseCode() !== 200) {
     throw new Error(
@@ -51,47 +51,44 @@ function getFilesFromGithub(scriptFolderName) {
         listResponse.getResponseCode() +
         ': ' +
         listResponse.getContentText()
-    );
+    )
   }
 
-  var items = JSON.parse(listResponse.getContentText());
-  var files = [];
+  var items = JSON.parse(listResponse.getContentText())
+  var files = []
 
   for (var i = 0; i < items.length; i++) {
-    var item = items[i];
-    if (item.type !== 'file') continue;
+    var item = items[i]
+    if (item.type !== 'file') continue
 
     // Determine GAS file type from extension
-    var fileType = null;
+    var fileType = null
     if (/\.gs$/.test(item.name)) {
-      fileType = 'SERVER_JS';
+      fileType = 'SERVER_JS'
     } else if (/\.html$/.test(item.name)) {
-      fileType = 'HTML';
+      fileType = 'HTML'
     }
-    if (!fileType) continue;
+    if (!fileType) continue
 
     var rawResponse = UrlFetchApp.fetch(item.download_url, {
       headers: { 'User-Agent': 'gas-installer/1.0' },
-      muteHttpExceptions: true
-    });
+      muteHttpExceptions: true,
+    })
 
     if (rawResponse.getResponseCode() !== 200) {
       throw new Error(
-        'Failed to fetch ' +
-          item.name +
-          ': ' +
-          rawResponse.getResponseCode()
-      );
+        'Failed to fetch ' + item.name + ': ' + rawResponse.getResponseCode()
+      )
     }
 
     files.push({
       name: item.name.replace(/\.(gs|html)$/, ''),
       type: fileType,
-      source: rawResponse.getContentText()
-    });
+      source: rawResponse.getContentText(),
+    })
   }
 
-  return files;
+  return files
 }
 
 /**
@@ -107,22 +104,22 @@ function getFilesFromGithub(scriptFolderName) {
  * @throws {Error} On any API failure.
  */
 function deployScript(projectName, scriptFolderName) {
-  var token = ScriptApp.getOAuthToken();
+  var token = ScriptApp.getOAuthToken()
   var authHeaders = {
     Authorization: 'Bearer ' + token,
-    'Content-Type': 'application/json'
-  };
+    'Content-Type': 'application/json',
+  }
 
   // 1. Fetch source files from GitHub
-  var sourceFiles = getFilesFromGithub(scriptFolderName);
+  var sourceFiles = getFilesFromGithub(scriptFolderName)
 
   // 2. Create the new project
   var createResponse = UrlFetchApp.fetch(APPS_SCRIPT_API + '/projects', {
     method: 'post',
     headers: authHeaders,
     payload: JSON.stringify({ title: projectName }),
-    muteHttpExceptions: true
-  });
+    muteHttpExceptions: true,
+  })
 
   if (createResponse.getResponseCode() !== 200) {
     throw new Error(
@@ -130,11 +127,11 @@ function deployScript(projectName, scriptFolderName) {
         createResponse.getResponseCode() +
         ' ' +
         createResponse.getContentText()
-    );
+    )
   }
 
-  var project = JSON.parse(createResponse.getContentText());
-  var scriptId = project.scriptId;
+  var project = JSON.parse(createResponse.getContentText())
+  var scriptId = project.scriptId
 
   // 3. Build the deployment payload: manifest + source files
   var manifest = {
@@ -145,14 +142,14 @@ function deployScript(projectName, scriptFolderName) {
         timeZone: 'America/New_York',
         dependencies: {},
         exceptionLogging: 'STACKDRIVER',
-        runtimeVersion: 'V8'
+        runtimeVersion: 'V8',
       },
       null,
       2
-    )
-  };
+    ),
+  }
 
-  var payload = { files: [manifest].concat(sourceFiles) };
+  var payload = { files: [manifest].concat(sourceFiles) }
 
   // 4. Upload the files
   var contentResponse = UrlFetchApp.fetch(
@@ -161,9 +158,9 @@ function deployScript(projectName, scriptFolderName) {
       method: 'put',
       headers: authHeaders,
       payload: JSON.stringify(payload),
-      muteHttpExceptions: true
+      muteHttpExceptions: true,
     }
-  );
+  )
 
   if (contentResponse.getResponseCode() !== 200) {
     throw new Error(
@@ -171,8 +168,8 @@ function deployScript(projectName, scriptFolderName) {
         contentResponse.getResponseCode() +
         ' ' +
         contentResponse.getContentText()
-    );
+    )
   }
 
-  return scriptId;
+  return scriptId
 }
