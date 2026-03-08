@@ -541,6 +541,7 @@ test.describe('deploy index.html', () => {
   })
 
   test('status area becomes visible after an action', async ({ page }) => {
+    await page.locator('#client-id-input').fill('') // clear pre-filled value → triggers error
     await page.locator('#btn-signin').click() // empty client ID → error
     await expect(page.locator('#status-area')).toBeVisible()
   })
