@@ -411,6 +411,37 @@ test.describe('deploy index.html', () => {
     )
   })
 
+  test('handleDeploy shows enable-API link when Apps Script API is not enabled', async ({
+    page,
+  }) => {
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      await route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: {
+            message:
+              'User has not enabled the Apps Script API. Enable it by visiting https://script.google.com/home/usersettings then retry.',
+          },
+        }),
+      })
+    })
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await expect(page.locator('.status-error')).toContainText('Apps Script API')
+    await expect(
+      page.locator(
+        '.status-error a[href="https://script.google.com/home/usersettings"]'
+      )
+    ).toBeVisible()
+  })
+
   test('apiFetch shows HTTP status code when error body is not valid JSON', async ({
     page,
   }) => {

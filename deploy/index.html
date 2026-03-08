@@ -649,10 +649,19 @@
     `
           )
         } catch (err) {
-          showStatus(
-            'error',
-            `❌ Deployment failed: ${escapeHtml(err.message)}`
-          )
+          const isApiDisabled =
+            err.message && err.message.includes('Apps Script API')
+          const errorHtml = isApiDisabled
+            ? `❌ Deployment failed: User has not enabled the Apps Script API.
+               <a href="https://script.google.com/home/usersettings" target="_blank" rel="noopener"
+                  style="display:block;margin-top:8px;">
+                 👉 Enable it at script.google.com/home/usersettings
+               </a>
+               <span style="font-size:12px;color:#888;display:block;margin-top:4px;">
+                 After enabling, wait a minute then try again.
+               </span>`
+            : `❌ Deployment failed: ${escapeHtml(err.message)}`
+          showStatus('error', errorHtml)
         } finally {
           btn.disabled = false
           btn.innerHTML = 'Deploy to my account'
