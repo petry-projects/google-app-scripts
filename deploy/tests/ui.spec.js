@@ -154,8 +154,8 @@ test.describe('deploy index.html', () => {
   // ── renderScriptList ────────────────────────────────────────────────────────
 
   test('script list is populated on page load', async ({ page }) => {
-    const radios = page.locator('#script-list input[type="radio"]')
-    await expect(radios).toHaveCount(2)
+    const checkboxes = page.locator('#script-list input[type="checkbox"]')
+    await expect(checkboxes).toHaveCount(2)
   })
 
   test('script list shows Gmail to Drive By Labels option', async ({
@@ -543,5 +543,228 @@ test.describe('deploy index.html', () => {
   test('status area becomes visible after an action', async ({ page }) => {
     await page.locator('#btn-signin').click() // empty client ID → error
     await expect(page.locator('#status-area')).toBeVisible()
+  })
+
+  // ── Multi-select (checkboxes) ───────────────────────────────────────────────
+
+  test('script list uses checkboxes not radio buttons', async ({ page }) => {
+    await expect(
+      page.locator('#script-list input[type="checkbox"]')
+    ).toHaveCount(2)
+    await expect(page.locator('#script-list input[type="radio"]')).toHaveCount(
+      0
+    )
+  })
+
+  test('deploy button enables after sign-in with multiple scripts checked', async ({
+    page,
+  }) => {
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
+    await expect(page.locator('#btn-deploy')).toBeEnabled()
+  })
+
+  test('deploy button re-disables when all scripts are unchecked', async ({
+    page,
+  }) => {
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await expect(page.locator('#btn-deploy')).toBeEnabled()
+    // Uncheck the only selected script
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await expect(page.locator('#btn-deploy')).toBeDisabled()
+  })
+
+  test('deploy button stays enabled when one of two checked scripts is unchecked', async ({
+    page,
+  }) => {
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
+    await expect(page.locator('#btn-deploy')).toBeEnabled()
+    // Uncheck one — should remain enabled because one is still checked
+    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
+    await expect(page.locator('#btn-deploy')).toBeEnabled()
+  })
+
+  test('deploying multiple scripts creates a project for each', async ({
+    page,
+  }) => {
+    let createProjectCallCount = 0
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        createProjectCallCount++
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            scriptId: `mock-id-${createProjectCallCount}`,
+          }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({}),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    // Two POST /projects calls — one per script
+    expect(createProjectCallCount).toBe(2)
+  })
+
+  test('deploying multiple scripts shows a result link for each', async ({
+    page,
+  }) => {
+    let projectIdCounter = 0
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        projectIdCounter++
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ scriptId: `project-${projectIdCounter}` }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({}),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    const links = page.locator('.result-link')
+    await expect(links).toHaveCount(2)
+    await expect(links.nth(0)).toHaveAttribute(
+      'href',
+      'https://script.google.com/d/project-1/edit'
+    )
+    await expect(links.nth(1)).toHaveAttribute(
+      'href',
+      'https://script.google.com/d/project-2/edit'
+    )
+  })
+
+  test('multi-script deploy appends script name to each project title', async ({
+    page,
+  }) => {
+    const capturedTitles = []
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        const body = JSON.parse(route.request().postData() || '{}')
+        capturedTitles.push(body.title)
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ scriptId: 'x' }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({}),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+    await page.fill('#project-title-input', 'My Suite')
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    expect(capturedTitles).toContain('My Suite – Gmail to Drive By Labels')
+    expect(capturedTitles).toContain('My Suite – Calendar to Sheets')
+  })
+
+  test('single-script deploy does not modify the project title', async ({
+    page,
+  }) => {
+    let capturedTitle = null
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        const body = JSON.parse(route.request().postData() || '{}')
+        capturedTitle = body.title
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ scriptId: 'x' }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({}),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+    await page.fill('#project-title-input', 'My Only Script')
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    expect(capturedTitle).toBe('My Only Script')
   })
 })

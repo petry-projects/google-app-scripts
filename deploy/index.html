@@ -115,10 +115,16 @@
       .script-option:hover {
         background: #f1f3f4;
       }
-      .script-option input[type='radio'] {
+      .script-option:has(input[type='checkbox']:checked) {
+        border-color: #1a73e8;
+        background: #e8f0fe;
+      }
+      .script-option input[type='checkbox'] {
         margin-top: 3px;
         flex-shrink: 0;
         accent-color: #1a73e8;
+        width: 16px;
+        height: 16px;
       }
       .script-option .script-info strong {
         display: block;
@@ -349,7 +355,7 @@
 
       <!-- Step 3 – Choose script -->
       <div class="card">
-        <h2><span class="step-badge">3</span>Choose a script to deploy</h2>
+        <h2><span class="step-badge">3</span>Choose scripts to deploy</h2>
         <div class="script-list" id="script-list">
           <!-- populated by JS -->
         </div>
@@ -465,7 +471,7 @@
         container.innerHTML = SCRIPT_CATALOG.map(
           (s) => `
     <label class="script-option" for="script-${s.id}">
-      <input type="radio" name="script" id="script-${s.id}" value="${s.id}"
+      <input type="checkbox" name="script" id="script-${s.id}" value="${s.id}"
              onchange="setDeployEnabled()" />
       <span class="script-info">
         <strong>${escapeHtml(s.name)}</strong>
@@ -522,9 +528,9 @@
       // ── Deployment ────────────────────────────────────────────────────────────────
 
       async function handleDeploy() {
-        const scriptId = document.querySelector(
-          'input[name="script"]:checked'
-        ).value
+        const selectedIds = Array.from(
+          document.querySelectorAll('input[name="script"]:checked')
+        ).map((el) => el.value)
         const title = document
           .getElementById('project-title-input')
           .value.trim()
@@ -533,7 +539,7 @@
           showStatus('error', '⚠️ Please sign in first.')
           return
         }
-        if (!scriptId) {
+        if (selectedIds.length === 0) {
           showStatus('error', '⚠️ Please select a script.')
           return
         }
@@ -547,58 +553,84 @@
         btn.innerHTML = '<span class="spinner"></span> Deploying…'
 
         try {
-          showStatus(
-            'info',
-            '<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Fetching script source files from GitHub…'
-          )
+          const deployedProjects = []
+          const total = selectedIds.length
 
-          // Fetch source files for the selected script.
-          const files = await fetchScriptFiles(scriptId)
+          for (let i = 0; i < total; i++) {
+            const scriptId = selectedIds[i]
+            const script = SCRIPT_CATALOG.find((s) => s.id === scriptId)
+            const projectTitle = total > 1 ? `${title} – ${script.name}` : title
+            const progress = total > 1 ? ` (${i + 1}/${total})` : ''
 
-          showStatus(
-            'info',
-            '<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Creating Apps Script project…'
-          )
+            showStatus(
+              'info',
+              `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Fetching source files for <strong>${escapeHtml(script.name)}</strong>${progress}…`
+            )
 
-          // Create the project.
-          const project = await apiFetch(`${APPS_SCRIPT_API}/projects`, {
-            method: 'POST',
-            body: JSON.stringify({ title }),
-          })
+            // Fetch source files for the selected script.
+            const files = await fetchScriptFiles(scriptId)
 
-          showStatus(
-            'info',
-            '<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Uploading script files…'
-          )
+            showStatus(
+              'info',
+              `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Creating project <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
+            )
 
-          // Upload the source files.
-          await apiFetch(
-            `${APPS_SCRIPT_API}/projects/${project.scriptId}/content`,
-            {
-              method: 'PUT',
-              body: JSON.stringify({
-                files: files.map((f) => ({
-                  name: f.name,
-                  type: 'SERVER_JS',
-                  source: f.source,
-                })),
-              }),
-            }
-          )
+            // Create the project.
+            const project = await apiFetch(`${APPS_SCRIPT_API}/projects`, {
+              method: 'POST',
+              body: JSON.stringify({ title: projectTitle }),
+            })
 
-          const url = `https://script.google.com/d/${project.scriptId}/edit`
+            showStatus(
+              'info',
+              `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Uploading files for <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
+            )
+
+            // Upload the source files.
+            await apiFetch(
+              `${APPS_SCRIPT_API}/projects/${project.scriptId}/content`,
+              {
+                method: 'PUT',
+                body: JSON.stringify({
+                  files: files.map((f) => ({
+                    name: f.name,
+                    type: 'SERVER_JS',
+                    source: f.source,
+                  })),
+                }),
+              }
+            )
+
+            deployedProjects.push({
+              scriptId: project.scriptId,
+              title: projectTitle,
+            })
+          }
+
+          const linksHtml = deployedProjects
+            .map(
+              (p) =>
+                `<a class="result-link" href="https://script.google.com/d/${p.scriptId}/edit" target="_blank" rel="noopener" style="margin-top:12px;display:block;">
+        ${escapeHtml(p.title)} ↗
+      </a>`
+            )
+            .join('')
+
+          const countMsg =
+            deployedProjects.length === 1
+              ? `Your project <em>${escapeHtml(deployedProjects[0].title)}</em> is ready.`
+              : `${deployedProjects.length} projects deployed successfully.`
+
           showStatus(
             'ok',
             `
       ✅ <strong>Deployed successfully!</strong><br/>
       <span style="font-size:13px;color:#137333;display:block;margin-top:8px;">
-        Your project <em>${escapeHtml(title)}</em> is ready. Open it below and
+        ${countMsg} Open ${deployedProjects.length === 1 ? 'it' : 'them'} below and
         follow the <strong>README</strong> to complete configuration
         (e.g. set label names, document IDs, etc.).
       </span>
-      <a class="result-link" href="${url}" target="_blank" rel="noopener" style="margin-top:12px;">
-        Open in Google Apps Script ↗
-      </a>
+      ${linksHtml}
     `
           )
         } catch (err) {
