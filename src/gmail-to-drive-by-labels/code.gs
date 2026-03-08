@@ -26,17 +26,90 @@ function storeEmailsAndAttachments() {
 }
 
 /**
- * Rebuilds all configured documents by clearing them and reprocessing all emails.
- * This function:
- * 1. Clears the configured Google Doc
- * 2. Moves all processed/archived emails back to the trigger label
- * 3. Allows storeEmailsAndAttachments() to reprocess them
+ * Remove existing thread content from the document by finding and deleting
+ * all paragraphs between the thread's separator and the next separator (or start).
  *
- * For large label sets, this function uses batching to avoid timeouts.
- * If interrupted, run again to continue from where it left off.
+ * @param {Object} body - Document body object
+ * @param {string} threadId - The thread ID to search for
+ * @returns {boolean} True if thread was found and removed, false otherwise
+ */
+function removeExistingThreadFromDoc(body, threadId) {
+  if (!threadId) return false
+
+  var threadMarker = '[THREAD:' + threadId + ']'
+  var numChildren = body.getNumChildren()
+
+  // Find the separator containing this thread ID
+  var threadSeparatorIndex = -1
+  for (var i = 0; i < numChildren; i++) {
+    var child = body.getChild(i)
+    if (child.getType() === DocumentApp.ElementType.PARAGRAPH) {
+      var text = child.asParagraph().getText()
+      if (text.indexOf(threadMarker) !== -1) {
+        threadSeparatorIndex = i
+        break
+      }
+    }
+  }
+
+  if (threadSeparatorIndex === -1) {
+    console.log('[removeExistingThreadFromDoc] Thread not found:', threadId)
+    return false // Thread not found in document
+  }
+
+  console.log(
+    '[removeExistingThreadFromDoc] Found thread separator at index',
+    threadSeparatorIndex
+  )
+
+  // Find the start of this thread's content (search backwards from thread separator to previous thread separator or start)
+  var threadStartIndex = 0
+  for (var i = threadSeparatorIndex - 1; i >= 0; i--) {
+    var child = body.getChild(i)
+    if (child.getType() === DocumentApp.ElementType.PARAGRAPH) {
+      var text = child.asParagraph().getText()
+      // Stop when we hit another thread separator (indicated by [THREAD:])
+      if (text.indexOf('[THREAD:') !== -1) {
+        threadStartIndex = i + 1 // Start after the previous thread separator
+        break
+      }
+    }
+  }
+
+  console.log(
+    '[removeExistingThreadFromDoc] Removing elements from',
+    threadStartIndex,
+    'to',
+    threadSeparatorIndex
+  )
+
+  // Remove all elements from threadStartIndex to threadSeparatorIndex (inclusive)
+  // Remove in reverse order to avoid index shifting issues
+  for (var i = threadSeparatorIndex; i >= threadStartIndex; i--) {
+    body.removeChild(body.getChild(i))
+  }
+
+  console.log(
+    '[removeExistingThreadFromDoc] Successfully removed thread:',
+    threadId
+  )
+  return true
+}
+
+/**
+ * High-level entry point to rebuild all destination documents for every process configuration.
  *
- * Run this when you've updated getCleanBody() or other processing logic
- * and want to regenerate the documents with the new logic.
+ * For each config returned by getProcessConfig(), this calls rebuildDoc(config) to:
+ *   - Clear the associated document
+ *   - Move previously processed emails back to their trigger label
+ *
+ * rebuildDoc() is designed to respect Apps Script execution time limits and may return false
+ * when it needs to pause. In that case, rebuildAllDocs() stops processing the remaining
+ * configurations and logs that it should be run again to continue the rebuild.
+ *
+ * When all configurations have been successfully rebuilt in one or more runs, this function
+ * logs that rebuild preparation is complete and instructs the caller to run
+ * storeEmailsAndAttachments() to reprocess all emails into the freshly rebuilt documents.
  */
 function rebuildAllDocs() {
   console.log('[rebuildAllDocs] Starting rebuild process')
@@ -232,7 +305,6 @@ function rebuildDoc(config) {
 }
 
 /**
->>>>>>> origin/main
  * Processes a single configuration group (Label -> Doc + Folder).
  */
 function processLabelGroup(config) {
@@ -288,6 +360,23 @@ function processLabelGroup(config) {
   }
   console.log('[processLabelGroup] Found', threads.length, 'threads to process')
 
+  // Sort threads by last message date (newest first) to ensure reverse chronological order
+  // This handles cases where Gmail API returns threads in random order or when older threads are labeled
+  // Precompute last message timestamps to avoid repeated Gmail service calls during sort
+  var threadLastDates = {}
+  threads.forEach(function (thread) {
+    threadLastDates[thread.getId()] = thread.getLastMessageDate().getTime()
+  })
+
+  threads.sort(function (a, b) {
+    var aLastDate = threadLastDates[a.getId()]
+    var bLastDate = threadLastDates[b.getId()]
+    return bLastDate - aLastDate // Descending order (newest first)
+  })
+  console.log(
+    '[processLabelGroup] Sorted threads by last message date (newest first)'
+  )
+
   // 3. Open Destination Doc and Folder
   console.log(
     '[processLabelGroup] Opening doc:',
@@ -312,13 +401,20 @@ function processLabelGroup(config) {
   var totalMessages = 0
   threads.forEach((thread, threadIndex) => {
     var messages = thread.getMessages()
+    var threadId = thread.getId()
     console.log(
       '[processLabelGroup] Thread',
       threadIndex + 1,
       'has',
       messages.length,
-      'messages'
+      'messages, ID:',
+      threadId
     )
+
+    // Remove existing thread content only if this thread's ID is present in the document
+    if (body.findText(threadId)) {
+      removeExistingThreadFromDoc(body, threadId)
+    }
 
     // Sort messages by date (oldest first) so when we prepend (insert at index 0),
     // the newest messages end up at the top of the document
@@ -472,7 +568,20 @@ function processLabelGroup(config) {
           }
         })
       }
-      body.insertParagraph(currentIndex++, '------------------------------')
+
+      // Add separator - use thread separator for oldest message (first in sorted array)
+      var isOldestMessage = msgIndex === 0
+      if (isOldestMessage) {
+        var threadSeparator =
+          '------------------------------[THREAD:' + threadId + ']'
+        body.insertParagraph(currentIndex++, threadSeparator)
+        console.log(
+          '[processLabelGroup] Added thread separator for thread:',
+          threadId
+        )
+      } else {
+        body.insertParagraph(currentIndex++, '------------------------------')
+      }
 
       // Pause briefly to allow Google Doc to save (prevents crash)
       Utilities.sleep(500)
@@ -553,14 +662,4 @@ function getFileHash(blob) {
       return ('0' + (byte & 0xff).toString(16)).slice(-2)
     })
     .join('')
-}
-
-// Export functions for testing (Node.js only)
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = {
-    rebuildDoc,
-    rebuildAllDocs,
-    processLabelGroup,
-    storeEmailsAndAttachments,
-  }
 }

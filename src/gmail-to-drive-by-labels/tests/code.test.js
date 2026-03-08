@@ -1,4 +1,12 @@
 const { createMessage, createBlob } = require('../../../test-utils/mocks')
+const {
+  storeEmailsAndAttachments: storeEmailsCore,
+  processLabelGroup: processLabelGroupCore,
+  removeExistingThread,
+  rebuildDoc: rebuildDocCore,
+  rebuildAllDocs: rebuildAllDocsCore,
+} = require('../src/index.js')
+const { getCleanBody, getFileHash } = require('../../gas-utils')
 
 // Mock getProcessConfig
 global.getProcessConfig = jest.fn(() => [
@@ -10,8 +18,46 @@ global.getProcessConfig = jest.fn(() => [
   },
 ])
 
-// Load code.gs functions
-const { storeEmailsAndAttachments, processLabelGroup } = require('../code.gs')
+// Helper to wrap processLabelGroup with GAS services
+function processLabelGroup(config) {
+  const services = {
+    GmailApp: global.GmailApp,
+    DocumentApp: global.DocumentApp,
+    DriveApp: global.DriveApp,
+    Logger: global.Logger,
+    Utilities: global.Utilities,
+    Session: global.Session,
+  }
+  const helperFns = {
+    getCleanBody,
+    getFileHash,
+    removeExistingThreadFromDoc: (body, threadId) =>
+      removeExistingThread(body, threadId),
+  }
+  return processLabelGroupCore(config, services, helperFns)
+}
+
+// Helper to wrap storeEmailsAndAttachments
+function storeEmailsAndAttachments() {
+  const configs = global.getProcessConfig()
+  return storeEmailsCore(configs, processLabelGroup)
+}
+
+// Helper to wrap rebuildDoc with GAS services
+function rebuildDoc(config) {
+  const services = {
+    GmailApp: global.GmailApp,
+    DocumentApp: global.DocumentApp,
+    PropertiesService: global.PropertiesService,
+  }
+  return rebuildDocCore(config, services)
+}
+
+// Helper to wrap rebuildAllDocs
+function rebuildAllDocs() {
+  const configs = global.getProcessConfig()
+  return rebuildAllDocsCore(configs, rebuildDoc)
+}
 
 describe('storeEmailsAndAttachments', () => {
   beforeEach(() => {
@@ -98,9 +144,6 @@ describe('storeEmailsAndAttachments', () => {
   })
 
   test('handles pause when rebuild does not complete', () => {
-    // Import rebuildAllDocs
-    const { rebuildAllDocs } = require('../code.gs')
-
     // Setup config with many threads to trigger timeout simulation
     global.getProcessConfig.mockReturnValue([
       {

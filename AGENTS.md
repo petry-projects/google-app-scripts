@@ -49,7 +49,15 @@ AGENTS.md is for precise, agent-focused instructions that complement README file
 
 - **Follow Test-Driven Development (TDD): write tests before implementing features or bug fixes.** Add tests first and iterate until they pass; include the tests in the same PR as the implementation.
 - **Achieve and maintain excellent test coverage.** Minimum thresholds: 100% lines, 95% statements/functions, 85% branches. Verify locally with `npm test -- --coverage` (or `npx jest --coverage`) and ensure CI coverage meets these requirements. PRs that reduce coverage below these thresholds will be rejected.
+- **Iterate until all CI checks pass.** Before requesting review or marking a PR as ready:
+  - Run `npm test` and ensure all tests pass locally
+  - Run `npm test -- --coverage` and ensure coverage meets thresholds
+  - Run `node scripts/check-coverage.js` to verify coverage requirements
+  - If any check fails in CI, investigate locally, fix the issue, and re-run all checks
+  - Continue iterating until all tests and checks pass both locally and in CI
+- Do **not** use coverage-ignore pragmas (for example, `/* istanbul ignore next */`, `/* c8 ignore next */`, or `// coverage ignore`) except in truly unavoidable cases (such as generated code or environment guards). When you must use them, add a brief comment explaining why and prefer improving tests instead.
 - **NEVER add coverage "ignore" comments (e.g., `/* istanbul ignore next */`) to artificially boost test coverage.** If code is truly difficult to test, adjust coverage thresholds or improve mocking strategies instead. Coverage ignore comments mask untested code and are not acceptable.
+- **NEVER use `.skip()` to avoid failing tests.** If tests fail, fix them. If functionality cannot be directly tested (e.g., GAS .gs files), extract testable logic to `src/index.js` with `module.exports` following the established pattern (see `processMessagesToDoc`, `sortThreadsByLastMessageDate`). Tests must import from the extracted module, not from .gs files.
 - Use Jest for unit tests. Unit tests MUST be fast, deterministic, and not access external networks.
 - Mock external services (Google Apps Script, HTTP calls) using `test-utils/` helpers where appropriate.
 - **NEVER** use `.skip()` to avoid failing tests. Extract testable logic to `src/index.js` with `module.exports`, accepting GAS services as parameters. Tests inject global mocks via wrapper functions.
