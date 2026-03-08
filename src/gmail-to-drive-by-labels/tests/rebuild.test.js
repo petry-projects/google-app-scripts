@@ -1,4 +1,8 @@
 const { createMessage } = require('../../../test-utils/mocks')
+const {
+  rebuildDoc: rebuildDocCore,
+  rebuildAllDocs: rebuildAllDocsCore,
+} = require('../src/index.js')
 
 // Mock the config
 global.getProcessConfig = jest.fn(() => [
@@ -10,8 +14,21 @@ global.getProcessConfig = jest.fn(() => [
   },
 ])
 
-// Load the code after mocks are set up
-const { rebuildDoc, rebuildAllDocs } = require('../code.gs')
+// Helper to wrap rebuildDoc with GAS services
+function rebuildDoc(config) {
+  const services = {
+    GmailApp: global.GmailApp,
+    DocumentApp: global.DocumentApp,
+    PropertiesService: global.PropertiesService,
+  }
+  return rebuildDocCore(config, services)
+}
+
+// Helper to wrap rebuildAllDocs
+function rebuildAllDocs() {
+  const configs = global.getProcessConfig()
+  return rebuildAllDocsCore(configs, rebuildDoc)
+}
 
 describe('rebuildDoc', () => {
   beforeEach(() => {
