@@ -368,6 +368,44 @@ test.describe('deploy index.html', () => {
     ).toBe(true)
   })
 
+  test('handleDeploy includes appsscript manifest in content upload', async ({
+    page,
+  }) => {
+    let uploadBody = null
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ scriptId: 'id' }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        uploadBody = JSON.parse(route.request().postData())
+        await route.fulfill({ status: 200, body: '{}' })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    expect(uploadBody).not.toBeNull()
+    const manifest = uploadBody.files.find((f) => f.name === 'appsscript')
+    expect(manifest).toBeDefined()
+    expect(manifest.type).toBe('JSON')
+    const parsed = JSON.parse(manifest.source)
+    expect(parsed).toHaveProperty('runtimeVersion', 'V8')
+  })
+
   // ── handleDeploy – failure flows ────────────────────────────────────────────
 
   test('handleDeploy shows error when GitHub source file fetch fails', async ({

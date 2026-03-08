@@ -449,6 +449,14 @@
       const GITHUB_RAW_BASE =
         'https://raw.githubusercontent.com/petry-projects/google-app-scripts/main/src'
 
+      // Default Apps Script manifest required by the API for every project.
+      const APPSSCRIPT_MANIFEST = JSON.stringify({
+        timeZone: 'America/New_York',
+        dependencies: {},
+        exceptionLogging: 'STACKDRIVER',
+        runtimeVersion: 'V8',
+      })
+
       // ── State ─────────────────────────────────────────────────────────────────────
 
       let tokenClient = null
@@ -601,17 +609,24 @@
               `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Uploading files for <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
             )
 
-            // Upload the source files.
+            // Upload the source files, with the required manifest prepended.
             await apiFetch(
               `${APPS_SCRIPT_API}/projects/${project.scriptId}/content`,
               {
                 method: 'PUT',
                 body: JSON.stringify({
-                  files: files.map((f) => ({
-                    name: f.name,
-                    type: 'SERVER_JS',
-                    source: f.source,
-                  })),
+                  files: [
+                    {
+                      name: 'appsscript',
+                      type: 'JSON',
+                      source: APPSSCRIPT_MANIFEST,
+                    },
+                    ...files.map((f) => ({
+                      name: f.name,
+                      type: 'SERVER_JS',
+                      source: f.source,
+                    })),
+                  ],
                 }),
               }
             )
