@@ -63,7 +63,7 @@ async function mockSuccessfulDeploy(page) {
     })
   })
 
-  // Apps Script REST API — project creation and content upload
+  // Apps Script REST API — project creation, content upload, and trigger setup
   await page.route('https://script.googleapis.com/**', async (route) => {
     const url = route.request().url()
     const method = route.request().method()
@@ -79,6 +79,12 @@ async function mockSuccessfulDeploy(page) {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({}),
+      })
+    } else if (method === 'POST' && url.includes(':run')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ done: true, response: { result: null } }),
       })
     } else {
       await route.continue()
@@ -341,13 +347,18 @@ test.describe('deploy index.html', () => {
     })
     await page.route('https://script.googleapis.com/**', async (route) => {
       const url = route.request().url()
-      if (route.request().method() === 'POST') {
+      if (route.request().method() === 'POST' && url.endsWith('/projects')) {
         await route.fulfill({
           status: 200,
           body: JSON.stringify({ scriptId: 'id' }),
         })
       } else if (url.includes('/content')) {
         await route.fulfill({ status: 200, body: '{}' })
+      } else if (route.request().method() === 'POST' && url.includes(':run')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ done: true }),
+        })
       } else {
         await route.continue()
       }
@@ -386,6 +397,11 @@ test.describe('deploy index.html', () => {
       } else if (method === 'PUT' && url.includes('/content')) {
         uploadBody = JSON.parse(route.request().postData())
         await route.fulfill({ status: 200, body: '{}' })
+      } else if (method === 'POST' && url.includes(':run')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ done: true }),
+        })
       } else {
         await route.continue()
       }
@@ -404,6 +420,271 @@ test.describe('deploy index.html', () => {
     expect(manifest.type).toBe('JSON')
     const parsed = JSON.parse(manifest.source)
     expect(parsed).toHaveProperty('runtimeVersion', 'V8')
+  })
+
+  test('handleDeploy includes setup.gs with hourly trigger in content upload', async ({
+    page,
+  }) => {
+    let uploadBody = null
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ scriptId: 'id' }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        uploadBody = JSON.parse(route.request().postData())
+        await route.fulfill({ status: 200, body: '{}' })
+      } else if (method === 'POST' && url.includes(':run')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ done: true }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    expect(uploadBody).not.toBeNull()
+    const setupFile = uploadBody.files.find((f) => f.name === 'setup')
+    expect(setupFile).toBeDefined()
+    expect(setupFile.type).toBe('SERVER_JS')
+    expect(setupFile.source).toContain('storeEmailsAndAttachments')
+    expect(setupFile.source).toContain('ScriptApp.newTrigger')
+    expect(setupFile.source).toContain('everyHours(1)')
+  })
+
+  test('handleDeploy includes correct trigger function for calendar-to-sheets', async ({
+    page,
+  }) => {
+    let uploadBody = null
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ scriptId: 'id' }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        uploadBody = JSON.parse(route.request().postData())
+        await route.fulfill({ status: 200, body: '{}' })
+      } else if (method === 'POST' && url.includes(':run')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ done: true }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    const setupFile = uploadBody.files.find((f) => f.name === 'setup')
+    expect(setupFile).toBeDefined()
+    expect(setupFile.type).toBe('SERVER_JS')
+    expect(setupFile.source).toContain('syncAllCalendarsToSheetsGAS')
+    expect(setupFile.source).toContain('ScriptApp.newTrigger')
+    expect(setupFile.source).toContain('everyHours(1)')
+  })
+
+  test('handleDeploy success shows hourly trigger configured note', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await expect(page.locator('.status-ok')).toContainText(
+      'Hourly trigger configured automatically'
+    )
+  })
+
+  test('handleDeploy shows trigger warning when scripts.run fails', async ({
+    page,
+  }) => {
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ scriptId: 'id' }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        await route.fulfill({ status: 200, body: '{}' })
+      } else if (method === 'POST' && url.includes(':run')) {
+        await route.fulfill({
+          status: 403,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: { message: 'Permission denied' } }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    // Deploy succeeds even if trigger setup fails
+    await expect(page.locator('.status-ok')).toBeVisible()
+    // Warning note contains emoji, script name, and manual setup instruction
+    await expect(page.locator('.status-ok')).toContainText('⚠️')
+    await expect(page.locator('.status-ok')).toContainText(
+      'Gmail to Drive By Labels'
+    )
+    await expect(page.locator('.status-ok')).toContainText('setup()')
+  })
+
+  test('handleDeploy reuses stored project on redeploy without creating a new one', async ({
+    page,
+  }) => {
+    // Pre-seed localStorage with an existing deployment
+    await page.evaluate(() => {
+      localStorage.setItem(
+        'gas_copilot_deployed',
+        JSON.stringify({
+          'gmail-to-drive-by-labels\nMy Google Apps Script':
+            'existing-script-id',
+        })
+      )
+    })
+
+    let projectCreated = false
+    let verifiedExisting = false
+
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'GET' && url.includes('/projects/existing-script-id')) {
+        verifiedExisting = true
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({
+            scriptId: 'existing-script-id',
+            title: 'My Google Apps Script',
+          }),
+        })
+      } else if (method === 'POST' && url.endsWith('/projects')) {
+        projectCreated = true
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ scriptId: 'new-id' }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        await route.fulfill({ status: 200, body: '{}' })
+      } else if (method === 'POST' && url.includes(':run')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ done: true }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    expect(verifiedExisting).toBe(true)
+    expect(projectCreated).toBe(false)
+    await expect(page.locator('.result-link')).toHaveAttribute(
+      'href',
+      'https://script.google.com/d/existing-script-id/edit'
+    )
+  })
+
+  test('handleDeploy creates new project if stored project was deleted', async ({
+    page,
+  }) => {
+    await page.evaluate(() => {
+      localStorage.setItem(
+        'gas_copilot_deployed',
+        JSON.stringify({
+          'gmail-to-drive-by-labels\nMy Google Apps Script':
+            'deleted-script-id',
+        })
+      )
+    })
+
+    let projectCreated = false
+
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'GET' && url.includes('/projects/deleted-script-id')) {
+        // Simulate project not found
+        await route.fulfill({
+          status: 404,
+          body: JSON.stringify({ error: { message: 'Not found' } }),
+        })
+      } else if (method === 'POST' && url.endsWith('/projects')) {
+        projectCreated = true
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ scriptId: 'new-fallback-id' }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        await route.fulfill({ status: 200, body: '{}' })
+      } else if (method === 'POST' && url.includes(':run')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ done: true }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    expect(projectCreated).toBe(true)
+    await expect(page.locator('.result-link')).toHaveAttribute(
+      'href',
+      'https://script.google.com/d/new-fallback-id/edit'
+    )
   })
 
   // ── handleDeploy – failure flows ────────────────────────────────────────────
@@ -691,6 +972,12 @@ test.describe('deploy index.html', () => {
           contentType: 'application/json',
           body: JSON.stringify({}),
         })
+      } else if (method === 'POST' && url.includes(':run')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ done: true }),
+        })
       } else {
         await route.continue()
       }
@@ -730,6 +1017,12 @@ test.describe('deploy index.html', () => {
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({}),
+        })
+      } else if (method === 'POST' && url.includes(':run')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ done: true }),
         })
       } else {
         await route.continue()
@@ -780,6 +1073,12 @@ test.describe('deploy index.html', () => {
           contentType: 'application/json',
           body: JSON.stringify({}),
         })
+      } else if (method === 'POST' && url.includes(':run')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ done: true }),
+        })
       } else {
         await route.continue()
       }
@@ -821,6 +1120,12 @@ test.describe('deploy index.html', () => {
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({}),
+        })
+      } else if (method === 'POST' && url.includes(':run')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ done: true }),
         })
       } else {
         await route.continue()

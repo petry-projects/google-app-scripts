@@ -424,8 +424,10 @@
 
       const APPS_SCRIPT_API = 'https://script.googleapis.com/v1'
 
-      // Required OAuth scope: create and edit Apps Script projects.
-      const OAUTH_SCOPE = 'https://www.googleapis.com/auth/script.projects'
+      // Required OAuth scopes: create/edit Apps Script projects + manage triggers.
+      const OAUTH_SCOPE =
+        'https://www.googleapis.com/auth/script.projects ' +
+        'https://www.googleapis.com/auth/script.scriptapp'
 
       // Script catalog — mirrors src/deploy/index.js getScriptCatalog().
       const SCRIPT_CATALOG = [
@@ -435,6 +437,7 @@
           description:
             'Archives emails from specific Gmail labels into a Google Doc ' +
             '(text) and a Google Drive Folder (attachments).',
+          triggerFn: 'storeEmailsAndAttachments',
         },
         {
           id: 'calendar-to-sheets',
@@ -442,6 +445,7 @@
           description:
             'Syncs Google Calendar events into a Google Sheet, keeping rows ' +
             'up to date on changes and deletions.',
+          triggerFn: 'syncAllCalendarsToSheetsGAS',
         },
       ]
 
@@ -450,17 +454,81 @@
         'https://raw.githubusercontent.com/petry-projects/google-app-scripts/main/src'
 
       // Default Apps Script manifest required by the API for every project.
+      // oauthScopes allows ScriptApp.newTrigger() inside the deployed script.
       const APPSSCRIPT_MANIFEST = JSON.stringify({
         timeZone: 'America/New_York',
         dependencies: {},
         exceptionLogging: 'STACKDRIVER',
         runtimeVersion: 'V8',
+        oauthScopes: ['https://www.googleapis.com/auth/script.scriptapp'],
       })
+
+      // localStorage key used to persist deployed scriptIds for idempotency.
+      const DEPLOY_STORAGE_KEY = 'gas_copilot_deployed'
 
       // ── State ─────────────────────────────────────────────────────────────────────
 
       let tokenClient = null
       let accessToken = null
+
+      // ── Idempotency helpers ───────────────────────────────────────────────────────
+
+      /**
+       * Returns the Apps Script project ID previously deployed for
+       * (catalogId, title), or null if none recorded.
+       */
+      function getStoredScriptId(catalogId, title) {
+        try {
+          const map = JSON.parse(
+            localStorage.getItem(DEPLOY_STORAGE_KEY) || '{}'
+          )
+          return map[catalogId + '\n' + title] || null
+        } catch {
+          return null
+        }
+      }
+
+      /**
+       * Persists the mapping (catalogId, title) → scriptId so subsequent
+       * deploys can reuse the same Apps Script project.
+       */
+      function storeScriptId(catalogId, title, scriptId) {
+        try {
+          const map = JSON.parse(
+            localStorage.getItem(DEPLOY_STORAGE_KEY) || '{}'
+          )
+          map[catalogId + '\n' + title] = scriptId
+          localStorage.setItem(DEPLOY_STORAGE_KEY, JSON.stringify(map))
+        } catch {
+          // best-effort; ignore storage errors
+        }
+      }
+
+      /**
+       * Generates the source for setup.gs — an idempotent function that
+       * deletes any existing hourly trigger for `triggerFn` and creates a
+       * fresh one.  This file is uploaded alongside code.gs and config.gs
+       * and then executed immediately via scripts.run.
+       */
+      function buildSetupSource(triggerFn) {
+        return (
+          "var HOURLY_TRIGGER_FN = '" +
+          triggerFn +
+          "';\n\n" +
+          'function setup() {\n' +
+          '  var triggers = ScriptApp.getProjectTriggers();\n' +
+          '  for (var i = 0; i < triggers.length; i++) {\n' +
+          '    if (triggers[i].getHandlerFunction() === HOURLY_TRIGGER_FN) {\n' +
+          '      ScriptApp.deleteTrigger(triggers[i]);\n' +
+          '    }\n' +
+          '  }\n' +
+          '  ScriptApp.newTrigger(HOURLY_TRIGGER_FN)\n' +
+          '    .timeBased()\n' +
+          '    .everyHours(1)\n' +
+          '    .create();\n' +
+          '}\n'
+        )
+      }
 
       // ── DOM helpers ───────────────────────────────────────────────────────────────
 
@@ -579,9 +647,11 @@
           const deployedProjects = []
           const total = selectedIds.length
 
+          const triggerWarnings = []
+
           for (let i = 0; i < total; i++) {
-            const scriptId = selectedIds[i]
-            const script = SCRIPT_CATALOG.find((s) => s.id === scriptId)
+            const catalogId = selectedIds[i]
+            const script = SCRIPT_CATALOG.find((s) => s.id === catalogId)
             const projectTitle = total > 1 ? `${title} – ${script.name}` : title
             const progress = total > 1 ? ` (${i + 1}/${total})` : ''
 
@@ -591,50 +661,91 @@
             )
 
             // Fetch source files for the selected script.
-            const files = await fetchScriptFiles(scriptId)
+            const files = await fetchScriptFiles(catalogId)
 
-            showStatus(
-              'info',
-              `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Creating project <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
-            )
+            // ── Idempotent project lookup / creation ────────────────────────
+            let projectId = null
+            const storedId = getStoredScriptId(catalogId, projectTitle)
+            if (storedId) {
+              showStatus(
+                'info',
+                `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Verifying existing project <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
+              )
+              try {
+                await apiFetch(`${APPS_SCRIPT_API}/projects/${storedId}`)
+                projectId = storedId
+              } catch {
+                // Project no longer exists — fall through to creation.
+              }
+            }
 
-            // Create the project.
-            const project = await apiFetch(`${APPS_SCRIPT_API}/projects`, {
-              method: 'POST',
-              body: JSON.stringify({ title: projectTitle }),
-            })
+            if (!projectId) {
+              showStatus(
+                'info',
+                `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Creating project <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
+              )
+              const project = await apiFetch(`${APPS_SCRIPT_API}/projects`, {
+                method: 'POST',
+                body: JSON.stringify({ title: projectTitle }),
+              })
+              projectId = project.scriptId
+              storeScriptId(catalogId, projectTitle, projectId)
+            }
 
             showStatus(
               'info',
               `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Uploading files for <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
             )
 
-            // Upload the source files, with the required manifest prepended.
-            await apiFetch(
-              `${APPS_SCRIPT_API}/projects/${project.scriptId}/content`,
-              {
-                method: 'PUT',
-                body: JSON.stringify({
-                  files: [
-                    {
-                      name: 'appsscript',
-                      type: 'JSON',
-                      source: APPSSCRIPT_MANIFEST,
-                    },
-                    ...files.map((f) => ({
-                      name: f.name,
-                      type: 'SERVER_JS',
-                      source: f.source,
-                    })),
-                  ],
-                }),
-              }
-            )
-
-            deployedProjects.push({
-              scriptId: project.scriptId,
-              title: projectTitle,
+            // Upload source files: manifest + setup.gs + code.gs + config.gs.
+            await apiFetch(`${APPS_SCRIPT_API}/projects/${projectId}/content`, {
+              method: 'PUT',
+              body: JSON.stringify({
+                files: [
+                  {
+                    name: 'appsscript',
+                    type: 'JSON',
+                    source: APPSSCRIPT_MANIFEST,
+                  },
+                  {
+                    name: 'setup',
+                    type: 'SERVER_JS',
+                    source: buildSetupSource(script.triggerFn),
+                  },
+                  ...files.map((f) => ({
+                    name: f.name,
+                    type: 'SERVER_JS',
+                    source: f.source,
+                  })),
+                ],
+              }),
             })
+
+            // ── Configure 1-hour trigger via scripts.run ────────────────────
+            showStatus(
+              'info',
+              `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Configuring hourly trigger for <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
+            )
+            try {
+              const runResult = await apiFetch(
+                `${APPS_SCRIPT_API}/scripts/${projectId}:run`,
+                {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    function: 'setup',
+                    devMode: true,
+                  }),
+                }
+              )
+              if (runResult && runResult.error) {
+                triggerWarnings.push(script.name)
+              }
+            } catch {
+              // Trigger setup is best-effort; a failure does not block the deploy.
+              triggerWarnings.push(script.name)
+            }
+
+            deployedProjects.push({ scriptId: projectId, title: projectTitle })
           }
 
           const linksHtml = deployedProjects
@@ -651,6 +762,17 @@
               ? `Your project <em>${escapeHtml(deployedProjects[0].title)}</em> is ready.`
               : `${deployedProjects.length} projects deployed successfully.`
 
+          const triggerNote =
+            triggerWarnings.length > 0
+              ? `<span style="font-size:12px;color:#b06000;display:block;margin-top:8px;">` +
+                `⚠️ Hourly trigger could not be configured automatically for: ` +
+                `${triggerWarnings.map(escapeHtml).join(', ')}. ` +
+                `Open the script and run <strong>setup()</strong> once to activate it.` +
+                `</span>`
+              : `<span style="font-size:12px;color:#137333;display:block;margin-top:4px;">` +
+                `⏱ Hourly trigger configured automatically.` +
+                `</span>`
+
           showStatus(
             'ok',
             `
@@ -660,6 +782,7 @@
         follow the <strong>README</strong> to complete configuration
         (e.g. set label names, document IDs, etc.).
       </span>
+      ${triggerNote}
       ${linksHtml}
     `
           )
