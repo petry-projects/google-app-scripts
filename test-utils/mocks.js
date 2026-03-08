@@ -213,7 +213,6 @@ function createGmailApp() {
   }
 }
 
-
 // Minimal Calendar and Spreadsheet mocks for tests
 function createCalendarEvent({
   id,

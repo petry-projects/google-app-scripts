@@ -14,10 +14,11 @@ A robust Google Apps Script designed to automate the archiving of Gmail threads.
 - Processing is performed on a per-item basis allowing resumption after timeouts
 
 **Thread Deduplication:**
-* Prevents duplicate content when new messages arrive on existing threads
-* Each thread is identified by a unique ID embedded in its separator
-* Existing thread content is automatically removed and replaced with updated content
-* Ensures each thread appears exactly once in the document with the latest messages
+
+- Prevents duplicate content when new messages arrive on existing threads
+- Each thread is identified by a unique ID embedded in its separator
+- Existing thread content is automatically removed and replaced with updated content
+- Ensures each thread appears exactly once in the document with the latest messages
 
 **Clean Output:**
 
@@ -53,36 +54,36 @@ sequenceDiagram
     participant Gmail
     participant Doc
     participant Drive
-    
+
     User->>Script: Trigger storeEmailsAndAttachments()
     Script->>Gmail: Get threads with trigger label
     Gmail-->>Script: Return threads (unordered)
-    
+
     Script->>Script: Sort threads by last message date (newest first)
-    
+
     loop For each thread
         Script->>Gmail: Get thread ID
         Script->>Doc: Search for existing thread by ID
-        
+
         alt Thread exists in document
             Doc-->>Script: Return thread location
             Script->>Doc: Remove old thread content
         end
-        
+
         Script->>Gmail: Get all messages in thread
         Script->>Script: Sort messages by date (oldest first)
-        
+
         loop For each message (oldest to newest)
             Script->>Script: Clean message body
             Script->>Doc: Insert at top (prepend):<br/>- Subject<br/>- Date<br/>- Content
-            
+
             alt Message has attachments
                 loop For each attachment
                     Script->>Drive: Check if file exists (by name)
-                    
+
                     alt File exists
                         Script->>Drive: Compare MD5 hashes
-                        
+
                         alt Hashes match (duplicate)
                             Script->>Doc: Insert "[DUPLICATE SKIPPED]"
                         else Different content
@@ -95,18 +96,18 @@ sequenceDiagram
                     end
                 end
             end
-            
+
             alt Is oldest message in thread
                 Script->>Doc: Insert separator with thread ID:<br/>------------------------------[THREAD:id]
             else
                 Script->>Doc: Insert regular separator:<br/>------------------------------
             end
         end
-        
+
         Script->>Gmail: Remove trigger label from thread
         Script->>Gmail: Add processed label to thread
     end
-    
+
     Script-->>User: Processing complete
 ```
 
@@ -117,6 +118,7 @@ The script prevents duplicate thread content when new messages arrive on existin
 1. **Thread Identification**: Each thread is assigned a unique ID (via Gmail API's `thread.getId()`)
 
 2. **Separator Marking**: The thread ID is embedded in a separator at the bottom of each thread:
+
    ```
    ------------------------------[THREAD:1234567890abcdef]
    ```
@@ -132,14 +134,16 @@ The script prevents duplicate thread content when new messages arrive on existin
 ### Message and Thread Ordering
 
 **Thread Order** (in document):
-* Threads are sorted by last message date
-* Newest threads appear at the top
-* Sorting happens before processing to ensure consistent order regardless of Gmail API's return order
+
+- Threads are sorted by last message date
+- Newest threads appear at the top
+- Sorting happens before processing to ensure consistent order regardless of Gmail API's return order
 
 **Message Order** (within each thread):
-* Messages are sorted oldest-first before insertion
-* Since messages are prepended (inserted at index 0), newest messages end up at the top
-* Final result: Newest message at top, oldest at bottom of each thread
+
+- Messages are sorted oldest-first before insertion
+- Since messages are prepended (inserted at index 0), newest messages end up at the top
+- Final result: Newest message at top, oldest at bottom of each thread
 
 ### Example Document Structure
 
@@ -149,7 +153,7 @@ Date: 2024-01-15 10:00
 Newest reply content
 ------------------------------
 
-Subject: Re: Important Update  
+Subject: Re: Important Update
 Date: 2024-01-10 15:00
 Second reply content
 ------------------------------
