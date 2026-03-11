@@ -424,10 +424,8 @@
 
       const APPS_SCRIPT_API = 'https://script.googleapis.com/v1'
 
-      // Required OAuth scopes: create/edit Apps Script projects + manage triggers.
-      const OAUTH_SCOPE =
-        'https://www.googleapis.com/auth/script.projects ' +
-        'https://www.googleapis.com/auth/script.scriptapp'
+      // Required OAuth scopes: create/edit Apps Script projects.
+      const OAUTH_SCOPE = 'https://www.googleapis.com/auth/script.projects'
 
       // Script catalog — mirrors src/deploy/index.js getScriptCatalog().
       const SCRIPT_CATALOG = [
@@ -454,7 +452,6 @@
         'https://raw.githubusercontent.com/petry-projects/google-app-scripts/main/src'
 
       // Default Apps Script manifest required by the API for every project.
-      // oauthScopes allows ScriptApp.newTrigger() inside the deployed script.
       const APPSSCRIPT_MANIFEST = JSON.stringify({
         timeZone: 'America/New_York',
         dependencies: {},
@@ -647,8 +644,6 @@
           const deployedProjects = []
           const total = selectedIds.length
 
-          const triggerWarnings = []
-
           for (let i = 0; i < total; i++) {
             const catalogId = selectedIds[i]
             const script = SCRIPT_CATALOG.find((s) => s.id === catalogId)
@@ -721,30 +716,6 @@
               }),
             })
 
-            // ── Configure 1-hour trigger via scripts.run ────────────────────
-            showStatus(
-              'info',
-              `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Configuring hourly trigger for <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
-            )
-            try {
-              const runResult = await apiFetch(
-                `${APPS_SCRIPT_API}/scripts/${projectId}:run`,
-                {
-                  method: 'POST',
-                  body: JSON.stringify({
-                    function: 'setup',
-                    devMode: true,
-                  }),
-                }
-              )
-              if (runResult && runResult.error) {
-                triggerWarnings.push(script.name)
-              }
-            } catch {
-              // Trigger setup is best-effort; a failure does not block the deploy.
-              triggerWarnings.push(script.name)
-            }
-
             deployedProjects.push({ scriptId: projectId, title: projectTitle })
           }
 
@@ -763,15 +734,10 @@
               : `${deployedProjects.length} projects deployed successfully.`
 
           const triggerNote =
-            triggerWarnings.length > 0
-              ? `<span style="font-size:12px;color:#b06000;display:block;margin-top:8px;">` +
-                `⚠️ Hourly trigger could not be configured automatically for: ` +
-                `${triggerWarnings.map(escapeHtml).join(', ')}. ` +
-                `Open the script and run <strong>setup()</strong> once to activate it.` +
-                `</span>`
-              : `<span style="font-size:12px;color:#137333;display:block;margin-top:4px;">` +
-                `⏱ Hourly trigger configured automatically.` +
-                `</span>`
+            `<span style="font-size:12px;color:#b06000;display:block;margin-top:8px;">` +
+            `⏱ To activate the hourly trigger: open the script below, then run ` +
+            `<strong>setup()</strong> once from the editor menu.` +
+            `</span>`
 
           showStatus(
             'ok',

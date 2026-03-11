@@ -63,7 +63,7 @@ async function mockSuccessfulDeploy(page) {
     })
   })
 
-  // Apps Script REST API — project creation, content upload, and trigger setup
+  // Apps Script REST API — project creation and content upload
   await page.route('https://script.googleapis.com/**', async (route) => {
     const url = route.request().url()
     const method = route.request().method()
@@ -79,12 +79,6 @@ async function mockSuccessfulDeploy(page) {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({}),
-      })
-    } else if (method === 'POST' && url.includes(':run')) {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ done: true, response: { result: null } }),
       })
     } else {
       await route.continue()
@@ -354,11 +348,6 @@ test.describe('deploy index.html', () => {
         })
       } else if (url.includes('/content')) {
         await route.fulfill({ status: 200, body: '{}' })
-      } else if (route.request().method() === 'POST' && url.includes(':run')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({ done: true }),
-        })
       } else {
         await route.continue()
       }
@@ -397,11 +386,6 @@ test.describe('deploy index.html', () => {
       } else if (method === 'PUT' && url.includes('/content')) {
         uploadBody = JSON.parse(route.request().postData())
         await route.fulfill({ status: 200, body: '{}' })
-      } else if (method === 'POST' && url.includes(':run')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({ done: true }),
-        })
       } else {
         await route.continue()
       }
@@ -440,11 +424,6 @@ test.describe('deploy index.html', () => {
       } else if (method === 'PUT' && url.includes('/content')) {
         uploadBody = JSON.parse(route.request().postData())
         await route.fulfill({ status: 200, body: '{}' })
-      } else if (method === 'POST' && url.includes(':run')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({ done: true }),
-        })
       } else {
         await route.continue()
       }
@@ -484,11 +463,6 @@ test.describe('deploy index.html', () => {
       } else if (method === 'PUT' && url.includes('/content')) {
         uploadBody = JSON.parse(route.request().postData())
         await route.fulfill({ status: 200, body: '{}' })
-      } else if (method === 'POST' && url.includes(':run')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({ done: true }),
-        })
       } else {
         await route.continue()
       }
@@ -517,50 +491,8 @@ test.describe('deploy index.html', () => {
       .click()
     await page.locator('#btn-deploy').click()
     await expect(page.locator('.status-ok')).toContainText(
-      'Hourly trigger configured automatically'
+      'run setup() once from the editor'
     )
-  })
-
-  test('handleDeploy shows trigger warning when scripts.run fails', async ({
-    page,
-  }) => {
-    await page.route('https://raw.githubusercontent.com/**', async (route) => {
-      await route.fulfill({ status: 200, body: '// code' })
-    })
-    await page.route('https://script.googleapis.com/**', async (route) => {
-      const url = route.request().url()
-      const method = route.request().method()
-      if (method === 'POST' && url.endsWith('/projects')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({ scriptId: 'id' }),
-        })
-      } else if (method === 'PUT' && url.includes('/content')) {
-        await route.fulfill({ status: 200, body: '{}' })
-      } else if (method === 'POST' && url.includes(':run')) {
-        await route.fulfill({
-          status: 403,
-          contentType: 'application/json',
-          body: JSON.stringify({ error: { message: 'Permission denied' } }),
-        })
-      } else {
-        await route.continue()
-      }
-    })
-
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    // Deploy succeeds even if trigger setup fails
-    await expect(page.locator('.status-ok')).toBeVisible()
-    // Warning note contains emoji, script name, and manual setup instruction
-    await expect(page.locator('.status-ok')).toContainText('⚠️')
-    await expect(page.locator('.status-ok')).toContainText(
-      'Gmail to Drive By Labels'
-    )
-    await expect(page.locator('.status-ok')).toContainText('setup()')
   })
 
   test('handleDeploy reuses stored project on redeploy without creating a new one', async ({
@@ -603,11 +535,6 @@ test.describe('deploy index.html', () => {
         })
       } else if (method === 'PUT' && url.includes('/content')) {
         await route.fulfill({ status: 200, body: '{}' })
-      } else if (method === 'POST' && url.includes(':run')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({ done: true }),
-        })
       } else {
         await route.continue()
       }
@@ -663,11 +590,6 @@ test.describe('deploy index.html', () => {
         })
       } else if (method === 'PUT' && url.includes('/content')) {
         await route.fulfill({ status: 200, body: '{}' })
-      } else if (method === 'POST' && url.includes(':run')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({ done: true }),
-        })
       } else {
         await route.continue()
       }
@@ -972,12 +894,6 @@ test.describe('deploy index.html', () => {
           contentType: 'application/json',
           body: JSON.stringify({}),
         })
-      } else if (method === 'POST' && url.includes(':run')) {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ done: true }),
-        })
       } else {
         await route.continue()
       }
@@ -1017,12 +933,6 @@ test.describe('deploy index.html', () => {
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({}),
-        })
-      } else if (method === 'POST' && url.includes(':run')) {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ done: true }),
         })
       } else {
         await route.continue()
@@ -1073,12 +983,6 @@ test.describe('deploy index.html', () => {
           contentType: 'application/json',
           body: JSON.stringify({}),
         })
-      } else if (method === 'POST' && url.includes(':run')) {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ done: true }),
-        })
       } else {
         await route.continue()
       }
@@ -1120,12 +1024,6 @@ test.describe('deploy index.html', () => {
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({}),
-        })
-      } else if (method === 'POST' && url.includes(':run')) {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ done: true }),
         })
       } else {
         await route.continue()
