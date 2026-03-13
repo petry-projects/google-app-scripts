@@ -427,6 +427,8 @@ test.describe('deploy index.html', () => {
     expect(manifest.type).toBe('JSON')
     const parsed = JSON.parse(manifest.source)
     expect(parsed).toHaveProperty('runtimeVersion', 'V8')
+    expect(parsed).toHaveProperty('executionApi')
+    expect(parsed.executionApi).toHaveProperty('access', 'MYSELF')
   })
 
   test('handleDeploy includes setup.gs with hourly trigger in content upload', async ({

@@ -499,16 +499,18 @@
         'https://raw.githubusercontent.com/petry-projects/google-app-scripts/main/src'
 
       // Default Apps Script manifest required by the API for every project.
+      // executionApi.access = 'MYSELF' registers the project with the
+      // Execution API so that scripts.run (devMode: true) works immediately
+      // after content is uploaded — without creating a formal deployment first.
+      // oauthScopes is omitted so Google infers required scopes from the code.
       const APPSSCRIPT_MANIFEST = JSON.stringify({
         timeZone: 'America/New_York',
         dependencies: {},
         exceptionLogging: 'STACKDRIVER',
         runtimeVersion: 'V8',
-        oauthScopes: [
-          'https://www.googleapis.com/auth/script.projects',
-          'https://www.googleapis.com/auth/script.deployments',
-          'https://www.googleapis.com/auth/script.triggers',
-        ],
+        executionApi: {
+          access: 'MYSELF',
+        },
       })
 
       // localStorage key used to persist deployed scriptIds for idempotency.
@@ -821,7 +823,7 @@
                       }),
                     }
                   )
-                  await sleep(3000) // allow deployment to propagate to the Execution API
+                  await sleep(5000) // allow deployment to propagate to the Execution API
                   showStatus(
                     'info',
                     `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Configuring hourly trigger for <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
@@ -845,11 +847,20 @@
             }
             if (lastRunErr) {
               // Trigger setup is best-effort; a failure does not block the deploy.
-              triggerWarnings.push({
-                name: script.name,
-                detail:
-                  lastRunErr.stack || lastRunErr.message || String(lastRunErr),
-              })
+              const parts = []
+              if (lastRunErr.httpStatus)
+                parts.push(`HTTP ${lastRunErr.httpStatus}`)
+              if (
+                lastRunErr.apiDetail &&
+                lastRunErr.apiDetail !== lastRunErr.message
+              )
+                parts.push(lastRunErr.apiDetail)
+              const base =
+                lastRunErr.stack || lastRunErr.message || String(lastRunErr)
+              const detail = parts.length
+                ? `${base}\n\nAPI detail: ${parts.join(' — ')}`
+                : base
+              triggerWarnings.push({ name: script.name, detail })
             } else if (runResult?.error) {
               const detail =
                 runResult.error.message || JSON.stringify(runResult.error)
@@ -978,13 +989,22 @@
         if (!res.ok) {
           const body = await res.text()
           let message = `HTTP ${res.status}`
+          let detail = body
           try {
             const json = JSON.parse(body)
-            if (json.error && json.error.message) message = json.error.message
+            if (json.error && json.error.message) {
+              message = json.error.message
+              detail = json.error.details
+                ? `${json.error.message} — ${JSON.stringify(json.error.details)}`
+                : json.error.message
+            }
           } catch (_) {
             /* ignore parse errors */
           }
-          throw new Error(message)
+          const err = new Error(message)
+          err.httpStatus = res.status
+          err.apiDetail = detail
+          throw err
         }
         return res.json()
       }
