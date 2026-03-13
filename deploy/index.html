@@ -755,46 +755,73 @@
             })
 
             // ── Configure 1-hour trigger via ClockTriggerBuilder (scripts.run) ──
-            // Retry up to 3 times with linear back-off (2 s then 4 s):
-            // Google's Execution API may return "Requested entity was not found"
-            // immediately after a project is created because the backend needs a
-            // moment to propagate the new script.
-            const MAX_RUN_RETRIES = 3
+            // The Execution API requires at least one API-executable deployment.
+            // Attempt scripts.run once; if the project has no deployment yet it
+            // returns "Requested entity was not found". In that case, create a
+            // version + deployment to register the project with the Execution API,
+            // then retry scripts.run once more.
             let runResult = null
             let lastRunErr = null
-            for (let attempt = 1; attempt <= MAX_RUN_RETRIES; attempt++) {
-              const retryLabel =
-                attempt > 1
-                  ? ` (retry ${attempt - 1}/${MAX_RUN_RETRIES - 1})`
-                  : ''
-              showStatus(
-                'info',
-                `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Configuring hourly trigger for <strong>${escapeHtml(projectTitle)}</strong>${retryLabel}${progress}…`
-              )
-              try {
-                runResult = await apiFetch(
-                  `${APPS_SCRIPT_API}/scripts/${projectId}:run`,
-                  {
-                    method: 'POST',
-                    body: JSON.stringify({
-                      function: 'setup',
-                      devMode: true,
-                    }),
-                  }
-                )
-                lastRunErr = null
-                break // success — exit retry loop
-              } catch (err) {
-                lastRunErr = err
-                // Only retry propagation-delay errors; other errors are permanent.
-                if (
-                  attempt < MAX_RUN_RETRIES &&
-                  err.message.includes('Requested entity was not found')
-                ) {
-                  await sleep(2000 * attempt)
-                } else {
-                  break // permanent error or exhausted retries
+            showStatus(
+              'info',
+              `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Configuring hourly trigger for <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
+            )
+            try {
+              runResult = await apiFetch(
+                `${APPS_SCRIPT_API}/scripts/${projectId}:run`,
+                {
+                  method: 'POST',
+                  body: JSON.stringify({ function: 'setup', devMode: true }),
                 }
+              )
+            } catch (err) {
+              if (
+                err.message &&
+                err.message.includes('Requested entity was not found')
+              ) {
+                // No API-executable deployment exists yet. Create one so the
+                // Execution API can recognise this project, then retry once.
+                try {
+                  showStatus(
+                    'info',
+                    `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Creating API executable for <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
+                  )
+                  const version = await apiFetch(
+                    `${APPS_SCRIPT_API}/projects/${projectId}/versions`,
+                    {
+                      method: 'POST',
+                      body: JSON.stringify({ description: 'Trigger setup' }),
+                    }
+                  )
+                  await apiFetch(
+                    `${APPS_SCRIPT_API}/projects/${projectId}/deployments`,
+                    {
+                      method: 'POST',
+                      body: JSON.stringify({
+                        versionNumber: version.versionNumber,
+                      }),
+                    }
+                  )
+                  await sleep(3000) // allow deployment to propagate to the Execution API
+                  showStatus(
+                    'info',
+                    `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Configuring hourly trigger for <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
+                  )
+                  runResult = await apiFetch(
+                    `${APPS_SCRIPT_API}/scripts/${projectId}:run`,
+                    {
+                      method: 'POST',
+                      body: JSON.stringify({
+                        function: 'setup',
+                        devMode: true,
+                      }),
+                    }
+                  )
+                } catch (retryErr) {
+                  lastRunErr = retryErr
+                }
+              } else {
+                lastRunErr = err
               }
             }
             if (lastRunErr) {

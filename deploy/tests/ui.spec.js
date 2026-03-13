@@ -80,6 +80,18 @@ async function mockSuccessfulDeploy(page) {
         contentType: 'application/json',
         body: JSON.stringify({}),
       })
+    } else if (method === 'POST' && url.includes('/versions')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ versionNumber: 1 }),
+      })
+    } else if (method === 'POST' && url.includes('/deployments')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ deploymentId: 'mock-dep-id' }),
+      })
     } else if (method === 'POST' && url.includes(':run')) {
       await route.fulfill({
         status: 200,
@@ -599,6 +611,8 @@ test.describe('deploy index.html', () => {
     page,
   }) => {
     let runCallCount = 0
+    let versionCreated = false
+    let deploymentCreated = false
     await page.route('https://raw.githubusercontent.com/**', async (route) => {
       await route.fulfill({ status: 200, body: '// code' })
     })
@@ -612,10 +626,22 @@ test.describe('deploy index.html', () => {
         })
       } else if (method === 'PUT' && url.includes('/content')) {
         await route.fulfill({ status: 200, body: '{}' })
+      } else if (method === 'POST' && url.includes('/versions')) {
+        versionCreated = true
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ versionNumber: 1 }),
+        })
+      } else if (method === 'POST' && url.includes('/deployments')) {
+        deploymentCreated = true
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ deploymentId: 'dep-id' }),
+        })
       } else if (method === 'POST' && url.includes(':run')) {
         runCallCount++
-        if (runCallCount < 3) {
-          // Calls 1 and 2 return 404 "Requested entity was not found"
+        if (runCallCount === 1) {
+          // First attempt: no deployment exists yet — returns 404
           await route.fulfill({
             status: 404,
             body: JSON.stringify({
@@ -623,7 +649,7 @@ test.describe('deploy index.html', () => {
             }),
           })
         } else {
-          // Third attempt succeeds
+          // After deployment is created, second attempt succeeds
           await route.fulfill({
             status: 200,
             body: JSON.stringify({ done: true, response: { result: {} } }),
@@ -645,8 +671,10 @@ test.describe('deploy index.html', () => {
     await expect(page.locator('.status-ok')).toContainText(
       'Hourly trigger configured automatically'
     )
-    // Should have retried: 2 failures + 1 success = 3 calls
-    expect(runCallCount).toBe(3)
+    // First call fails → deployment created → second call succeeds
+    expect(runCallCount).toBe(2)
+    expect(versionCreated).toBe(true)
+    expect(deploymentCreated).toBe(true)
   })
 
   test('handleDeploy reuses stored project on redeploy without creating a new one', async ({
