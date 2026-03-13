@@ -330,8 +330,20 @@
             <li>
               Go to <strong>APIs &amp; Services → OAuth consent screen</strong>.
               Set it to <strong>External</strong> (so anyone can use it). Under
-              <strong>Scopes</strong>, add:
-              <code>https://www.googleapis.com/auth/script.projects</code>
+              <strong>Scopes</strong>, add all three required scopes:
+              <ul style="margin-top: 4px">
+                <li>
+                  <code>https://www.googleapis.com/auth/script.projects</code>
+                </li>
+                <li>
+                  <code
+                    >https://www.googleapis.com/auth/script.deployments</code
+                  >
+                </li>
+                <li>
+                  <code>https://www.googleapis.com/auth/script.triggers</code>
+                </li>
+              </ul>
             </li>
             <li>
               Go to <strong>APIs &amp; Services → Credentials</strong> and click
@@ -454,12 +466,13 @@
 
       const APPS_SCRIPT_API = 'https://script.googleapis.com/v1'
 
-      // Required OAuth scopes: create/edit Apps Script projects, manage triggers,
-      // and create API-executable deployments (needed for scripts.run).
+      // Required OAuth scopes: create/edit Apps Script projects, create
+      // API-executable deployments (needed for scripts.run), and manage
+      // time-based triggers.
       const OAUTH_SCOPE =
         'https://www.googleapis.com/auth/script.projects ' +
         'https://www.googleapis.com/auth/script.deployments ' +
-        'https://www.googleapis.com/auth/script.scriptapp'
+        'https://www.googleapis.com/auth/script.triggers'
 
       // Script catalog — mirrors src/deploy/index.js getScriptCatalog().
       const SCRIPT_CATALOG = [
@@ -491,7 +504,11 @@
         dependencies: {},
         exceptionLogging: 'STACKDRIVER',
         runtimeVersion: 'V8',
-        oauthScopes: ['https://www.googleapis.com/auth/script.scriptapp'],
+        oauthScopes: [
+          'https://www.googleapis.com/auth/script.projects',
+          'https://www.googleapis.com/auth/script.deployments',
+          'https://www.googleapis.com/auth/script.triggers',
+        ],
       })
 
       // localStorage key used to persist deployed scriptIds for idempotency.
