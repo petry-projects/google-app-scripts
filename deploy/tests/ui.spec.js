@@ -595,6 +595,60 @@ test.describe('deploy index.html', () => {
     expect(runCalled).toBe(true)
   })
 
+  test('handleDeploy retries scripts.run on "Requested entity was not found" then succeeds', async ({
+    page,
+  }) => {
+    let runCallCount = 0
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ scriptId: 'id' }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        await route.fulfill({ status: 200, body: '{}' })
+      } else if (method === 'POST' && url.includes(':run')) {
+        runCallCount++
+        if (runCallCount < 3) {
+          // Calls 1 and 2 return 404 "Requested entity was not found"
+          await route.fulfill({
+            status: 404,
+            body: JSON.stringify({
+              error: { message: 'Requested entity was not found.' },
+            }),
+          })
+        } else {
+          // Third attempt succeeds
+          await route.fulfill({
+            status: 200,
+            body: JSON.stringify({ done: true, response: { result: {} } }),
+          })
+        }
+      } else {
+        await route.continue()
+      }
+    })
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await expect(page.locator('.status-ok')).toContainText(
+      'Deployed successfully',
+      { timeout: 15000 }
+    )
+    await expect(page.locator('.status-ok')).toContainText(
+      'Hourly trigger configured automatically'
+    )
+    // Should have retried: 2 failures + 1 success = 3 calls
+    expect(runCallCount).toBe(3)
+  })
+
   test('handleDeploy reuses stored project on redeploy without creating a new one', async ({
     page,
   }) => {
