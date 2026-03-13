@@ -454,9 +454,11 @@
 
       const APPS_SCRIPT_API = 'https://script.googleapis.com/v1'
 
-      // Required OAuth scopes: create/edit Apps Script projects + manage triggers.
+      // Required OAuth scopes: create/edit Apps Script projects, manage triggers,
+      // and create API-executable deployments (needed for scripts.run).
       const OAUTH_SCOPE =
         'https://www.googleapis.com/auth/script.projects ' +
+        'https://www.googleapis.com/auth/script.deployments ' +
         'https://www.googleapis.com/auth/script.scriptapp'
 
       // Script catalog — mirrors src/deploy/index.js getScriptCatalog().
