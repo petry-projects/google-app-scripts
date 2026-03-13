@@ -236,6 +236,36 @@
         font-size: 12px;
       }
 
+      /* ── Error detail (copyable) ─────────────────────────────────────────── */
+      .error-detail {
+        margin-top: 6px;
+        font-size: 11px;
+        color: #555;
+        background: #fff8f8;
+        border: 1px solid #f5c6cb;
+        border-radius: 4px;
+        padding: 6px 8px;
+        font-family: monospace;
+        white-space: pre-wrap;
+        word-break: break-all;
+        max-height: 120px;
+        overflow-y: auto;
+        user-select: text;
+      }
+      .copy-btn {
+        margin-top: 4px;
+        font-size: 11px;
+        padding: 2px 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        background: #f8f8f8;
+        cursor: pointer;
+        color: #444;
+      }
+      .copy-btn:hover {
+        background: #eee;
+      }
+
       /* ── Spinner ─────────────────────────────────────────────────────────── */
       .spinner {
         width: 18px;
@@ -644,7 +674,7 @@
 
         try {
           const deployedProjects = []
-          const triggerWarnings = []
+          const triggerWarnings = [] // [{name, detail}]
           const total = selectedIds.length
 
           for (let i = 0; i < total; i++) {
@@ -736,11 +766,16 @@
                 }
               )
               if (runResult?.error) {
-                triggerWarnings.push(script.name)
+                const detail =
+                  runResult.error.message || JSON.stringify(runResult.error)
+                triggerWarnings.push({ name: script.name, detail })
               }
-            } catch {
+            } catch (triggerErr) {
               // Trigger setup is best-effort; a failure does not block the deploy.
-              triggerWarnings.push(script.name)
+              triggerWarnings.push({
+                name: script.name,
+                detail: triggerErr.message || String(triggerErr),
+              })
             }
 
             deployedProjects.push({ scriptId: projectId, title: projectTitle })
@@ -764,9 +799,22 @@
             triggerWarnings.length > 0
               ? `<span style="font-size:12px;color:#b06000;display:block;margin-top:8px;">` +
                 `⚠️ Hourly trigger could not be configured automatically for: ` +
-                `${triggerWarnings.map(escapeHtml).join(', ')}. ` +
+                `${triggerWarnings.map((w) => escapeHtml(w.name)).join(', ')}. ` +
                 `Open the script and run <strong>setup()</strong> once to activate it.` +
-                `</span>`
+                `</span>` +
+                triggerWarnings
+                  .map(
+                    (w) =>
+                      `<details style="margin-top:6px;font-size:12px;">` +
+                      `<summary style="cursor:pointer;color:#888;">` +
+                      `${escapeHtml(w.name)} — trigger error detail</summary>` +
+                      `<div class="error-detail">${escapeHtml(w.detail)}</div>` +
+                      `<button class="copy-btn" data-copy="${escapeHtml(w.detail)}"` +
+                      ` onclick="navigator.clipboard.writeText(this.dataset.copy)">` +
+                      `📋 Copy error</button>` +
+                      `</details>`
+                  )
+                  .join('')
               : `<span style="font-size:12px;color:#137333;display:block;margin-top:8px;">` +
                 `⏱ Hourly trigger configured automatically.` +
                 `</span>`
@@ -787,6 +835,15 @@
         } catch (err) {
           const isApiDisabled =
             err.message && err.message.includes('Apps Script API')
+          const errorDetail = err.stack || err.message || String(err)
+          const errorDetailBlock =
+            `<details style="margin-top:6px;font-size:12px;">` +
+            `<summary style="cursor:pointer;color:#888;">Error detail</summary>` +
+            `<div class="error-detail">${escapeHtml(errorDetail)}</div>` +
+            `<button class="copy-btn" data-copy="${escapeHtml(errorDetail)}"` +
+            ` onclick="navigator.clipboard.writeText(this.dataset.copy)">` +
+            `📋 Copy error</button>` +
+            `</details>`
           const errorHtml = isApiDisabled
             ? '❌ Deployment failed: User has not enabled the Apps Script API.' +
               '<a href="https://script.google.com/home/usersettings" target="_blank" rel="noopener"' +
@@ -795,8 +852,10 @@
               '</a>' +
               '<span style="font-size:12px;color:#888;display:block;margin-top:4px;">' +
               'After enabling, wait a minute then try again.' +
-              '</span>'
-            : `❌ Deployment failed: ${escapeHtml(err.message)}`
+              '</span>' +
+              errorDetailBlock
+            : `❌ Deployment failed: ${escapeHtml(err.message)}` +
+              errorDetailBlock
           showStatus('error', errorHtml)
         } finally {
           btn.disabled = false

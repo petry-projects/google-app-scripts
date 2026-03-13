@@ -584,6 +584,14 @@ test.describe('deploy index.html', () => {
       'Hourly trigger could not be configured automatically'
     )
     await expect(page.locator('.status-ok')).toContainText('setup()')
+    // Error detail is rendered in a collapsible block with copy button
+    await expect(page.locator('.status-ok')).toContainText(
+      'trigger error detail'
+    )
+    await expect(
+      page.locator('.status-ok details .error-detail')
+    ).toContainText('Caller does not have permission')
+    await expect(page.locator('.status-ok .copy-btn')).toBeAttached()
     expect(runCalled).toBe(true)
   })
 
@@ -752,6 +760,11 @@ test.describe('deploy index.html', () => {
     await expect(page.locator('.status-error')).toContainText(
       'The caller does not have permission'
     )
+    // Copyable error detail block is shown
+    await expect(
+      page.locator('.status-error details .error-detail')
+    ).toContainText('The caller does not have permission')
+    await expect(page.locator('.status-error .copy-btn')).toBeAttached()
   })
 
   test('handleDeploy shows enable-API link when Apps Script API is not enabled', async ({
