@@ -43,9 +43,10 @@ If you fork this repository and want to use the browser-based deployment page or
 1. Go to your [Google Cloud Console](https://console.cloud.google.com/).
 2. Navigate to **APIs & Services → Library** and enable the **Google Apps Script API**.
 3. Navigate to **APIs & Services → OAuth consent screen**. Set it to **External** (so anyone can use it).
-4. Add these three required scopes so the app can create projects, deployments, and triggers:
+4. Add these four required scopes so the app can create projects, deployments, and triggers:
    - `https://www.googleapis.com/auth/script.projects`
    - `https://www.googleapis.com/auth/script.deployments`
+   - `https://www.googleapis.com/auth/script.scriptapp`
    - `https://www.googleapis.com/auth/script.triggers`
 5. Note your **Project Number** from the GCP dashboard. You will enter this into the **Settings → "Google Cloud Platform (GCP) Project"** section of your Installer GAS project.
 

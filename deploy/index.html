@@ -330,7 +330,7 @@
             <li>
               Go to <strong>APIs &amp; Services → OAuth consent screen</strong>.
               Set it to <strong>External</strong> (so anyone can use it). Under
-              <strong>Scopes</strong>, add all three required scopes:
+              <strong>Scopes</strong>, add all four required scopes:
               <ul style="margin-top: 4px">
                 <li>
                   <code>https://www.googleapis.com/auth/script.projects</code>
@@ -339,6 +339,9 @@
                   <code
                     >https://www.googleapis.com/auth/script.deployments</code
                   >
+                </li>
+                <li>
+                  <code>https://www.googleapis.com/auth/script.scriptapp</code>
                 </li>
                 <li>
                   <code>https://www.googleapis.com/auth/script.triggers</code>
@@ -467,11 +470,13 @@
       const APPS_SCRIPT_API = 'https://script.googleapis.com/v1'
 
       // Required OAuth scopes: create/edit Apps Script projects, create
-      // API-executable deployments (needed for scripts.run), and manage
-      // time-based triggers.
+      // API-executable deployments (needed for scripts.run), use the
+      // ScriptApp service at runtime (required by setup() for
+      // ScriptApp.newTrigger()), and manage time-based triggers via REST API.
       const OAUTH_SCOPE =
         'https://www.googleapis.com/auth/script.projects ' +
         'https://www.googleapis.com/auth/script.deployments ' +
+        'https://www.googleapis.com/auth/script.scriptapp ' +
         'https://www.googleapis.com/auth/script.triggers'
 
       // Script catalog — mirrors src/deploy/index.js getScriptCatalog().
