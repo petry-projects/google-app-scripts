@@ -429,6 +429,9 @@ test.describe('deploy index.html', () => {
     expect(parsed).toHaveProperty('runtimeVersion', 'V8')
     expect(parsed).toHaveProperty('executionApi')
     expect(parsed.executionApi).toHaveProperty('access', 'MYSELF')
+    expect(parsed.oauthScopes).toContain(
+      'https://www.googleapis.com/auth/script.scriptapp'
+    )
   })
 
   test('handleDeploy includes setup.gs with hourly trigger in content upload', async ({

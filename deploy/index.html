@@ -507,7 +507,9 @@
       // executionApi.access = 'MYSELF' registers the project with the
       // Execution API so that scripts.run (devMode: true) works immediately
       // after content is uploaded — without creating a formal deployment first.
-      // oauthScopes is omitted so Google infers required scopes from the code.
+      // oauthScopes declares the runtime scope needed by ScriptApp.newTrigger()
+      // inside setup(). Without an explicit declaration Google's auto-detection
+      // may not kick in before the first scripts.run call, causing HTTP 403.
       const APPSSCRIPT_MANIFEST = JSON.stringify({
         timeZone: 'America/New_York',
         dependencies: {},
@@ -516,6 +518,7 @@
         executionApi: {
           access: 'MYSELF',
         },
+        oauthScopes: ['https://www.googleapis.com/auth/script.scriptapp'],
       })
 
       // localStorage key used to persist deployed scriptIds for idempotency.
