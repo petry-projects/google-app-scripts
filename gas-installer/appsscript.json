@@ -10,9 +10,9 @@
   "oauthScopes": [
     "https://www.googleapis.com/auth/script.projects",
 
-"https://www.googleapis.com/auth/script.triggers",
+    "https://www.googleapis.com/auth/script.triggers",
 
-"https://www.googleapis.com/auth/script.external_request",
+    "https://www.googleapis.com/auth/script.external_request",
     "https://www.googleapis.com/auth/script.external_request"
   ]
 }
