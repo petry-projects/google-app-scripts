@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Google Apps Script Installer</title>
+    <style>
+      /* ── Reset & base ──────────────────────────────────────────────────── */
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: 'Google Sans', Roboto, Arial, sans-serif;
+        background: #f8f9fa;
+        color: #202124;
+        min-height: 100vh;
+      }
+
+      /* ── Layout ────────────────────────────────────────────────────────── */
+      .container {
+        max-width: 680px;
+        margin: 0 auto;
+        padding: 40px 24px 80px;
+      }
+      header {
+        text-align: center;
+        margin-bottom: 36px;
+      }
+      header h1 {
+        font-size: 26px;
+        font-weight: 400;
+        color: #1a73e8;
+        margin-bottom: 8px;
+      }
+      header p {
+        font-size: 14px;
+        color: #5f6368;
+      }
+
+      /* ── Cards ─────────────────────────────────────────────────────────── */
+      .card {
+        background: #fff;
+        border-radius: 8px;
+        box-shadow:
+          0 1px 3px rgba(60, 64, 67, 0.15),
+          0 1px 2px rgba(60, 64, 67, 0.3);
+        padding: 22px 24px;
+        margin-bottom: 18px;
+      }
+      .card h2 {
+        font-size: 15px;
+        font-weight: 500;
+        margin-bottom: 14px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .step-badge {
+        background: #1a73e8;
+        color: #fff;
+        border-radius: 50%;
+        width: 22px;
+        height: 22px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        flex-shrink: 0;
+      }
+
+      /* ── Script list ────────────────────────────────────────────────────── */
+      .script-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .script-option {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 12px 14px;
+        border: 1px solid #dadce0;
+        border-radius: 6px;
+        cursor: pointer;
+        transition:
+          border-color 0.15s,
+          background 0.15s;
+      }
+      .script-option:hover {
+        background: #f1f3f4;
+      }
+      .script-option input[type='radio'] {
+        margin-top: 2px;
+        flex-shrink: 0;
+        accent-color: #1a73e8;
+      }
+      .script-info strong {
+        display: block;
+        font-size: 14px;
+      }
+      .script-info span {
+        font-size: 13px;
+        color: #5f6368;
+      }
+
+      /* ── Text input ─────────────────────────────────────────────────────── */
+      label.field-label {
+        display: block;
+        font-size: 13px;
+        color: #5f6368;
+        margin-bottom: 5px;
+      }
+      input[type='text'] {
+        width: 100%;
+        padding: 9px 12px;
+        border: 1px solid #dadce0;
+        border-radius: 4px;
+        font-size: 14px;
+        color: #202124;
+        transition: border-color 0.15s;
+      }
+      input[type='text']:focus {
+        outline: none;
+        border-color: #1a73e8;
+        box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+      }
+
+      /* ── Buttons ────────────────────────────────────────────────────────── */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 22px;
+        border: none;
+        border-radius: 4px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      .btn-primary {
+        background: #1a73e8;
+        color: #fff;
+      }
+      .btn-primary:hover {
+        background: #1765cc;
+      }
+      .btn-primary:disabled {
+        background: #a8c7fa;
+        cursor: not-allowed;
+      }
+
+      /* ── Status ─────────────────────────────────────────────────────────── */
+      #status-area {
+        display: none;
+      }
+      .status-msg {
+        padding: 14px 16px;
+        border-radius: 6px;
+        font-size: 14px;
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+      }
+      .status-info {
+        background: #e8f0fe;
+        color: #1a73e8;
+      }
+      .status-ok {
+        background: #e6f4ea;
+        color: #137333;
+      }
+      .status-error {
+        background: #fce8e6;
+        color: #c5221f;
+      }
+
+      .result-link {
+        color: #137333;
+        font-weight: 500;
+        word-break: break-all;
+      }
+
+      /* ── Spinner ────────────────────────────────────────────────────────── */
+      .spinner {
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(255, 255, 255, 0.35);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        flex-shrink: 0;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>🚀 Google Apps Script Installer</h1>
+        <p>
+          Select a script, name your project, and deploy it to your Google
+          account in one click.
+        </p>
+      </header>
+
+      <!-- Step 1 – Choose script -->
+      <div class="card">
+        <h2><span class="step-badge">1</span>Choose a script</h2>
+        <div class="script-list" id="script-list">
+          <label class="script-option" for="script-gmail">
+            <input
+              type="radio"
+              name="script"
+              id="script-gmail"
+              value="gmail-to-drive-by-labels"
+              onchange="updateDeployButton()"
+            />
+            <span class="script-info">
+              <strong>Gmail to Drive By Labels</strong>
+              <span
+                >Archives emails from Gmail labels into a Google Doc and Drive
+                Folder with smart de-duplication.</span
+              >
+            </span>
+          </label>
+          <label class="script-option" for="script-calendar">
+            <input
+              type="radio"
+              name="script"
+              id="script-calendar"
+              value="calendar-to-sheets"
+              onchange="updateDeployButton()"
+            />
+            <span class="script-info">
+              <strong>Calendar to Sheets</strong>
+              <span
+                >Syncs Google Calendar events into a Google Sheet, keeping rows
+                up to date on changes and deletions.</span
+              >
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Step 2 – Project title -->
+      <div class="card">
+        <h2><span class="step-badge">2</span>Name your project</h2>
+        <label class="field-label" for="project-title"
+          >Project title (shown in Google Apps Script)</label
+        >
+        <input
+          type="text"
+          id="project-title"
+          placeholder="My Gmail Archiver"
+          oninput="updateDeployButton()"
+        />
+      </div>
+
+      <!-- Deploy button -->
+      <div style="text-align: right; margin-bottom: 18px">
+        <button
+          class="btn btn-primary"
+          id="btn-deploy"
+          onclick="handleDeploy()"
+          disabled
+        >
+          Deploy to my account
+        </button>
+      </div>
+
+      <!-- Status / result area -->
+      <div id="status-area">
+        <div id="status-msg" class="status-msg"></div>
+      </div>
+    </div>
+
+    <script>
+      /**
+       * Gas Installer frontend controller.
+       *
+       * Calls the server-side `deployScript` function via `google.script.run`.
+       * The server handles GitHub fetching and Apps Script API calls using the
+       * signed-in user's OAuth token — no secrets are handled in this page.
+       */
+
+      function updateDeployButton() {
+        var hasScript = !!document.querySelector('input[name="script"]:checked')
+        var hasTitle =
+          document.getElementById('project-title').value.trim().length > 0
+        document.getElementById('btn-deploy').disabled = !(
+          hasScript && hasTitle
+        )
+      }
+
+      function showStatus(type, html) {
+        var area = document.getElementById('status-area')
+        var msg = document.getElementById('status-msg')
+        area.style.display = 'block'
+        msg.className = 'status-msg status-' + type
+        msg.innerHTML = html
+        area.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }
+
+      function handleDeploy() {
+        var scriptRadio = document.querySelector('input[name="script"]:checked')
+        var titleInput = document.getElementById('project-title')
+
+        if (!scriptRadio || !titleInput.value.trim()) return
+
+        var scriptFolderName = scriptRadio.value
+        var projectName = titleInput.value.trim()
+
+        var btn = document.getElementById('btn-deploy')
+        btn.disabled = true
+        btn.innerHTML = '<span class="spinner"></span>&nbsp;Deploying\u2026'
+
+        showStatus(
+          'info',
+          '<span class="spinner" style="border-color:rgba(26,115,232,.25);border-top-color:#1a73e8;margin-top:1px;"></span>' +
+            '&nbsp;Fetching files from GitHub and creating your project\u2026'
+        )
+
+        google.script.run
+          .withSuccessHandler(onDeploySuccess)
+          .withFailureHandler(onDeployFailure)
+          .deployScript(projectName, scriptFolderName)
+      }
+
+      function onDeploySuccess(scriptId) {
+        var url = 'https://script.google.com/d/' + scriptId + '/edit'
+        showStatus(
+          'ok',
+          '<div>' +
+            '<strong>&#x2705; Deployed successfully!</strong><br/>' +
+            '<span style="font-size:13px;display:block;margin-top:6px;">' +
+            'Your project is ready. Open it in Google Apps Script to complete configuration.' +
+            '</span>' +
+            '<a class="result-link" href="' +
+            url +
+            '" target="_blank" rel="noopener" style="display:inline-block;margin-top:10px;">' +
+            'Open in Google Apps Script &#x2197;' +
+            '</a>' +
+            '</div>'
+        )
+        resetButton()
+      }
+
+      function onDeployFailure(err) {
+        var message = err && err.message ? err.message : String(err)
+        showStatus(
+          'error',
+          '&#x274C; Deployment failed: ' + escapeHtml(message)
+        )
+        resetButton()
+      }
+
+      function resetButton() {
+        var btn = document.getElementById('btn-deploy')
+        btn.innerHTML = 'Deploy to my account'
+        updateDeployButton()
+      }
+
+      function escapeHtml(str) {
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+      }
+    </script>
+  </body>
+</html>
