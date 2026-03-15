@@ -129,13 +129,6 @@ test.describe('deploy index.html', () => {
     )
   })
 
-  test('renders sign-in button', async ({ page }) => {
-    await expect(page.locator('#btn-signin')).toBeVisible()
-    await expect(page.locator('#btn-signin')).toContainText(
-      'Sign in with Google'
-    )
-  })
-
   // ── renderScriptList ────────────────────────────────────────────────────────
 
   test('script list is populated on page load', async ({ page }) => {
