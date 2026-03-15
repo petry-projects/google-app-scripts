@@ -86,12 +86,8 @@ async function mockSuccessfulDeploy(page) {
   })
 }
 
-/** Fills the Client ID input and clicks Sign in. */
-async function signIn(
-  page,
-  clientId = 'test-client.apps.googleusercontent.com'
-) {
-  await page.fill('#client-id-input', clientId)
+/** Clicks Sign in. */
+async function signIn(page) {
   await page.locator('#btn-signin').click()
 }
 
@@ -119,23 +115,11 @@ test.describe('deploy index.html', () => {
     await expect(page.locator('header p')).toContainText('Deploy a script')
   })
 
-  test('renders four numbered step badges', async ({ page }) => {
+  test('renders two numbered step badges', async ({ page }) => {
     const badges = page.locator('.step-badge')
-    await expect(badges).toHaveCount(4)
+    await expect(badges).toHaveCount(2)
     await expect(badges.nth(0)).toHaveText('1')
     await expect(badges.nth(1)).toHaveText('2')
-    await expect(badges.nth(2)).toHaveText('3')
-    await expect(badges.nth(3)).toHaveText('4')
-  })
-
-  test('renders OAuth Client ID input with correct placeholder', async ({
-    page,
-  }) => {
-    await expect(page.locator('#client-id-input')).toBeVisible()
-    await expect(page.locator('#client-id-input')).toHaveAttribute(
-      'placeholder',
-      '123456789-abc.apps.googleusercontent.com'
-    )
   })
 
   test('renders sign-in button', async ({ page }) => {
@@ -145,9 +129,10 @@ test.describe('deploy index.html', () => {
     )
   })
 
-  test('renders setup instructions expandable section', async ({ page }) => {
-    await expect(page.locator('details summary')).toContainText(
-      'How do I get a Client ID'
+  test('renders sign-in button', async ({ page }) => {
+    await expect(page.locator('#btn-signin')).toBeVisible()
+    await expect(page.locator('#btn-signin')).toContainText(
+      'Sign in with Google'
     )
   })
 
@@ -203,20 +188,14 @@ test.describe('deploy index.html', () => {
 
   // ── handleSignIn ────────────────────────────────────────────────────────────
 
-  test('handleSignIn with empty client ID shows error', async ({ page }) => {
-    await page.fill('#client-id-input', '')
-    await page.locator('#btn-signin').click()
-    await expect(page.locator('.status-error')).toContainText(
-      'enter your OAuth'
-    )
-  })
-
-  test('handleSignIn passes the provided client ID to GIS', async ({
+  test('handleSignIn uses the hardcoded Petry-Projects client ID', async ({
     page,
   }) => {
-    await signIn(page, 'my-custom-client.apps.googleusercontent.com')
+    await signIn(page)
     const clientId = await page.evaluate(() => window.__clientIdUsed)
-    expect(clientId).toBe('my-custom-client.apps.googleusercontent.com')
+    expect(clientId).toBe(
+      '873060687431-smmudbpd5rlogt0r7immp0u3tdqb2t3p.apps.googleusercontent.com'
+    )
   })
 
   test('successful sign-in shows signed-in indicator in auth-status span', async ({
@@ -777,8 +756,9 @@ test.describe('deploy index.html', () => {
   // ── showStatus type classes ─────────────────────────────────────────────────
 
   test('error sign-in response shows status-error class', async ({ page }) => {
-    // Clicking sign-in with empty client ID shows error immediately
-    await page.fill('#client-id-input', '')
+    await page.evaluate(() => {
+      window.__authMode = 'failure'
+    })
     await page.locator('#btn-signin').click()
     await expect(page.locator('#status-msg.status-error')).toBeVisible()
   })
@@ -798,8 +778,10 @@ test.describe('deploy index.html', () => {
   })
 
   test('status area becomes visible after an action', async ({ page }) => {
-    await page.locator('#client-id-input').fill('') // clear pre-filled value → triggers error
-    await page.locator('#btn-signin').click() // empty client ID → error
+    await page.evaluate(() => {
+      window.__authMode = 'failure'
+    })
+    await page.locator('#btn-signin').click()
     await expect(page.locator('#status-area')).toBeVisible()
   })
 

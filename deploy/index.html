@@ -293,71 +293,9 @@
         </p>
       </header>
 
-      <!-- Step 1 – OAuth Client ID -->
-      <div class="card" id="card-auth">
-        <h2><span class="step-badge">1</span>Enter your OAuth Client ID</h2>
-        <p style="font-size: 13px; color: #5f6368; margin-bottom: 14px">
-          A <strong>Web application</strong> OAuth 2.0 client ID from a Google
-          Cloud project is required. The client ID is used only to sign you in
-          and request permission to create Apps Script projects — no credentials
-          are sent to any server.
-        </p>
-        <label for="client-id-input">OAuth 2.0 Client ID</label>
-        <input
-          type="text"
-          id="client-id-input"
-          placeholder="123456789-abc.apps.googleusercontent.com"
-          value="873060687431-smmudbpd5rlogt0r7immp0u3tdqb2t3p.apps.googleusercontent.com"
-        />
-
-        <details style="margin-top: 14px">
-          <summary>How do I get a Client ID?</summary>
-          <ol class="setup-steps">
-            <li>
-              Open the
-              <a
-                href="https://console.cloud.google.com/"
-                target="_blank"
-                rel="noopener"
-                >Google Cloud Console</a
-              >
-              and create or select a project.
-            </li>
-            <li>
-              Go to <strong>APIs &amp; Services → Library</strong> and enable
-              the <strong>Google Apps Script API</strong>.
-            </li>
-            <li>
-              Go to <strong>APIs &amp; Services → OAuth consent screen</strong>.
-              Set it to <strong>External</strong> (so anyone can use it). Under
-              <strong>Scopes</strong>, add the required scope:
-              <ul style="margin-top: 4px">
-                <li>
-                  <code>https://www.googleapis.com/auth/script.projects</code>
-                </li>
-              </ul>
-            </li>
-            <li>
-              Go to <strong>APIs &amp; Services → Credentials</strong> and click
-              <strong>Create Credentials → OAuth client ID</strong>.
-            </li>
-            <li>
-              Choose <strong>Web application</strong> as the application type.
-            </li>
-            <li>
-              Under <strong>Authorised JavaScript origins</strong>, add the
-              origin you are running this page from (e.g.
-              <code>https://&lt;your-username&gt;.github.io</code> or
-              <code>http://localhost</code>).
-            </li>
-            <li>Click <strong>Create</strong> and copy the Client ID shown.</li>
-          </ol>
-        </details>
-      </div>
-
-      <!-- Step 2 – Sign in -->
+      <!-- Step 1 – Sign in -->
       <div class="card">
-        <h2><span class="step-badge">2</span>Sign in with Google</h2>
+        <h2><span class="step-badge">1</span>Sign in with Google</h2>
         <p style="font-size: 13px; color: #5f6368; margin-bottom: 14px">
           Sign in to the Google account where you want the script project
           created. You will be asked to grant permission to create and edit Apps
@@ -394,9 +332,9 @@
         ></span>
       </div>
 
-      <!-- Step 3 – Choose script -->
+      <!-- Step 2 – Choose script -->
       <div class="card">
-        <h2><span class="step-badge">3</span>Choose scripts to deploy</h2>
+        <h2><span class="step-badge">2</span>Choose scripts to deploy</h2>
         <div class="script-list" id="script-list">
           <!-- populated by JS -->
         </div>
@@ -435,6 +373,10 @@
       // ── Constants ────────────────────────────────────────────────────────────────
 
       const APPS_SCRIPT_API = 'https://script.googleapis.com/v1'
+
+      // OAuth 2.0 Client ID for the Petry-Projects Google Cloud project.
+      const OAUTH_CLIENT_ID =
+        '873060687431-smmudbpd5rlogt0r7immp0u3tdqb2t3p.apps.googleusercontent.com'
 
       // Required OAuth scope: create, read, and update Apps Script projects.
       const OAUTH_SCOPE = 'https://www.googleapis.com/auth/script.projects'
@@ -596,18 +538,8 @@
       // ── OAuth sign-in ─────────────────────────────────────────────────────────────
 
       function handleSignIn() {
-        const clientId = document.getElementById('client-id-input').value.trim()
-        if (!clientId) {
-          showStatus(
-            'error',
-            '⚠️ Please enter your OAuth 2.0 Client ID in Step 1 before signing in.'
-          )
-          return
-        }
-
-        // (Re)initialise the token client each time so users can change their Client ID.
         tokenClient = google.accounts.oauth2.initTokenClient({
-          client_id: clientId,
+          client_id: OAUTH_CLIENT_ID,
           scope: OAUTH_SCOPE,
           callback: (tokenResponse) => {
             if (tokenResponse.error) {
