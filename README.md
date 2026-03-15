@@ -20,9 +20,9 @@ Open sourced under the MIT License to help others build their own automation wor
 Deploy any script directly from your browser in four steps — no command line required.
 
 1.  **Open the deployment page** — `deploy/index.html` (or the hosted GitHub Pages version if available).
-2.  **Enter your OAuth Client ID** — a _Web application_ client ID from a Google Cloud project with the Apps Script API enabled. See [deploy/index.html](./deploy/index.html) for step-by-step instructions on creating one.
+2.  **Review authentication details** — the deployment page uses a preconfigured OAuth Client ID defined in `deploy/index.html`. If you are using this repository as-is, you do not need to create or enter your own client ID. If you fork this repo and want to use your own, see the GCP setup section below and [deploy/index.html](./deploy/index.html) for details.
 3.  **Sign in with Google** — authorise the page to create Apps Script projects on your behalf.
-4.  **Select a script, name your project, and click Deploy** — the page fetches the latest source files from this repository and uploads them to your account. A direct link to the new Apps Script project is shown on success.
+4.  **Select a script and click Deploy** — the page fetches the latest source files from this repository, uploads them to your account, and creates a new Apps Script project with an auto-generated name (you can rename it later in the Apps Script editor). A direct link to the new Apps Script project is shown on success.
 
 After deployment, open the project in Google Apps Script and update the `config.gs` values (IDs, label names, etc.) following the specific script's `README.md`.
 
