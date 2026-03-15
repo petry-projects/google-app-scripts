@@ -494,9 +494,16 @@
         const cta = document.getElementById('setup-cta-' + scriptId)
         if (cta) {
           cta.outerHTML =
-            `<span id="setup-done-${scriptId}" ` +
-            `style="font-size:12px;color:#137333;display:block;margin-top:8px;">` +
-            `✅ Hourly trigger is active.</span>`
+            `<details id="setup-done-${scriptId}" style="margin-top:8px;font-size:12px;">` +
+            `<summary style="cursor:pointer;color:#137333;">` +
+            `⏱ You had previously enabled the hourly trigger. Click here to review instructions.` +
+            `</summary>` +
+            `<ol style="margin:8px 0 0 18px;font-size:13px;line-height:1.7;">` +
+            `<li>Click the script link above to open it in Apps Script</li>` +
+            `<li>In the toolbar, click <strong>Run</strong></li>` +
+            `<li>Select <strong>setup</strong> from the dropdown</li>` +
+            `</ol>` +
+            `</details>`
         }
       }
       window.confirmSetupDone = confirmSetupDone
@@ -702,49 +709,52 @@
             deployedProjects.push({ scriptId: projectId, title: projectTitle })
           }
 
-          const countMsg =
-            deployedProjects.length === 1
-              ? `Your project <em>${escapeHtml(deployedProjects[0].title)}</em> is ready.`
-              : `${deployedProjects.length} projects deployed successfully.`
+          const setupStepsHtml =
+            `<ol style="margin:8px 0 0 18px;font-size:13px;line-height:1.7;">` +
+            `<li>Click the script link above to open it in Apps Script</li>` +
+            `<li>In the toolbar, click <strong>Run</strong></li>` +
+            `<li>Select <strong>setup</strong> from the dropdown</li>` +
+            `</ol>`
 
           const projectSectionsHtml = deployedProjects
             .map((p) => {
-              const link =
-                `<a class="result-link" href="https://script.google.com/d/${p.scriptId}/edit" ` +
-                `target="_blank" rel="noopener" style="margin-top:12px;display:block;">` +
-                `${escapeHtml(p.title)} ↗</a>`
-
               const triggerSection = isSetupDone(p.scriptId)
-                ? `<span id="setup-done-${p.scriptId}" ` +
-                  `style="font-size:12px;color:#137333;display:block;margin-top:8px;">` +
-                  `✅ Hourly trigger is active.</span>`
+                ? `<details id="setup-done-${p.scriptId}" style="margin-top:8px;font-size:12px;">` +
+                  `<summary style="cursor:pointer;color:#137333;">` +
+                  `⏱ You had previously enabled the hourly trigger. Click here to review instructions.` +
+                  `</summary>` +
+                  setupStepsHtml +
+                  `</details>`
                 : `<div id="setup-cta-${p.scriptId}" ` +
                   `style="background:#fff8e1;border:1px solid #f9a825;border-radius:6px;` +
                   `padding:12px 16px;margin-top:12px;">` +
                   `<strong style="font-size:13px;">⏱ One more step — activate the hourly trigger</strong>` +
-                  `<ol style="margin:8px 0 10px 18px;font-size:13px;line-height:1.7;">` +
-                  `<li>Click the script link above to open it in Apps Script</li>` +
-                  `<li>In the toolbar, click <strong>Run</strong></li>` +
-                  `<li>Select <strong>setup</strong> from the dropdown</li>` +
-                  `</ol>` +
+                  setupStepsHtml +
                   `<button class="btn" ` +
                   `style="background:#137333;color:#fff;border:none;padding:7px 14px;` +
-                  `border-radius:4px;font-size:13px;cursor:pointer;" ` +
+                  `border-radius:4px;font-size:13px;cursor:pointer;margin-top:10px;" ` +
                   `onclick="window.confirmSetupDone('${p.scriptId}')">` +
                   `✅ Done — I ran setup()</button>` +
                   `</div>`
 
-              return link + triggerSection
+              return (
+                `<div style="border:1px solid #c8e6c9;border-radius:6px;padding:12px 16px;margin-top:12px;">` +
+                `<div style="font-size:13px;font-weight:600;color:#137333;">✅ Deployed successfully</div>` +
+                `<a class="result-link" href="https://script.google.com/d/${p.scriptId}/edit" ` +
+                `target="_blank" rel="noopener" style="margin-top:6px;display:block;">` +
+                `${escapeHtml(p.title)} ↗</a>` +
+                triggerSection +
+                `</div>`
+              )
             })
             .join('')
 
           showStatus(
             'ok',
             `
-      ✅ <strong>Deployed successfully!</strong><br/>
-      <span style="font-size:13px;color:#137333;display:block;margin-top:8px;">
-        ${countMsg} Open ${deployedProjects.length === 1 ? 'it' : 'them'} below and
-        follow the <strong>README</strong> to complete configuration
+      ✅ <strong>${deployedProjects.length === 1 ? 'Script deployed!' : `${deployedProjects.length} scripts deployed!`}</strong>
+      <span style="font-size:13px;color:#137333;display:block;margin-top:4px;">
+        Follow the <strong>README</strong> for each script to complete configuration
         (e.g. set label names, document IDs, etc.).
       </span>
       ${projectSectionsHtml}

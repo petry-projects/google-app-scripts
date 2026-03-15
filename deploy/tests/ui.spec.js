@@ -272,6 +272,21 @@ test.describe('deploy index.html', () => {
     )
   })
 
+  test('handleDeploy renders a per-script card with Deployed successfully', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+    // Each project gets its own card showing "Deployed successfully"
+    const card = page.locator('.result-link').first().locator('..')
+    await expect(card).toContainText('Deployed successfully')
+  })
+
   test('handleDeploy shows setup CTA when setup has not been confirmed', async ({
     page,
   }) => {
@@ -292,7 +307,7 @@ test.describe('deploy index.html', () => {
     ).toBeVisible()
   })
 
-  test('clicking confirm button replaces CTA with trigger-active indicator', async ({
+  test('clicking confirm button replaces CTA with collapsible trigger-review link', async ({
     page,
   }) => {
     await mockSuccessfulDeploy(page)
@@ -305,12 +320,15 @@ test.describe('deploy index.html', () => {
     await page.locator('button:has-text("Done — I ran setup()")').click()
     await expect(page.locator('[id^="setup-done-"]')).toBeVisible()
     await expect(page.locator('[id^="setup-done-"]')).toContainText(
-      'Hourly trigger is active'
+      'previously enabled the hourly trigger'
+    )
+    await expect(page.locator('[id^="setup-done-"]')).toContainText(
+      'Click here to review instructions'
     )
     await expect(page.locator('[id^="setup-cta-"]')).toHaveCount(0)
   })
 
-  test('handleDeploy shows trigger-active when setup already confirmed in localStorage', async ({
+  test('handleDeploy shows collapsible trigger-review when setup already confirmed', async ({
     page,
   }) => {
     // Pre-seed setup confirmation in localStorage so the CTA is skipped
@@ -329,7 +347,10 @@ test.describe('deploy index.html', () => {
     await page.waitForSelector('.status-ok')
     await expect(page.locator('[id^="setup-done-"]')).toBeVisible()
     await expect(page.locator('[id^="setup-done-"]')).toContainText(
-      'Hourly trigger is active'
+      'previously enabled the hourly trigger'
+    )
+    await expect(page.locator('[id^="setup-done-"]')).toContainText(
+      'Click here to review instructions'
     )
     await expect(page.locator('[id^="setup-cta-"]')).toHaveCount(0)
   })
