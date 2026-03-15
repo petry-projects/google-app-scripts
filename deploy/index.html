@@ -954,6 +954,15 @@
         )
       }
 
+      // String constants for the Google Picker view IDs.
+      // Defined here so they are available before gapi.load('picker') is called.
+      // The picker library uses these same values internally.
+      const PICKER_VIEW_ID = {
+        DOCUMENTS: 'documents',
+        FOLDERS: 'folders',
+        SPREADSHEETS: 'spreadsheets',
+      }
+
       /**
        * Opens the Google Drive Picker for the given viewId.
        * Calls callback({ id, name }) when the user picks a resource.
@@ -967,7 +976,7 @@
         }
         gapi.load('picker', () => {
           const view = new google.picker.DocsView(viewId)
-          if (viewId === google.picker.ViewId.FOLDERS) {
+          if (viewId === PICKER_VIEW_ID.FOLDERS) {
             view.setSelectFolderEnabled(true).setIncludeFolders(true)
           }
           const picker = new google.picker.PickerBuilder()
@@ -993,39 +1002,27 @@
       // ── Picker field handlers (exposed as window.* for inline onclick) ──────────
 
       function handlePickDoc(rowId) {
-        openPicker(
-          google.picker.ViewId.DOCUMENTS,
-          accessToken,
-          ({ id, name }) => {
-            document.getElementById('doc-id-' + rowId).value = id
-            document.getElementById('doc-name-' + rowId).textContent = name
-          }
-        )
+        openPicker(PICKER_VIEW_ID.DOCUMENTS, accessToken, ({ id, name }) => {
+          document.getElementById('doc-id-' + rowId).value = id
+          document.getElementById('doc-name-' + rowId).textContent = name
+        })
       }
       window.handlePickDoc = handlePickDoc
 
       function handlePickFolder(rowId) {
-        openPicker(
-          google.picker.ViewId.FOLDERS,
-          accessToken,
-          ({ id, name }) => {
-            document.getElementById('folder-id-' + rowId).value = id
-            document.getElementById('folder-name-' + rowId).textContent = name
-          }
-        )
+        openPicker(PICKER_VIEW_ID.FOLDERS, accessToken, ({ id, name }) => {
+          document.getElementById('folder-id-' + rowId).value = id
+          document.getElementById('folder-name-' + rowId).textContent = name
+        })
       }
       window.handlePickFolder = handlePickFolder
 
       function handlePickSheet(rowId) {
-        openPicker(
-          google.picker.ViewId.SPREADSHEETS,
-          accessToken,
-          ({ id, name }) => {
-            document.getElementById('sheet-id-' + rowId).value = id
-            document.getElementById('sheet-name-display-' + rowId).textContent =
-              name
-          }
-        )
+        openPicker(PICKER_VIEW_ID.SPREADSHEETS, accessToken, ({ id, name }) => {
+          document.getElementById('sheet-id-' + rowId).value = id
+          document.getElementById('sheet-name-display-' + rowId).textContent =
+            name
+        })
       }
       window.handlePickSheet = handlePickSheet
 
