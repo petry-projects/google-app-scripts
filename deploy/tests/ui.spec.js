@@ -178,12 +178,6 @@ test.describe('deploy index.html', () => {
     )
   })
 
-  test('project title input has default value', async ({ page }) => {
-    await expect(page.locator('#project-title-input')).toHaveValue(
-      'My Google Apps Script'
-    )
-  })
-
   // ── setDeployEnabled ────────────────────────────────────────────────────────
 
   test('deploy button is disabled on load', async ({ page }) => {
@@ -197,34 +191,14 @@ test.describe('deploy index.html', () => {
     await expect(page.locator('#btn-deploy')).toBeDisabled()
   })
 
-  test('deploy button remains disabled after sign-in without a project title', async ({
+  test('deploy button enables after sign-in with script selected', async ({
     page,
   }) => {
     await signIn(page)
     await page
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
-    await page.fill('#project-title-input', '')
-    await expect(page.locator('#btn-deploy')).toBeDisabled()
-  })
-
-  test('deploy button enables after sign-in with script and title', async ({
-    page,
-  }) => {
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    // Default title already filled — button should enable
     await expect(page.locator('#btn-deploy')).toBeEnabled()
-  })
-
-  test('deploy button re-disables when title is cleared', async ({ page }) => {
-    await signIn(page)
-    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
-    await expect(page.locator('#btn-deploy')).toBeEnabled()
-    await page.fill('#project-title-input', '')
-    await expect(page.locator('#btn-deploy')).toBeDisabled()
   })
 
   // ── handleSignIn ────────────────────────────────────────────────────────────
@@ -305,7 +279,7 @@ test.describe('deploy index.html', () => {
     )
   })
 
-  test('handleDeploy success shows the project title in the message', async ({
+  test('handleDeploy success shows the script name in the message', async ({
     page,
   }) => {
     await mockSuccessfulDeploy(page)
@@ -313,9 +287,10 @@ test.describe('deploy index.html', () => {
     await page
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
-    await page.fill('#project-title-input', 'My Archive Script')
     await page.locator('#btn-deploy').click()
-    await expect(page.locator('.status-ok')).toContainText('My Archive Script')
+    await expect(page.locator('.status-ok')).toContainText(
+      'Gmail to Drive By Labels'
+    )
   })
 
   test('deploy button resets to "Deploy to my account" after successful deploy', async ({
@@ -508,7 +483,7 @@ test.describe('deploy index.html', () => {
       localStorage.setItem(
         'gas_copilot_deployed',
         JSON.stringify({
-          'gmail-to-drive-by-labels\nMy Google Apps Script':
+          'gmail-to-drive-by-labels\nPetry-Projects – Gmail to Drive By Labels':
             'existing-script-id',
         })
       )
@@ -529,7 +504,7 @@ test.describe('deploy index.html', () => {
           status: 200,
           body: JSON.stringify({
             scriptId: 'existing-script-id',
-            title: 'My Google Apps Script',
+            title: 'Petry-Projects – Gmail to Drive By Labels',
           }),
         })
       } else if (method === 'POST' && url.endsWith('/projects')) {
@@ -567,7 +542,7 @@ test.describe('deploy index.html', () => {
       localStorage.setItem(
         'gas_copilot_deployed',
         JSON.stringify({
-          'gmail-to-drive-by-labels\nMy Google Apps Script':
+          'gmail-to-drive-by-labels\nPetry-Projects – Gmail to Drive By Labels':
             'deleted-script-id',
         })
       )
@@ -969,7 +944,7 @@ test.describe('deploy index.html', () => {
     )
   })
 
-  test('multi-script deploy appends script name to each project title', async ({
+  test('multi-script deploy uses Petry-Projects prefix for each project title', async ({
     page,
   }) => {
     const capturedTitles = []
@@ -999,7 +974,6 @@ test.describe('deploy index.html', () => {
     })
 
     await signIn(page)
-    await page.fill('#project-title-input', 'My Suite')
     await page
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
@@ -1007,11 +981,13 @@ test.describe('deploy index.html', () => {
     await page.locator('#btn-deploy').click()
     await page.waitForSelector('.status-ok')
 
-    expect(capturedTitles).toContain('My Suite – Gmail to Drive By Labels')
-    expect(capturedTitles).toContain('My Suite – Calendar to Sheets')
+    expect(capturedTitles).toContain(
+      'Petry-Projects – Gmail to Drive By Labels'
+    )
+    expect(capturedTitles).toContain('Petry-Projects – Calendar to Sheets')
   })
 
-  test('single-script deploy does not modify the project title', async ({
+  test('single-script deploy uses Petry-Projects prefix for project title', async ({
     page,
   }) => {
     let capturedTitle = null
@@ -1041,13 +1017,12 @@ test.describe('deploy index.html', () => {
     })
 
     await signIn(page)
-    await page.fill('#project-title-input', 'My Only Script')
     await page
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
     await page.locator('#btn-deploy').click()
     await page.waitForSelector('.status-ok')
 
-    expect(capturedTitle).toBe('My Only Script')
+    expect(capturedTitle).toBe('Petry-Projects – Gmail to Drive By Labels')
   })
 })

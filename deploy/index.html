@@ -402,20 +402,6 @@
         </div>
       </div>
 
-      <!-- Step 4 – Project title -->
-      <div class="card">
-        <h2><span class="step-badge">4</span>Name your Apps Script project</h2>
-        <label for="project-title-input"
-          >Project title (shown in Google Apps Script)</label
-        >
-        <input
-          type="text"
-          id="project-title-input"
-          placeholder="My Gmail Archiver"
-          value="My Google Apps Script"
-        />
-      </div>
-
       <!-- Deploy button -->
       <div style="text-align: right; margin-bottom: 20px">
         <button
@@ -578,13 +564,7 @@
         const hasScript = !!document.querySelector(
           'input[name="script"]:checked'
         )
-        const hasTitle =
-          document.getElementById('project-title-input').value.trim().length > 0
-        document.getElementById('btn-deploy').disabled = !(
-          hasToken &&
-          hasScript &&
-          hasTitle
-        )
+        document.getElementById('btn-deploy').disabled = !(hasToken && hasScript)
       }
 
       // ── Script list ───────────────────────────────────────────────────────────────
@@ -654,9 +634,6 @@
         const selectedIds = Array.from(
           document.querySelectorAll('input[name="script"]:checked')
         ).map((el) => el.value)
-        const title = document
-          .getElementById('project-title-input')
-          .value.trim()
 
         if (!accessToken) {
           showStatus('error', '⚠️ Please sign in first.')
@@ -664,10 +641,6 @@
         }
         if (selectedIds.length === 0) {
           showStatus('error', '⚠️ Please select a script.')
-          return
-        }
-        if (!title) {
-          showStatus('error', '⚠️ Please enter a project title.')
           return
         }
 
@@ -682,7 +655,7 @@
           for (let i = 0; i < total; i++) {
             const catalogId = selectedIds[i]
             const script = SCRIPT_CATALOG.find((s) => s.id === catalogId)
-            const projectTitle = total > 1 ? `${title} – ${script.name}` : title
+            const projectTitle = `Petry-Projects – ${script.name}`
             const progress = total > 1 ? ` (${i + 1}/${total})` : ''
 
             showStatus(
@@ -878,10 +851,6 @@
       // ── Init ──────────────────────────────────────────────────────────────────────
 
       renderScriptList()
-
-      document
-        .getElementById('project-title-input')
-        .addEventListener('input', setDeployEnabled)
     </script>
   </body>
 </html>
