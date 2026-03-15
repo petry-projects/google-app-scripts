@@ -660,7 +660,10 @@
             const catalogId = selectedIds[i]
             const script = SCRIPT_CATALOG.find((s) => s.id === catalogId)
             if (!script) {
-              showStatus('error', `❌ Unknown script selection: ${escapeHtml(catalogId)}`)
+              showStatus(
+                'error',
+                `❌ Unknown script selection: ${escapeHtml(catalogId)}`
+              )
               break
             }
             const projectTitle = `Petry-Projects – ${script.name}`
