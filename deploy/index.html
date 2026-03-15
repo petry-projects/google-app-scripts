@@ -267,7 +267,10 @@
       }
 
       /* ── Config panel (Step 4) ───────────────────────────────────────────── */
-      /* Deploy section collapse toggle */
+      /* Deploy section — hidden before sign-in; shown/collapsed by JS. */
+      #deploy-section {
+        display: none;
+      }
       #btn-show-deploy {
         background: none;
         border: none;
@@ -281,6 +284,13 @@
       }
       #btn-show-deploy:hover {
         text-decoration: underline;
+      }
+      /* Sheet name is always derived from the selected calendar; not editable. */
+      input[name='sheetName'][readonly] {
+        background: #f8f9fa;
+        color: #5f6368;
+        cursor: default;
+        border-color: #e8eaed;
       }
       #config-area {
         margin-top: 0;
@@ -846,10 +856,15 @@
             document.getElementById('btn-signin').textContent =
               '✅ Signed in — click to re-authenticate'
             setDeployEnabled()
-            // Render Step 4 automatically if there are already-deployed projects.
+            // Show the deploy section or the config section based on prior state.
             const prior = getDeployedProjects()
             if (prior.length > 0) {
+              // Prior deployments exist — collapse deploy, show configure.
+              collapseDeploySection()
               renderConfigSection(prior, { loadExisting: true }).catch(() => {})
+            } else {
+              // First-time user — show the deploy section.
+              showDeploySection()
             }
           },
         })
@@ -1239,7 +1254,8 @@
           `</div></div>` +
           `<div class="config-field">` +
           `<label>Sheet name</label>` +
-          `<input type="text" name="sheetName" value="Sheet1" placeholder="Sheet1">` +
+          `<input type="text" name="sheetName" value="" readonly tabindex="-1"` +
+          ` title="Sheet name is automatically set to the selected calendar name">` +
           `</div>` +
           `</div>` +
           `<div class="config-row-actions">` +
@@ -1252,9 +1268,9 @@
       // ── Row add helpers ───────────────────────────────────────────────────────────
 
       /**
-       * Automatically fills the sheet name input with the selected calendar's
-       * display name when the user picks a calendar.
-       * The user can still edit the sheet name manually afterwards.
+       * Sets the sheet name (read-only) to the selected calendar's display name.
+       * The sheet name is always derived from the calendar; the user cannot
+       * customise it.
        * Exposed as window.handleCalendarChange for inline onchange handlers.
        */
       window.handleCalendarChange = function (rowId, calendarId, calendarName) {
@@ -1340,15 +1356,17 @@
           initial.calendarId || null
         )
 
-        // Pre-populate picker and sheet name fields.
+        // Pre-populate picker field.
         if (initial.spreadsheetId) {
           row.querySelector('[name="spreadsheetId"]').value =
             initial.spreadsheetId
           row.querySelector('#sheet-name-display-' + rowId).textContent =
             initial.spreadsheetId
         }
-        if (initial.sheetName) {
-          row.querySelector('[name="sheetName"]').value = initial.sheetName
+        // Sheet name is always derived from the selected calendar (not stored).
+        if (initial.calendarId) {
+          const cal = calendars.find((c) => c.id === initial.calendarId)
+          if (cal) row.querySelector('[name="sheetName"]').value = cal.summary
         }
       }
 
@@ -1611,11 +1629,8 @@
             }
           }
         }
-        // Collapse the deploy section if all catalog scripts are now deployed.
-        const allDeployed = SCRIPT_CATALOG.every((s) =>
-          deployedProjects.some((p) => p.catalogId === s.id)
-        )
-        if (allDeployed) collapseDeploySection()
+        // Collapse the deploy section now that the configure section is visible.
+        collapseDeploySection()
       }
 
       // ── Deploy-section collapse helpers ─────────────────────────────────────────
@@ -1639,7 +1654,7 @@
       window.showDeploySection = function () {
         const section = document.getElementById('deploy-section')
         const btn = document.getElementById('btn-show-deploy')
-        if (section) section.style.display = ''
+        if (section) section.style.display = 'block'
         if (btn) btn.style.display = 'none'
       }
 
