@@ -168,6 +168,9 @@ function generateBriefingForConfig(
   DocumentApp
 ) {
   const now = new Date()
+  // Round start down to the beginning of today so events before the trigger
+  // time are not silently excluded from Day 1 of the briefing.
+  now.setHours(0, 0, 0, 0)
   const lookaheadMs = (config.lookaheadDays || 7) * 24 * 60 * 60 * 1000
   const end = new Date(now.getTime() + lookaheadMs)
 

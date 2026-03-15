@@ -136,6 +136,9 @@ function generateWeeklyBriefing() {
       var calendar = CalendarApp.getCalendarById(cfg.calendarId)
       var doc = DocumentApp.openById(cfg.docId)
       var now = new Date()
+      // Round start down to the beginning of today so events before the trigger
+      // time are not silently excluded from Day 1 of the briefing.
+      now.setHours(0, 0, 0, 0)
       var lookaheadMs = (cfg.lookaheadDays || 7) * 24 * 60 * 60 * 1000
       var end = new Date(now.getTime() + lookaheadMs)
       var events = calendar.getEvents(now, end)
