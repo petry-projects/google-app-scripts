@@ -1,22 +1,18 @@
 // --- CONFIGURATION SECTION ---
 
 // This function returns the configuration array.
-// Edit the values inside the quotes below.
+// Add one object per calendar-to-label mapping. Example:
+// function getProcessConfig() {
+//   return [
+//     {
+//       triggerLabel: 'my-label',
+//       processedLabel: 'my-label-archived',
+//       docId: 'GOOGLE_DOC_ID', // Text goes here
+//       folderId: 'DRIVE_FOLDER_ID', // Attachments go here
+//       batchSize: 250, // Optional: threads per batch (default: 250)
+//     },
+//   ]
+// }
 function getProcessConfig() {
-  return [
-    {
-      triggerLabel: 'label`',
-      processedLabel: 'label-archived',
-      docId: 'GUID', // Text goes here
-      folderId: 'GUID', // Attachments go here
-      batchSize: 250, // Optional: Number of threads to process per batch during rebuild (default: 250)
-    },
-    {
-      triggerLabel: 'nested-label/label`',
-      processedLabel: 'nested-label/label-archived',
-      docId: 'GUID', // Text goes here
-      folderId: 'GUID', // Attachments go here
-      // batchSize: 250 // Optional: can be omitted to use default
-    },
-  ]
+  return []
 }

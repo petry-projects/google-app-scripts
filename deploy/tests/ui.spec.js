@@ -1993,4 +1993,212 @@ test.describe('deploy index.html', () => {
       },
     ])
   })
+
+  // ── No blank row when existing configs loaded ───────────────────────────────
+
+  test('one blank config row is shown after a fresh deploy for first-time setup', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+
+    // Fresh deploy (loadExisting: false) → one blank row for first-time setup
+    await page.waitForSelector('.config-row')
+    await expect(page.locator('.config-row')).toHaveCount(1)
+  })
+
+  test('no blank row after sign-in when config.gs has only empty/default entries', async ({
+    page,
+  }) => {
+    await page.evaluate((key) => {
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          'calendar-to-sheets\nPetry-Projects – Calendar to Sheets':
+            'proj-empty',
+        })
+      )
+    }, 'gas_copilot_deployed')
+
+    // Serve a config.gs with empty SYNC_CONFIGS (the new default)
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'GET' && url.includes('/projects/proj-empty/content')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({
+            files: [
+              {
+                name: 'config',
+                type: 'SERVER_JS',
+                source: 'var SYNC_CONFIGS = [];',
+              },
+            ],
+          }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+    await page.route(
+      'https://www.googleapis.com/calendar/**',
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({
+            items: [{ id: 'primary', summary: 'Primary Calendar' }],
+          }),
+        })
+      }
+    )
+
+    await signIn(page)
+    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('.config-row')
+
+    // Empty SYNC_CONFIGS → no existing entries → one blank row is shown for first-time setup
+    await expect(page.locator('.config-row')).toHaveCount(1)
+  })
+
+  test('existing real configs are shown without a blank row', async ({
+    page,
+  }) => {
+    await page.evaluate((key) => {
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          'calendar-to-sheets\nPetry-Projects – Calendar to Sheets':
+            'proj-real',
+        })
+      )
+    }, 'gas_copilot_deployed')
+
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'GET' && url.includes('/projects/proj-real/content')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({
+            files: [
+              {
+                name: 'config',
+                type: 'SERVER_JS',
+                source:
+                  'var SYNC_CONFIGS = [{ spreadsheetId: "s1", sheetName: "MySheet", calendarId: "primary" }];',
+              },
+            ],
+          }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+    await page.route(
+      'https://www.googleapis.com/calendar/**',
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({
+            items: [{ id: 'primary', summary: 'Primary Calendar' }],
+          }),
+        })
+      }
+    )
+
+    await signIn(page)
+    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('.config-row')
+
+    // Exactly the 1 real row — no additional blank row
+    await expect(page.locator('.config-row')).toHaveCount(1)
+  })
+
+  // ── Collapse deploy section when all scripts deployed ────────────────────────
+
+  test('deploy section is visible by default', async ({ page }) => {
+    await expect(page.locator('#deploy-section')).toBeVisible()
+    await expect(page.locator('#btn-show-deploy')).not.toBeVisible()
+  })
+
+  test('deploy section collapses after both scripts are deployed', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    // Select all scripts and deploy
+    await page.locator('#btn-select-all').click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+
+    // Deploy section should now be hidden
+    await expect(page.locator('#deploy-section')).not.toBeVisible()
+    await expect(page.locator('#btn-show-deploy')).toBeVisible()
+  })
+
+  test('deploy section stays visible when only one script is deployed', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    // Only deploy one script
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+
+    // Only 1 of 2 scripts deployed → section stays open
+    await expect(page.locator('#deploy-section')).toBeVisible()
+    await expect(page.locator('#btn-show-deploy')).not.toBeVisible()
+  })
+
+  test('clicking Show deployment options reveals the deploy section again', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page.locator('#btn-select-all').click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+    await expect(page.locator('#deploy-section')).not.toBeVisible()
+
+    // Re-expand
+    await page.locator('#btn-show-deploy').click()
+    await expect(page.locator('#deploy-section')).toBeVisible()
+    await expect(page.locator('#btn-show-deploy')).not.toBeVisible()
+  })
+
+  test('deploy section collapses on sign-in when both scripts already deployed', async ({
+    page,
+  }) => {
+    // Pre-seed localStorage with BOTH scripts deployed
+    await page.evaluate((key) => {
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          'gmail-to-drive-by-labels\nPetry-Projects – Gmail to Drive':
+            'proj-gmail',
+          'calendar-to-sheets\nPetry-Projects – Calendar to Sheets': 'proj-cal',
+        })
+      )
+    }, 'gas_copilot_deployed')
+
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page.waitForSelector('#step4-card')
+
+    await expect(page.locator('#deploy-section')).not.toBeVisible()
+    await expect(page.locator('#btn-show-deploy')).toBeVisible()
+  })
 })

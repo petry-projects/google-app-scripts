@@ -267,6 +267,21 @@
       }
 
       /* ── Config panel (Step 4) ───────────────────────────────────────────── */
+      /* Deploy section collapse toggle */
+      #btn-show-deploy {
+        background: none;
+        border: none;
+        color: #1a73e8;
+        cursor: pointer;
+        font-size: 13px;
+        padding: 4px 0;
+        margin-bottom: 16px;
+        display: none;
+        text-align: left;
+      }
+      #btn-show-deploy:hover {
+        text-decoration: underline;
+      }
       #config-area {
         margin-top: 0;
       }
@@ -412,24 +427,35 @@
         ></span>
       </div>
 
-      <!-- Step 2 – Choose script -->
-      <div class="card">
-        <h2><span class="step-badge">2</span>Choose scripts to deploy</h2>
-        <div class="script-list" id="script-list">
-          <!-- populated by JS -->
+      <!-- Step 2 – Choose and deploy scripts
+           Collapses automatically once all scripts are deployed. -->
+      <button
+        id="btn-show-deploy"
+        onclick="window.showDeploySection()"
+        aria-expanded="false"
+      >
+        ▸ Show deployment options
+      </button>
+      <div id="deploy-section">
+        <!-- Step 2 – Choose script -->
+        <div class="card">
+          <h2><span class="step-badge">2</span>Choose scripts to deploy</h2>
+          <div class="script-list" id="script-list">
+            <!-- populated by JS -->
+          </div>
         </div>
-      </div>
 
-      <!-- Deploy button -->
-      <div style="text-align: right; margin-bottom: 20px">
-        <button
-          class="btn btn-primary"
-          id="btn-deploy"
-          onclick="handleDeploy()"
-          disabled
-        >
-          Deploy to my account
-        </button>
+        <!-- Deploy button -->
+        <div style="text-align: right; margin-bottom: 20px">
+          <button
+            class="btn btn-primary"
+            id="btn-deploy"
+            onclick="handleDeploy()"
+            disabled
+          >
+            Deploy to my account
+          </button>
+        </div>
       </div>
 
       <!-- Status / result area -->
@@ -685,22 +711,22 @@
       function renderScriptList() {
         const container = document.getElementById('script-list')
         const selectAllHtml = `<div style="margin-bottom:8px;">
-    <button type="button" class="btn btn-outline btn-sm" id="btn-select-all"
-            onclick="handleSelectAll()">Select all</button>
-  </div>`
+        <button type="button" class="btn btn-outline btn-sm" id="btn-select-all"
+                onclick="handleSelectAll()">Select all</button>
+      </div>`
         container.innerHTML =
           selectAllHtml +
           SCRIPT_CATALOG.map(
             (s) => `
-    <label class="script-option" for="script-${s.id}">
-      <input type="checkbox" name="script" id="script-${s.id}" value="${s.id}"
-             onchange="setDeployEnabled()" />
-      <span class="script-info">
-        <strong>${escapeHtml(s.name)}</strong>
-        <span>${escapeHtml(s.description)}</span>
-      </span>
-    </label>
-  `
+        <label class="script-option" for="script-${s.id}">
+          <input type="checkbox" name="script" id="script-${s.id}" value="${s.id}"
+                 onchange="setDeployEnabled()" />
+          <span class="script-info">
+            <strong>${escapeHtml(s.name)}</strong>
+            <span>${escapeHtml(s.description)}</span>
+          </span>
+        </label>
+      `
           ).join('')
       }
 
@@ -985,12 +1011,12 @@
           showStatus(
             'ok',
             `
-      ✅ <strong>${deployedProjects.length === 1 ? 'Script deployed!' : `${deployedProjects.length} scripts deployed!`}</strong>
-      <span style="font-size:13px;color:#137333;display:block;margin-top:4px;">
-        Scroll down to <strong>Step 4</strong> to configure each script.
-      </span>
-      ${projectSectionsHtml}
-    `
+          ✅ <strong>${deployedProjects.length === 1 ? 'Script deployed!' : `${deployedProjects.length} scripts deployed!`}</strong>
+          <span style="font-size:13px;color:#137333;display:block;margin-top:4px;">
+            Scroll down to <strong>Step 4</strong> to configure each script.
+          </span>
+          ${projectSectionsHtml}
+        `
           )
 
           // Render Step 4 configuration panels (errors are non-fatal).
@@ -1585,6 +1611,36 @@
             }
           }
         }
+        // Collapse the deploy section if all catalog scripts are now deployed.
+        const allDeployed = SCRIPT_CATALOG.every((s) =>
+          deployedProjects.some((p) => p.catalogId === s.id)
+        )
+        if (allDeployed) collapseDeploySection()
+      }
+
+      // ── Deploy-section collapse helpers ─────────────────────────────────────────
+
+      /**
+       * Hides the #deploy-section and shows the "Show deployment options" button.
+       * Called automatically when all SCRIPT_CATALOG scripts are deployed.
+       */
+      function collapseDeploySection() {
+        const section = document.getElementById('deploy-section')
+        const btn = document.getElementById('btn-show-deploy')
+        if (section) section.style.display = 'none'
+        if (btn) btn.style.display = 'block'
+      }
+      window.collapseDeploySection = collapseDeploySection
+
+      /**
+       * Shows #deploy-section again and hides the toggle button.
+       * Bound to the "Show deployment options" button.
+       */
+      window.showDeploySection = function () {
+        const section = document.getElementById('deploy-section')
+        const btn = document.getElementById('btn-show-deploy')
+        if (section) section.style.display = ''
+        if (btn) btn.style.display = 'none'
       }
 
       // ── Helpers ───────────────────────────────────────────────────────────────────

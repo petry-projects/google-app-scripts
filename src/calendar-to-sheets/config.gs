@@ -10,4 +10,4 @@
  * ];
  */
 
-var SYNC_CONFIGS = [{ spreadsheetId: '', sheetName: 'Sheet1', calendarId: '' }]
+var SYNC_CONFIGS = []
