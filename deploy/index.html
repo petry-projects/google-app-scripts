@@ -399,6 +399,15 @@
             'up to date on changes and deletions.',
           triggerFn: 'syncAllCalendarsToSheetsGAS',
         },
+        {
+          id: 'calendar-to-briefing-doc',
+          name: 'Calendar to Briefing Doc',
+          description:
+            'Generates a weekly Google Doc briefing from Calendar events, grouped ' +
+            'by day with times, locations, and attendees. Optionally emails the ' +
+            'briefing link to a configured recipient list.',
+          triggerFn: 'generateWeeklyBriefing',
+        },
       ]
 
       // Base URL for fetching raw script files from this repository on GitHub.
