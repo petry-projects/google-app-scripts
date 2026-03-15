@@ -439,7 +439,8 @@
           const map = JSON.parse(
             localStorage.getItem(DEPLOY_STORAGE_KEY) || '{}'
           )
-          return map[catalogId + '\n' + title] || null
+          const id = map[catalogId + '\n' + title]
+          return id ? validateScriptId(id) : null
         } catch {
           return null
         }
@@ -483,6 +484,11 @@
        */
       function confirmSetupDone(scriptId) {
         try {
+          validateScriptId(scriptId)
+        } catch {
+          return // reject tampered IDs
+        }
+        try {
           const map = JSON.parse(
             localStorage.getItem(SETUP_STORAGE_KEY) || '{}'
           )
@@ -491,10 +497,11 @@
         } catch {
           // best-effort; ignore storage errors
         }
+        const safeId = escapeHtml(scriptId)
         const cta = document.getElementById('setup-cta-' + scriptId)
         if (cta) {
           cta.outerHTML =
-            `<details id="setup-done-${scriptId}" style="margin-top:8px;font-size:12px;">` +
+            `<details id="setup-done-${safeId}" style="margin-top:8px;font-size:12px;">` +
             `<summary style="cursor:pointer;color:#137333;">` +
             `⏱ You had previously enabled the hourly trigger. Click here to review instructions.` +
             `</summary>` +
@@ -585,6 +592,19 @@
           .replace(/</g, '&lt;')
           .replace(/>/g, '&gt;')
           .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;')
+      }
+
+      /**
+       * Validates that a script ID from the API or localStorage contains only
+       * safe alphanumeric/hyphen/underscore characters.  Throws if the value
+       * looks tampered-with so it can never be injected into HTML or URLs.
+       */
+      function validateScriptId(id) {
+        if (typeof id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(id)) {
+          throw new Error(`Invalid script ID: ${String(id).slice(0, 64)}`)
+        }
+        return id
       }
 
       // ── OAuth sign-in ─────────────────────────────────────────────────────────────
@@ -639,6 +659,10 @@
           for (let i = 0; i < total; i++) {
             const catalogId = selectedIds[i]
             const script = SCRIPT_CATALOG.find((s) => s.id === catalogId)
+            if (!script) {
+              showStatus('error', `❌ Unknown script selection: ${escapeHtml(catalogId)}`)
+              break
+            }
             const projectTitle = `Petry-Projects – ${script.name}`
             const progress = total > 1 ? ` (${i + 1}/${total})` : ''
 
@@ -675,7 +699,7 @@
                 method: 'POST',
                 body: JSON.stringify({ title: projectTitle }),
               })
-              projectId = project.scriptId
+              projectId = validateScriptId(project.scriptId)
               storeScriptId(catalogId, projectTitle, projectId)
             }
 
@@ -720,14 +744,15 @@
 
           const projectSectionsHtml = deployedProjects
             .map((p) => {
+              const safeId = escapeHtml(p.scriptId)
               const triggerSection = isSetupDone(p.scriptId)
-                ? `<details id="setup-done-${p.scriptId}" style="margin-top:8px;font-size:12px;">` +
+                ? `<details id="setup-done-${safeId}" style="margin-top:8px;font-size:12px;">` +
                   `<summary style="cursor:pointer;color:#137333;">` +
                   `⏱ You had previously enabled the hourly trigger. Click here to review instructions.` +
                   `</summary>` +
                   setupStepsHtml +
                   `</details>`
-                : `<div id="setup-cta-${p.scriptId}" ` +
+                : `<div id="setup-cta-${safeId}" ` +
                   `style="background:#fff8e1;border:1px solid #f9a825;border-radius:6px;` +
                   `padding:12px 16px;margin-top:12px;">` +
                   `<strong style="font-size:13px;">⏱ One more step — activate the hourly trigger</strong>` +
@@ -735,14 +760,14 @@
                   `<button class="btn" ` +
                   `style="background:#137333;color:#fff;border:none;padding:7px 14px;` +
                   `border-radius:4px;font-size:13px;cursor:pointer;margin-top:10px;" ` +
-                  `onclick="window.confirmSetupDone('${p.scriptId}')">` +
+                  `onclick="window.confirmSetupDone('${safeId}')">` +
                   `✅ Done — I ran setup()</button>` +
                   `</div>`
 
               return (
                 `<div style="border:1px solid #c8e6c9;border-radius:6px;padding:12px 16px;margin-top:12px;">` +
                 `<div style="font-size:13px;font-weight:600;color:#137333;">✅ Deployed successfully</div>` +
-                `<a class="result-link" href="https://script.google.com/d/${p.scriptId}/edit" ` +
+                `<a class="result-link" href="https://script.google.com/d/${safeId}/edit" ` +
                 `target="_blank" rel="noopener" style="margin-top:6px;display:block;">` +
                 `${escapeHtml(p.title)} ↗</a>` +
                 triggerSection +
