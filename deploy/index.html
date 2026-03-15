@@ -1603,6 +1603,9 @@
                 existingEntries.forEach((entry) =>
                   addGmailConfigRow(scriptId, labels, entry)
                 )
+                // Hide "+ Add entry" — existing config is loaded for editing only.
+                const addBtn = document.getElementById('add-btn-' + scriptId)
+                if (addBtn) addBtn.style.display = 'none'
               } else {
                 addGmailConfigRow(scriptId, labels)
               }
@@ -1613,6 +1616,9 @@
                 existingEntries.forEach((entry) =>
                   addCalendarConfigRow(scriptId, calendars, entry)
                 )
+                // Hide "+ Add entry" — existing config is loaded for editing only.
+                const addBtn = document.getElementById('add-btn-' + scriptId)
+                if (addBtn) addBtn.style.display = 'none'
               } else {
                 addCalendarConfigRow(scriptId, calendars)
               }

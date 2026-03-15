@@ -2021,6 +2021,8 @@ test.describe('deploy index.html', () => {
     // Fresh deploy (loadExisting: false) → one blank row for first-time setup
     await page.waitForSelector('.config-row')
     await expect(page.locator('.config-row')).toHaveCount(1)
+    // "+ Add entry" button must be visible for first-time setup
+    await expect(page.locator('[id^="add-btn-"]').first()).toBeVisible()
   })
 
   test('no blank row after sign-in when config.gs has only empty/default entries', async ({
@@ -2078,6 +2080,8 @@ test.describe('deploy index.html', () => {
 
     // Empty SYNC_CONFIGS → no existing entries → one blank row is shown for first-time setup
     await expect(page.locator('.config-row')).toHaveCount(1)
+    // "+ Add entry" button must be visible for first-time setup
+    await expect(page.locator('[id^="add-btn-"]').first()).toBeVisible()
   })
 
   test('existing real configs are shown without a blank row', async ({
@@ -2135,6 +2139,8 @@ test.describe('deploy index.html', () => {
 
     // Exactly the 1 real row — no additional blank row
     await expect(page.locator('.config-row')).toHaveCount(1)
+    // "+ Add entry" button must be hidden — user is editing existing config only
+    await expect(page.locator('[id^="add-btn-"]').first()).not.toBeVisible()
   })
 
   // ── Deploy section visibility ─────────────────────────────────────────────────
