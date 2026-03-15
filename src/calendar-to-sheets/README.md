@@ -48,6 +48,38 @@ Usage
 - Use the GAS wrapper `syncCalendarToSheetGAS(startIso, endIso)` for a single mapping (legacy behavior) or `syncAllCalendarsToSheetsGAS(startIso, endIso)` to sync all mappings defined in `SYNC_CONFIGS`. Both functions accept optional `startIso`/`endIso` ISO timestamps.
 - The core, testable logic lives under `src/` (`eventToRow`, `syncCalendarToSheet`, etc.) and is exercised by the included Jest tests.
 
+## Configuration
+
+### Option A — Web-based configuration (recommended)
+
+If you deployed the script via the browser-based deployment page (`deploy/index.html`), a **Step 4: Configure** panel appears automatically after deployment. Use the calendar dropdown to select your Google Calendar and the Drive Picker to choose the destination spreadsheet, then click **Save Configuration**. This writes `config.gs` directly to your Apps Script project — no manual editing required.
+
+### Option B — Manual configuration
+
+Edit `config.gs` in the Apps Script editor and update the `SYNC_CONFIGS` array:
+
+```javascript
+var SYNC_CONFIGS = [
+  {
+    // The Google Calendar ID to sync (find it in Google Calendar Settings → Integrate calendar)
+    // Use "primary" for your main calendar
+    calendarId: 'primary',
+
+    // The Google Spreadsheet ID (found in the Sheet URL between /d/ and /edit)
+    spreadsheetId: 'YOUR_SPREADSHEET_ID',
+
+    // The name of the sheet tab to write events into (must already exist)
+    sheetName: 'Sheet1',
+  },
+  // Add more entries to sync additional calendars to different sheets:
+  // { calendarId: 'work@example.com', spreadsheetId: 'ANOTHER_ID', sheetName: 'Work' },
+]
+```
+
+To find your **Spreadsheet ID**: open the sheet in your browser and copy the string between `/d/` and `/edit` in the URL.
+
+To find your **Calendar ID**: in Google Calendar, click the three-dot menu next to a calendar → **Settings and sharing** → scroll down to **Integrate calendar** → copy the **Calendar ID**.
+
 ## Checkpoint logic (performance optimization)
 
 To prevent timeouts with large calendars, the script implements **checkpoint logic**:

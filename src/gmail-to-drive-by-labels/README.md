@@ -171,7 +171,15 @@ Different thread content
 
 ## Setup Instructions
 
-### 1. Create the Script Files
+### Option A — Web-based configuration (recommended)
+
+If you deployed the script via the browser-based deployment page (`deploy/index.html`), a **Step 4: Configure** panel appears automatically after deployment. Use the dropdowns to select your Gmail labels and the Drive Picker buttons to select the destination Doc and folder, then click **Save Configuration**. This writes `config.gs` directly to your Apps Script project — no manual editing required.
+
+### Option B — Manual configuration
+
+Follow the steps below to configure the script manually in the Apps Script editor.
+
+#### 1. Create the Script Files
 
 1. Open [Google Apps Script](https://script.google.com/).
 2. Create a new project.
@@ -180,12 +188,12 @@ Different thread content
 - `Code.gs`: Paste the main logic code.
 - `Config.gs`: Paste the configuration code.
 
-### 2. Prepare Destination Files
+#### 2. Prepare Destination Files
 
 - **Google Doc:** Create a new Google Doc (or use an existing one) to act as the log for email text.
 - **Google Drive Folder:** Create a folder where attachments will be saved.
 
-### 3. Get Your IDs
+#### 3. Get Your IDs
 
 You will need to extract IDs from your browser URL bar:
 
