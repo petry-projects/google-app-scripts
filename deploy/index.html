@@ -308,23 +308,7 @@
           id="client-id-input"
           placeholder="123456789-abc.apps.googleusercontent.com"
           value="873060687431-smmudbpd5rlogt0r7immp0u3tdqb2t3p.apps.googleusercontent.com"
-          oninput="setDeployEnabled()"
         />
-
-        <label for="gcp-project-number-input" style="margin-top: 14px"
-          >GCP Project Number</label
-        >
-        <input
-          type="text"
-          id="gcp-project-number-input"
-          placeholder="123456789012"
-          oninput="setDeployEnabled()"
-        />
-        <p style="font-size: 12px; color: #5f6368; margin-top: 4px">
-          Required so the Execution API can run <code>setup()</code> to
-          configure the hourly trigger. Find this on the GCP Console home page
-          or under <strong>IAM &amp; Admin → Settings</strong>.
-        </p>
 
         <details style="margin-top: 14px">
           <summary>How do I get a Client ID?</summary>
@@ -346,21 +330,10 @@
             <li>
               Go to <strong>APIs &amp; Services → OAuth consent screen</strong>.
               Set it to <strong>External</strong> (so anyone can use it). Under
-              <strong>Scopes</strong>, add all four required scopes:
+              <strong>Scopes</strong>, add the required scope:
               <ul style="margin-top: 4px">
                 <li>
                   <code>https://www.googleapis.com/auth/script.projects</code>
-                </li>
-                <li>
-                  <code
-                    >https://www.googleapis.com/auth/script.deployments</code
-                  >
-                </li>
-                <li>
-                  <code>https://www.googleapis.com/auth/script.scriptapp</code>
-                </li>
-                <li>
-                  <code>https://www.googleapis.com/auth/script.triggers</code>
                 </li>
               </ul>
             </li>
@@ -378,12 +351,6 @@
               <code>http://localhost</code>).
             </li>
             <li>Click <strong>Create</strong> and copy the Client ID shown.</li>
-            <li>
-              Note your <strong>Project Number</strong> from the GCP dashboard
-              (visible on the home page or under
-              <strong>IAM &amp; Admin → Settings</strong>) and paste it into the
-              <strong>GCP Project Number</strong> field above.
-            </li>
           </ol>
         </details>
       </div>
@@ -483,15 +450,8 @@
 
       const APPS_SCRIPT_API = 'https://script.googleapis.com/v1'
 
-      // Required OAuth scopes: create/edit Apps Script projects, create
-      // API-executable deployments (needed for scripts.run), use the
-      // ScriptApp service at runtime (required by setup() for
-      // ScriptApp.newTrigger()), and manage time-based triggers via REST API.
-      const OAUTH_SCOPE =
-        'https://www.googleapis.com/auth/script.projects ' +
-        'https://www.googleapis.com/auth/script.deployments ' +
-        'https://www.googleapis.com/auth/script.scriptapp ' +
-        'https://www.googleapis.com/auth/script.triggers'
+      // Required OAuth scope: create, read, and update Apps Script projects.
+      const OAUTH_SCOPE = 'https://www.googleapis.com/auth/script.projects'
 
       // Script catalog — mirrors src/deploy/index.js getScriptCatalog().
       const SCRIPT_CATALOG = [
@@ -518,21 +478,12 @@
         'https://raw.githubusercontent.com/petry-projects/google-app-scripts/main/src'
 
       // Default Apps Script manifest required by the API for every project.
-      // executionApi.access = 'MYSELF' registers the project with the
-      // Execution API so that scripts.run (devMode: true) works immediately
-      // after content is uploaded — without creating a formal deployment first.
-      // oauthScopes declares the runtime scope needed by ScriptApp.newTrigger()
-      // inside setup(). Without an explicit declaration Google's auto-detection
-      // may not kick in before the first scripts.run call, causing HTTP 403.
+      // oauthScopes is omitted so Google infers required scopes from the code.
       const APPSSCRIPT_MANIFEST = JSON.stringify({
         timeZone: 'America/New_York',
         dependencies: {},
         exceptionLogging: 'STACKDRIVER',
         runtimeVersion: 'V8',
-        executionApi: {
-          access: 'MYSELF',
-        },
-        oauthScopes: ['https://www.googleapis.com/auth/script.scriptapp'],
       })
 
       // localStorage key used to persist deployed scriptIds for idempotency.
@@ -602,11 +553,6 @@
         )
       }
 
-      /** Resolves after `ms` milliseconds — used for retry back-off. */
-      function sleep(ms) {
-        return new Promise((resolve) => setTimeout(resolve, ms))
-      }
-
       // ── DOM helpers ───────────────────────────────────────────────────────────────
 
       function showStatus(type, html) {
@@ -625,14 +571,10 @@
         )
         const hasTitle =
           document.getElementById('project-title-input').value.trim().length > 0
-        const hasGcpNumber =
-          document.getElementById('gcp-project-number-input').value.trim()
-            .length > 0
         document.getElementById('btn-deploy').disabled = !(
           hasToken &&
           hasScript &&
-          hasTitle &&
-          hasGcpNumber
+          hasTitle
         )
       }
 
@@ -707,19 +649,8 @@
           .getElementById('project-title-input')
           .value.trim()
 
-        const gcpProjectNumber = document
-          .getElementById('gcp-project-number-input')
-          .value.trim()
-
         if (!accessToken) {
           showStatus('error', '⚠️ Please sign in first.')
-          return
-        }
-        if (!gcpProjectNumber) {
-          showStatus(
-            'error',
-            '⚠️ Please enter your GCP Project Number in Step 1.'
-          )
           return
         }
         if (selectedIds.length === 0) {
@@ -737,7 +668,6 @@
 
         try {
           const deployedProjects = []
-          const triggerWarnings = [] // [{name, detail}]
           const total = selectedIds.length
 
           for (let i = 0; i < total; i++) {
@@ -781,18 +711,6 @@
               })
               projectId = project.scriptId
               storeScriptId(catalogId, projectTitle, projectId)
-
-              // Link the new project to the user's GCP project so the Execution
-              // API (scripts.run) accepts requests made with the same OAuth
-              // credentials. Without this step, scripts.run returns HTTP 403.
-              showStatus(
-                'info',
-                `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Linking project to GCP <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
-              )
-              await apiFetch(`${APPS_SCRIPT_API}/projects/${projectId}`, {
-                method: 'PUT',
-                body: JSON.stringify({ parentId: gcpProjectNumber }),
-              })
             }
 
             showStatus(
@@ -824,98 +742,6 @@
               }),
             })
 
-            // ── Configure 1-hour trigger via ClockTriggerBuilder (scripts.run) ──
-            // The Execution API requires at least one API-executable deployment.
-            // Attempt scripts.run once; if the project has no deployment yet it
-            // returns "Requested entity was not found". In that case, create a
-            // version + deployment to register the project with the Execution API,
-            // then retry scripts.run once more.
-            let runResult = null
-            let lastRunErr = null
-            showStatus(
-              'info',
-              `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Configuring hourly trigger for <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
-            )
-            try {
-              runResult = await apiFetch(
-                `${APPS_SCRIPT_API}/scripts/${projectId}:run`,
-                {
-                  method: 'POST',
-                  body: JSON.stringify({ function: 'setup', devMode: true }),
-                }
-              )
-            } catch (err) {
-              if (
-                err.message &&
-                err.message.includes('Requested entity was not found')
-              ) {
-                // No API-executable deployment exists yet. Create one so the
-                // Execution API can recognise this project, then retry once.
-                try {
-                  showStatus(
-                    'info',
-                    `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Creating API executable for <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
-                  )
-                  const version = await apiFetch(
-                    `${APPS_SCRIPT_API}/projects/${projectId}/versions`,
-                    {
-                      method: 'POST',
-                      body: JSON.stringify({ description: 'Trigger setup' }),
-                    }
-                  )
-                  await apiFetch(
-                    `${APPS_SCRIPT_API}/projects/${projectId}/deployments`,
-                    {
-                      method: 'POST',
-                      body: JSON.stringify({
-                        versionNumber: version.versionNumber,
-                      }),
-                    }
-                  )
-                  await sleep(5000) // allow deployment to propagate to the Execution API
-                  showStatus(
-                    'info',
-                    `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Configuring hourly trigger for <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
-                  )
-                  runResult = await apiFetch(
-                    `${APPS_SCRIPT_API}/scripts/${projectId}:run`,
-                    {
-                      method: 'POST',
-                      body: JSON.stringify({
-                        function: 'setup',
-                        devMode: true,
-                      }),
-                    }
-                  )
-                } catch (retryErr) {
-                  lastRunErr = retryErr
-                }
-              } else {
-                lastRunErr = err
-              }
-            }
-            if (lastRunErr) {
-              // Trigger setup is best-effort; a failure does not block the deploy.
-              const parts = []
-              if (lastRunErr.httpStatus)
-                parts.push(`HTTP ${lastRunErr.httpStatus}`)
-              if (
-                lastRunErr.apiDetail &&
-                lastRunErr.apiDetail !== lastRunErr.message
-              )
-                parts.push(lastRunErr.apiDetail)
-              const base =
-                lastRunErr.stack || lastRunErr.message || String(lastRunErr)
-              const detail = parts.length
-                ? `${base}\n\nAPI detail: ${parts.join(' — ')}`
-                : base
-              triggerWarnings.push({ name: script.name, detail })
-            } else if (runResult?.error) {
-              const detail =
-                runResult.error.message || JSON.stringify(runResult.error)
-              triggerWarnings.push({ name: script.name, detail })
-            }
-
             deployedProjects.push({ scriptId: projectId, title: projectTitle })
           }
 
@@ -934,28 +760,10 @@
               : `${deployedProjects.length} projects deployed successfully.`
 
           const triggerNote =
-            triggerWarnings.length > 0
-              ? `<span style="font-size:12px;color:#b06000;display:block;margin-top:8px;">` +
-                `⚠️ Hourly trigger could not be configured automatically for: ` +
-                `${triggerWarnings.map((w) => escapeHtml(w.name)).join(', ')}. ` +
-                `Open the script and run <strong>setup()</strong> once to activate it.` +
-                `</span>` +
-                triggerWarnings
-                  .map(
-                    (w) =>
-                      `<details style="margin-top:6px;font-size:12px;">` +
-                      `<summary style="cursor:pointer;color:#888;">` +
-                      `${escapeHtml(w.name)} — trigger error detail</summary>` +
-                      `<div class="error-detail">${escapeHtml(w.detail)}</div>` +
-                      `<button class="copy-btn" data-copy="${escapeHtml(w.detail)}"` +
-                      ` onclick="navigator.clipboard.writeText(this.dataset.copy)">` +
-                      `📋 Copy error</button>` +
-                      `</details>`
-                  )
-                  .join('')
-              : `<span style="font-size:12px;color:#137333;display:block;margin-top:8px;">` +
-                `⏱ Hourly trigger configured automatically.` +
-                `</span>`
+            `<span style="font-size:12px;color:#b06000;display:block;margin-top:8px;">` +
+            `⏱ To activate the hourly trigger: open the script, then run ` +
+            `<strong>setup()</strong> once from the editor.` +
+            `</span>`
 
           showStatus(
             'ok',
