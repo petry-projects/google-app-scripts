@@ -184,7 +184,7 @@
       }
       .status-info {
         background: #e8f0fe;
-        color: #1765cc;
+        color: #1a73e8;
       }
       .status-ok {
         background: #e6f4ea;
@@ -234,49 +234,6 @@
         padding: 2px 6px;
         border-radius: 3px;
         font-size: 12px;
-      }
-
-      /* ── Form controls for Step 3 ──────────────────────────────────────── */
-      select,
-      textarea {
-        width: 100%;
-        padding: 10px 12px;
-        border: 1px solid #dadce0;
-        border-radius: 4px;
-        font-size: 14px;
-        color: #202124;
-        font-family: inherit;
-        transition: border-color 0.15s;
-        background: #fff;
-      }
-      select:focus,
-      textarea:focus {
-        outline: none;
-        border-color: #1a73e8;
-        box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
-      }
-      textarea {
-        resize: vertical;
-        min-height: 60px;
-      }
-      .field-group {
-        margin-bottom: 16px;
-      }
-      .field-help {
-        font-size: 12px;
-        color: #5f6368;
-        margin-top: 4px;
-        line-height: 1.4;
-      }
-      .field-help a {
-        color: #1a73e8;
-      }
-      .field-row {
-        display: flex;
-        gap: 16px;
-      }
-      .field-row .field-group {
-        flex: 1;
       }
 
       /* ── Error detail (copyable) ─────────────────────────────────────────── */
@@ -375,38 +332,34 @@
         ></span>
       </div>
 
-      <!-- Step 2 – Choose script & deploy (hidden until sign-in) -->
-      <div class="card" id="step2-card" style="display: none">
+      <!-- Step 2 – Choose script -->
+      <div class="card">
         <h2><span class="step-badge">2</span>Choose scripts to deploy</h2>
         <div class="script-list" id="script-list">
           <!-- populated by JS -->
         </div>
-        <div style="text-align: right; margin-top: 16px">
-          <button
-            class="btn btn-primary"
-            id="btn-deploy"
-            onclick="handleDeploy()"
-            disabled
-          >
-            Deploy to my account
-          </button>
-        </div>
+      </div>
+
+      <!-- Deploy button -->
+      <div style="text-align: right; margin-bottom: 20px">
+        <button
+          class="btn btn-primary"
+          id="btn-deploy"
+          onclick="handleDeploy()"
+          disabled
+        >
+          Deploy to my account
+        </button>
       </div>
 
       <!-- Status / result area -->
       <div id="status-area">
         <div id="status-msg" class="status-msg"></div>
       </div>
-
-      <div class="card" id="step3-card" style="display: none">
-        <h2><span class="step-badge">3</span>Configure your scripts</h2>
-        <div id="step3-scripts"></div>
-      </div>
     </div>
 
     <!-- Google Identity Services -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <script src="https://apis.google.com/js/api.js" async defer></script>
 
     <script>
       /**
@@ -425,26 +378,14 @@
       const OAUTH_CLIENT_ID =
         '873060687431-smmudbpd5rlogt0r7immp0u3tdqb2t3p.apps.googleusercontent.com'
 
-      // Required OAuth scopes:
-      //   script.projects  — create, read, and update Apps Script projects
-      //   drive.readonly   — detect existing projects + browse via Picker API
-      //   gmail.labels     — list Gmail labels for config dropdowns
-      //   calendar.readonly — list calendars for config dropdowns
-      //   email            — get user's email for default recipient
-      const OAUTH_SCOPE =
-        'https://www.googleapis.com/auth/script.projects ' +
-        'https://www.googleapis.com/auth/drive.readonly ' +
-        'https://www.googleapis.com/auth/gmail.labels ' +
-        'https://www.googleapis.com/auth/calendar.readonly ' +
-        'email'
+      // Required OAuth scope: create, read, and update Apps Script projects.
+      const OAUTH_SCOPE = 'https://www.googleapis.com/auth/script.projects'
 
       // Script catalog — mirrors src/deploy/index.js getScriptCatalog().
-      // version must match the // @version tag in each script's code.gs.
       const SCRIPT_CATALOG = [
         {
           id: 'gmail-to-drive-by-labels',
           name: 'Gmail to Drive By Labels',
-          version: '1.0.0',
           description:
             'Archives emails from specific Gmail labels into a Google Doc ' +
             '(text) and a Google Drive Folder (attachments).',
@@ -453,21 +394,10 @@
         {
           id: 'calendar-to-sheets',
           name: 'Calendar to Sheets',
-          version: '1.0.0',
           description:
             'Syncs Google Calendar events into a Google Sheet, keeping rows ' +
             'up to date on changes and deletions.',
           triggerFn: 'syncAllCalendarsToSheetsGAS',
-        },
-        {
-          id: 'calendar-to-briefing-doc',
-          name: 'Calendar to Briefing Doc',
-          version: '2.0.0',
-          description:
-            'Generates a weekly calendar briefing and emails it to configured ' +
-            'recipients, grouped by day with times, locations, attendees, and ' +
-            'conflict warnings. Shows which calendar each event comes from.',
-          triggerFn: 'generateWeeklyBriefing',
         },
       ]
 
@@ -494,93 +424,10 @@
       // localStorage key used to record which projects have had setup() run.
       const SETUP_STORAGE_KEY = 'gas_copilot_setup_done'
 
-      // ── Google Picker ─────────────────────────────────────────────────────────────
-
-      // Google Picker view IDs — lowercase strings match the Picker API constants.
-      const PICKER_VIEW_ID = {
-        DOCUMENTS: 'documents',
-        FOLDERS: 'folders',
-        SPREADSHEETS: 'spreadsheets',
-      }
-
-      /**
-       * Opens the Google Drive Picker for the given viewId.
-       * Calls callback({ id, name }) when the user picks a resource.
-       * Always opens in list view with folder navigation enabled.
-       */
-      function openPicker(viewId, callback) {
-        if (typeof gapi === 'undefined') {
-          alert(
-            'Google APIs not available. Please refresh the page and try again.'
-          )
-          return
-        }
-        gapi.load('picker', () => {
-          if (!google?.picker) {
-            alert(
-              'Google Picker failed to load. Please check your connection and refresh.'
-            )
-            return
-          }
-          const view = new google.picker.DocsView(viewId)
-          view.setIncludeFolders(true)
-          view.setParent('root')
-          view.setMode(google.picker.DocsViewMode.LIST)
-          if (viewId === PICKER_VIEW_ID.FOLDERS) {
-            view.setSelectFolderEnabled(true)
-          }
-
-          // Add a Shared Drives view so the left-side navigation panel
-          // appears (it only renders when there are multiple views).
-          const sharedView = new google.picker.DocsView(viewId)
-          sharedView.setIncludeFolders(true)
-          sharedView.setEnableDrives(true)
-          sharedView.setMode(google.picker.DocsViewMode.LIST)
-          if (viewId === PICKER_VIEW_ID.FOLDERS) {
-            sharedView.setSelectFolderEnabled(true)
-          }
-
-          const picker = new google.picker.PickerBuilder()
-            .addView(view)
-            .addView(sharedView)
-            .enableFeature(google.picker.Feature.SUPPORT_DRIVES)
-            .setOAuthToken(accessToken)
-            .setCallback((data) => {
-              if (
-                data[google.picker.Response.ACTION] ===
-                google.picker.Action.PICKED
-              ) {
-                const docs = data[google.picker.Response.DOCUMENTS]
-                if (!docs || docs.length === 0) return
-                const doc = docs[0]
-                callback({
-                  id: doc[google.picker.Document.ID],
-                  name: doc[google.picker.Document.NAME],
-                })
-              }
-            })
-            .build()
-          picker.setVisible(true)
-        })
-      }
-
-      function browseForFile(viewId, inputId) {
-        openPicker(viewId, (result) => {
-          const el = document.getElementById(inputId)
-          if (el) el.value = result.id
-        })
-      }
-      window.browseForFile = browseForFile
-
       // ── State ─────────────────────────────────────────────────────────────────────
 
       let tokenClient = null
       let accessToken = null
-      let userCalendars = [] // populated after sign-in
-      let userEmail = '' // populated after sign-in
-      let userGmailLabels = [] // populated after sign-in
-      // catalogId → { scriptId, title } for verified existing deployments
-      const deployedScripts = new Map()
 
       // ── Idempotency helpers ───────────────────────────────────────────────────────
 
@@ -651,9 +498,20 @@
         } catch {
           // best-effort; ignore storage errors
         }
-        const section = document.getElementById('setup-section-' + scriptId)
-        if (section) {
-          section.innerHTML = `<div style="font-size:12px;color:#137333;">⏱ Trigger previously activated.</div>`
+        const safeId = escapeHtml(scriptId)
+        const cta = document.getElementById('setup-cta-' + scriptId)
+        if (cta) {
+          cta.outerHTML =
+            `<details id="setup-done-${safeId}" style="margin-top:8px;font-size:12px;">` +
+            `<summary style="cursor:pointer;color:#137333;">` +
+            `⏱ You had previously enabled the hourly trigger. Click here to review instructions.` +
+            `</summary>` +
+            `<ol style="margin:8px 0 0 18px;font-size:13px;line-height:1.7;">` +
+            `<li>Click the script link above to open it in Apps Script</li>` +
+            `<li>In the toolbar, click <strong>Run</strong></li>` +
+            `<li>Select <strong>setup</strong> from the dropdown</li>` +
+            `</ol>` +
+            `</details>`
         }
       }
       window.confirmSetupDone = confirmSetupDone
@@ -666,7 +524,7 @@
        * to activate the hourly trigger.
        */
       function buildSetupSource(triggerFn) {
-        if (!/^[a-zA-Z_]\w*$/.test(triggerFn)) {
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(triggerFn)) {
           throw new Error(
             'Invalid trigger function name: ' + JSON.stringify(triggerFn)
           )
@@ -703,981 +561,39 @@
 
       function setDeployEnabled() {
         const hasToken = !!accessToken
-        const checked = Array.from(
-          document.querySelectorAll('input[name="script"]:checked')
+        const hasScript = !!document.querySelector(
+          'input[name="script"]:checked'
         )
-        const hasScript = checked.length > 0
-        const btn = document.getElementById('btn-deploy')
-        btn.disabled = !(hasToken && hasScript)
-
-        // Update button label based on deployment state
-        if (hasScript) {
-          const allDeployed = checked.every((el) =>
-            deployedScripts.has(el.value)
-          )
-          const anyNeedsUpdate = checked.some((el) => {
-            const v = scriptVersions.get(el.value)
-            return v && v.needsUpdate
-          })
-          if (anyNeedsUpdate) {
-            btn.textContent = 'Update & Deploy to my account'
-          } else if (allDeployed) {
-            btn.textContent = 'Re-deploy to my account'
-          } else {
-            btn.textContent = 'Deploy to my account'
-          }
-        } else {
-          btn.textContent = 'Deploy to my account'
-        }
-      }
-
-      // ── User info ─────────────────────────────────────────────────────────────────
-
-      async function fetchUserEmail() {
-        if (!accessToken) return
-        try {
-          const res = await fetch(
-            'https://www.googleapis.com/oauth2/v2/userinfo',
-            { headers: { Authorization: `Bearer ${accessToken}` } }
-          )
-          if (!res.ok) return
-          const data = await res.json()
-          userEmail = data.email || ''
-        } catch {
-          // best-effort
-        }
-      }
-
-      // ── Calendar API ─────────────────────────────────────────────────────────────
-
-      async function fetchUserCalendars() {
-        if (!accessToken) return
-        try {
-          const res = await fetch(
-            'https://www.googleapis.com/calendar/v3/users/me/calendarList',
-            { headers: { Authorization: `Bearer ${accessToken}` } }
-          )
-          if (!res.ok) return
-          const data = await res.json()
-          userCalendars = (data.items || []).map((c) => ({
-            id: c.id,
-            name: c.summaryOverride || c.summary || c.id,
-            primary: !!c.primary,
-          }))
-        } catch {
-          // best-effort; calendar list just won't be available
-        }
-      }
-
-      async function fetchGmailLabels() {
-        if (!accessToken) return
-        try {
-          const res = await fetch(
-            'https://gmail.googleapis.com/gmail/v1/users/me/labels',
-            { headers: { Authorization: `Bearer ${accessToken}` } }
-          )
-          if (!res.ok) return
-          const data = await res.json()
-          userGmailLabels = (data.labels || [])
-            .filter((l) => l.type === 'user')
-            .map((l) => l.name)
-            .sort()
-        } catch {
-          // best-effort
-        }
-      }
-
-      // ── New Label modal ──────────────────────────────────────────────────────
-
-      /**
-       * Creates a single Gmail label via the Gmail API.
-       *
-       * @param {string} labelName - Label to create (supports nested paths like "Projects/receipts").
-       * @returns {Promise<{id: string, name: string}>} The created label object.
-       * @throws {Error} On expired session, missing input, or API failure.
-       */
-      async function createGmailLabel(labelName) {
-        if (!accessToken) {
-          throw new Error(
-            'Please sign in again — your session may have expired.'
-          )
-        }
-        if (!labelName) {
-          throw new Error('Label name is required.')
-        }
-
-        const res = await fetch(
-          'https://gmail.googleapis.com/gmail/v1/users/me/labels',
-          {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ name: labelName }),
-          }
+        document.getElementById('btn-deploy').disabled = !(
+          hasToken && hasScript
         )
-        if (!res.ok) {
-          const text = await res.text()
-          const isDuplicate =
-            res.status === 409 || text.toLowerCase().includes('already')
-          let msg = `Failed to create label (${res.status})`
-          if (isDuplicate) {
-            msg = `Label "${labelName}" already exists`
-          }
-          const err = new Error(msg)
-          err.status = res.status
-          err.isDuplicate = isDuplicate
-          throw err
-        }
-        return res.json()
-      }
-
-      /**
-       * Rebuilds a label <select> or fills a text <input> with the current
-       * userGmailLabels list, optionally pre-selecting a value.
-       */
-      function refreshLabelDropdown(selectId, selectedValue) {
-        const el = document.getElementById(selectId)
-        if (!el) return
-        if (el.tagName === 'INPUT') {
-          el.value = selectedValue || ''
-          return
-        }
-        if (el.tagName !== 'SELECT') return
-        const opts = userGmailLabels
-          .map(
-            (l) =>
-              '<option value="' +
-              escapeHtml(l) +
-              '"' +
-              (l === selectedValue ? ' selected' : '') +
-              '>' +
-              escapeHtml(l) +
-              '</option>'
-          )
-          .join('')
-        el.innerHTML = '<option value="">— Select label —</option>' + opts
-      }
-
-      /**
-       * Opens the "New Label" modal for a Gmail to Drive config card.
-       * The modal creates both a trigger label and a "-archived" processed
-       * label in one action, then refreshes both dropdowns.
-       */
-      function openNewLabelModal(triggerSelectId, processedSelectId) {
-        // Remove any existing modal
-        const existing = document.getElementById('new-label-modal-overlay')
-        if (existing) existing.remove()
-
-        const overlay = document.createElement('div')
-        overlay.id = 'new-label-modal-overlay'
-        overlay.style.cssText =
-          'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;' +
-          'align-items:center;justify-content:center;z-index:9999;'
-
-        overlay.innerHTML =
-          '<div id="new-label-modal" style="background:#fff;border-radius:12px;' +
-          'box-shadow:0 8px 32px rgba(0,0,0,0.25);padding:28px 32px;width:440px;max-width:92vw;">' +
-          '<h3 style="font-size:18px;font-weight:500;margin-bottom:4px;color:#202124;">Create New Gmail Labels</h3>' +
-          '<p style="font-size:13px;color:#5f6368;margin-bottom:20px;">' +
-          'Enter a label name. Both the trigger label and its <strong>-archived</strong> counterpart will be created in your Gmail account.</p>' +
-          '<div style="margin-bottom:16px;">' +
-          '<label style="display:block;font-size:13px;color:#5f6368;margin-bottom:4px;">Label name</label>' +
-          '<input type="text" id="new-label-modal-input" placeholder="e.g. Projects/receipts" ' +
-          'style="width:100%;padding:10px 12px;border:1px solid #dadce0;border-radius:4px;font-size:14px;color:#202124;box-sizing:border-box;" />' +
-          '</div>' +
-          '<div id="new-label-modal-preview" style="background:#f8f9fa;border-radius:6px;padding:12px 14px;margin-bottom:16px;display:none;">' +
-          '<div style="font-size:12px;color:#5f6368;margin-bottom:6px;font-weight:500;">Labels to create:</div>' +
-          '<div id="new-label-preview-trigger" style="font-size:13px;color:#202124;padding:2px 0;"></div>' +
-          '<div id="new-label-preview-processed" style="font-size:13px;color:#202124;padding:2px 0;"></div>' +
-          '</div>' +
-          '<div id="new-label-modal-error" style="color:#c5221f;font-size:13px;margin-bottom:12px;display:none;"></div>' +
-          '<div id="new-label-modal-success" style="color:#137333;font-size:13px;margin-bottom:12px;display:none;"></div>' +
-          '<div style="display:flex;justify-content:flex-end;gap:10px;">' +
-          '<button type="button" id="new-label-modal-cancel" class="btn btn-outline" style="padding:8px 18px;font-size:14px;">Cancel</button>' +
-          '<button type="button" id="new-label-modal-create" class="btn btn-primary" style="padding:8px 18px;font-size:14px;" disabled>Create Labels</button>' +
-          '</div>' +
-          '</div>'
-
-        document.body.appendChild(overlay)
-
-        const input = document.getElementById('new-label-modal-input')
-        const preview = document.getElementById('new-label-modal-preview')
-        const previewTrigger = document.getElementById(
-          'new-label-preview-trigger'
-        )
-        const previewProcessed = document.getElementById(
-          'new-label-preview-processed'
-        )
-        const errorEl = document.getElementById('new-label-modal-error')
-        const successEl = document.getElementById('new-label-modal-success')
-        const createBtn = document.getElementById('new-label-modal-create')
-        const cancelBtn = document.getElementById('new-label-modal-cancel')
-
-        // Live preview as user types
-        input.addEventListener('input', function () {
-          const name = input.value.trim()
-          if (name) {
-            previewTrigger.textContent = '\u2705  ' + name
-            previewProcessed.textContent = '\u2705  ' + name + '-archived'
-            preview.style.display = ''
-            createBtn.disabled = false
-          } else {
-            preview.style.display = 'none'
-            createBtn.disabled = true
-          }
-          errorEl.style.display = 'none'
-          successEl.style.display = 'none'
-        })
-
-        let isCreating = false
-
-        function closeModal(force) {
-          if (isCreating && !force) return
-          overlay.remove()
-          document.removeEventListener('keydown', onEsc)
-        }
-
-        // Close on overlay click (but not modal body)
-        overlay.addEventListener('click', function (e) {
-          if (e.target === overlay) closeModal()
-        })
-
-        // Close on Escape
-        function onEsc(e) {
-          if (e.key === 'Escape') closeModal()
-        }
-        document.addEventListener('keydown', onEsc)
-
-        cancelBtn.addEventListener('click', function () {
-          closeModal()
-        })
-
-        // Create both labels
-        createBtn.addEventListener('click', async function () {
-          const name = input.value.trim()
-          if (!name) return
-          const archivedName = name + '-archived'
-
-          isCreating = true
-          input.disabled = true
-          createBtn.disabled = true
-          cancelBtn.disabled = true
-          createBtn.textContent = 'Creating...'
-          errorEl.style.display = 'none'
-          successEl.style.display = 'none'
-
-          try {
-            // Create trigger label (treat 409/duplicate as success)
-            try {
-              await createGmailLabel(name)
-            } catch (err) {
-              if (!err.isDuplicate) throw err
-            }
-            if (!userGmailLabels.includes(name)) userGmailLabels.push(name)
-            previewTrigger.innerHTML =
-              '<span style="color:#137333;">\u2705 ' +
-              escapeHtml(name) +
-              ' — created</span>'
-
-            // Create archived label (treat 409/duplicate as success)
-            try {
-              await createGmailLabel(archivedName)
-            } catch (err) {
-              if (!err.isDuplicate) throw err
-            }
-            if (!userGmailLabels.includes(archivedName))
-              userGmailLabels.push(archivedName)
-            previewProcessed.innerHTML =
-              '<span style="color:#137333;">\u2705 ' +
-              escapeHtml(archivedName) +
-              ' — created</span>'
-
-            // Refresh the label list and auto-select both dropdowns
-            await fetchGmailLabels()
-            refreshLabelDropdown(triggerSelectId, name)
-            refreshLabelDropdown(processedSelectId, archivedName)
-
-            successEl.textContent =
-              'Both labels created and selected in your configuration.'
-            successEl.style.display = ''
-            createBtn.textContent = 'Done'
-
-            // Auto-close after a short delay
-            setTimeout(function () {
-              closeModal(true)
-            }, 1200)
-          } catch (err) {
-            errorEl.textContent = err.message
-            errorEl.style.display = ''
-            input.disabled = false
-            createBtn.disabled = false
-            cancelBtn.disabled = false
-            createBtn.textContent = 'Create Labels'
-          } finally {
-            isCreating = false
-          }
-        })
-
-        // Submit on Enter
-        input.addEventListener('keydown', function (e) {
-          if (e.key === 'Enter' && !createBtn.disabled) {
-            createBtn.click()
-          }
-        })
-
-        input.focus()
-      }
-      window.openNewLabelModal = openNewLabelModal
-
-      // ── Step 3 – Post-deploy configuration UI ───────────────────────────────────
-
-      function toggleFrequencyFields() {
-        const freq = document.getElementById('cfg-frequency').value
-        document.getElementById('cfg-day-group').style.display =
-          freq === 'weekly' ? '' : 'none'
-        document.getElementById('cfg-interval-group').style.display =
-          freq === 'days' ? '' : 'none'
-      }
-
-      // Track which catalogIds are already rendered in Step 3
-      const renderedConfigCards = new Map() // catalogId → scriptId
-
-      function renderConfigCards(projects) {
-        const container = document.getElementById('step3-scripts')
-        for (const p of projects) {
-          // If this catalogId already has a card with a different scriptId,
-          // remove the old card (e.g. deleted project replaced by new one)
-          const existingId = renderedConfigCards.get(p.catalogId)
-          if (existingId === p.scriptId) continue
-          if (existingId) {
-            const old = document.getElementById('config-card-' + existingId)
-            if (old) old.remove()
-          }
-          renderedConfigCards.set(p.catalogId, p.scriptId)
-          const safeId = escapeHtml(p.scriptId)
-          const safeCatalogId = escapeHtml(p.catalogId)
-          container.insertAdjacentHTML(
-            'beforeend',
-            `<div id="config-card-${safeId}" style="border:1px solid #dadce0;border-radius:6px;padding:16px;margin-bottom:12px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-              <div>
-                <strong style="font-size:14px;">${escapeHtml(p.title)}</strong>
-                <span id="version-info-${safeId}" style="margin-left:8px;"></span>
-                <a class="result-link" href="https://script.google.com/d/${safeId}/edit"
-                   target="_blank" rel="noopener" style="display:block;margin-top:4px;font-size:13px;">
-                   Open in Apps Script ↗</a>
-              </div>
-              <div style="display:flex;gap:8px;">
-                <button class="btn btn-outline" onclick="updateScript('${safeId}', '${safeCatalogId}')"
-                        id="btn-update-${safeId}" style="display:none;background:#fff8e1;border-color:#f9a825;color:#e37400;">Update</button>
-                <button class="btn btn-outline" onclick="toggleConfigForm('${safeId}', '${safeCatalogId}')"
-                        id="btn-configure-${safeId}">Configure</button>
-              </div>
-            </div>
-            <div id="config-form-${safeId}" style="display:none;margin-top:16px;border-top:1px solid #dadce0;padding-top:16px;">
-            </div>
-            <div id="setup-section-${safeId}" style="display:none;margin-top:12px;"></div>
-          </div>`
-          )
-        }
-        document.getElementById('step3-card').style.display = ''
-      }
-
-      function toggleConfigForm(scriptId, catalogId) {
-        const form = document.getElementById('config-form-' + scriptId)
-        if (form.style.display === 'none') {
-          form.style.display = ''
-          renderConfigFields(form, scriptId, catalogId)
-          document.getElementById('btn-configure-' + scriptId).textContent =
-            'Hide'
-        } else {
-          form.style.display = 'none'
-          document.getElementById('btn-configure-' + scriptId).textContent =
-            'Configure'
-        }
-      }
-
-      function renderConfigFields(container, scriptId, catalogId) {
-        // Only render once
-        if (container.dataset.rendered) return
-        container.dataset.rendered = '1'
-
-        if (catalogId === 'calendar-to-briefing-doc') {
-          let calendarListHtml = ''
-          if (userCalendars.length > 0) {
-            calendarListHtml = userCalendars
-              .map(
-                (cal) =>
-                  '<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;">' +
-                  '<input type="checkbox" class="cfg-calendar" value="' +
-                  escapeHtml(cal.id) +
-                  '" ' +
-                  'checked ' +
-                  'style="accent-color:#1a73e8;width:16px;height:16px;" />' +
-                  '<span style="font-size:14px;">' +
-                  escapeHtml(cal.name) +
-                  (cal.primary
-                    ? ' <span style="font-size:11px;color:#5f6368;">(primary)</span>'
-                    : '') +
-                  '</span></label>'
-              )
-              .join('')
-          } else {
-            calendarListHtml =
-              '<p style="font-size:13px;color:#5f6368;">Sign in first to load your calendars, or all calendars will be included by default.</p>'
-          }
-
-          const tz =
-            Intl.DateTimeFormat().resolvedOptions().timeZone || 'your timezone'
-          const defaultEmail = escapeHtml(userEmail)
-
-          container.innerHTML =
-            '<div class="field-group">' +
-            '<label>Calendars to include</label>' +
-            '<div style="max-height:200px;overflow-y:auto;border:1px solid #dadce0;border-radius:4px;padding:8px 12px;">' +
-            calendarListHtml +
-            '</div>' +
-            '<div class="field-help">Uncheck calendars you want to exclude from the briefing.</div>' +
-            '</div>' +
-            '<div class="field-row">' +
-            '<div class="field-group">' +
-            '<label>Send briefing to</label>' +
-            '<input type="text" class="cfg-field" data-key="email" value="' +
-            defaultEmail +
-            '" placeholder="you@example.com" />' +
-            '</div>' +
-            '<div class="field-group">' +
-            '<label>Email subject</label>' +
-            '<input type="text" class="cfg-field" data-key="subject" value="Weekly Briefing" placeholder="Weekly Briefing" />' +
-            '</div>' +
-            '</div>' +
-            '<div class="field-row">' +
-            '<div class="field-group">' +
-            '<label>Frequency</label>' +
-            '<select id="cfg-frequency" class="cfg-field" data-key="frequency" onchange="toggleFrequencyFields()">' +
-            '<option value="weekly" selected>Weekly</option>' +
-            '<option value="days">Every N days</option>' +
-            '</select>' +
-            '</div>' +
-            '<div class="field-group" id="cfg-day-group">' +
-            '<label>Day</label>' +
-            '<select class="cfg-field" data-key="triggerDay" id="cfg-triggerDay">' +
-            '<option value="SUNDAY">Sunday</option>' +
-            '<option value="MONDAY" selected>Monday</option>' +
-            '<option value="TUESDAY">Tuesday</option>' +
-            '<option value="WEDNESDAY">Wednesday</option>' +
-            '<option value="THURSDAY">Thursday</option>' +
-            '<option value="FRIDAY">Friday</option>' +
-            '<option value="SATURDAY">Saturday</option>' +
-            '</select>' +
-            '</div>' +
-            '<div class="field-group" id="cfg-interval-group" style="display:none">' +
-            '<label>Every</label>' +
-            '<select class="cfg-field" data-key="triggerInterval" id="cfg-interval">' +
-            '<option value="1">1 day</option>' +
-            '<option value="2">2 days</option>' +
-            '<option value="3">3 days</option>' +
-            '<option value="5">5 days</option>' +
-            '<option value="7">7 days</option>' +
-            '<option value="14">14 days</option>' +
-            '</select>' +
-            '</div>' +
-            '<div class="field-group">' +
-            '<label>At approximately</label>' +
-            '<select class="cfg-field" data-key="triggerHour" id="cfg-triggerHour">' +
-            Array.from({ length: 24 }, (_, h) => {
-              let label
-              if (h === 0) label = '12 AM'
-              else if (h < 12) label = h + ' AM'
-              else if (h === 12) label = '12 PM'
-              else label = h - 12 + ' PM'
-              return (
-                '<option value="' +
-                h +
-                '"' +
-                (h === 7 ? ' selected' : '') +
-                '>' +
-                label +
-                '</option>'
-              )
-            }).join('') +
-            '</select>' +
-            '</div>' +
-            '</div>' +
-            '<div class="field-help" style="margin-top:-8px;margin-bottom:12px;">Times are in ' +
-            escapeHtml(tz) +
-            '</div>' +
-            '<div class="field-group">' +
-            '<label>Look ahead days</label>' +
-            '<select class="cfg-field" data-key="lookaheadDays" id="cfg-lookahead">' +
-            '<option value="3">3 days</option>' +
-            '<option value="5">5 days</option>' +
-            '<option value="7" selected>7 days</option>' +
-            '<option value="10">10 days</option>' +
-            '<option value="14">14 days</option>' +
-            '<option value="30">30 days</option>' +
-            '</select>' +
-            '<div class="field-help">How many days ahead to include in the briefing.</div>' +
-            '</div>' +
-            '<button class="btn btn-primary" onclick="saveConfig(\'' +
-            scriptId +
-            "', '" +
-            catalogId +
-            '\')">Save Configuration</button>'
-        } else if (catalogId === 'gmail-to-drive-by-labels') {
-          let triggerLabelHtml, processedLabelHtml
-          const triggerSelectId = 'cfg-triggerLabel-' + scriptId
-          const processedSelectId = 'cfg-processedLabel-' + scriptId
-          if (userGmailLabels.length > 0) {
-            const opts = userGmailLabels
-              .map(
-                (l) =>
-                  '<option value="' +
-                  escapeHtml(l) +
-                  '">' +
-                  escapeHtml(l) +
-                  '</option>'
-              )
-              .join('')
-            triggerLabelHtml =
-              '<select class="cfg-field" data-key="triggerLabel" id="' +
-              escapeHtml(triggerSelectId) +
-              '">' +
-              '<option value="">— Select label —</option>' +
-              opts +
-              '</select>'
-            processedLabelHtml =
-              '<select class="cfg-field" data-key="processedLabel" id="' +
-              escapeHtml(processedSelectId) +
-              '">' +
-              '<option value="">— Select label —</option>' +
-              opts +
-              '</select>'
-          } else {
-            triggerLabelHtml =
-              '<input type="text" class="cfg-field" data-key="triggerLabel" id="' +
-              escapeHtml(triggerSelectId) +
-              '" placeholder="e.g. receipts" />'
-            processedLabelHtml =
-              '<input type="text" class="cfg-field" data-key="processedLabel" id="' +
-              escapeHtml(processedSelectId) +
-              '" placeholder="e.g. receipts-archived" />'
-          }
-          container.innerHTML =
-            '<div style="margin-bottom:18px;">' +
-            '<button type="button" class="btn btn-outline" style="padding:8px 16px;font-size:13px;font-weight:500;" ' +
-            'onclick="window.openNewLabelModal(\'' +
-            escapeHtml(triggerSelectId) +
-            "', '" +
-            escapeHtml(processedSelectId) +
-            '\')">' +
-            '<span style="font-size:16px;line-height:1;vertical-align:middle;">+</span> ' +
-            'New Label</button>' +
-            '<span style="font-size:12px;color:#5f6368;margin-left:10px;">' +
-            'Creates both the trigger and <strong>-archived</strong> label in Gmail</span>' +
-            '</div>' +
-            '<div class="field-group">' +
-            '<label>Trigger Gmail Label</label>' +
-            triggerLabelHtml +
-            '<div class="field-help">Emails with this label will be processed.</div>' +
-            '</div>' +
-            '<div class="field-group">' +
-            '<label>Processed Gmail Label</label>' +
-            processedLabelHtml +
-            '<div class="field-help">After processing, emails are moved to this label.</div>' +
-            '</div>' +
-            '<div class="field-group">' +
-            '<label>Google Doc ID (for email text)</label>' +
-            '<div style="display:flex;gap:8px;">' +
-            '<input type="text" class="cfg-field" data-key="docId" id="cfg-docId-' +
-            scriptId +
-            '" placeholder="Paste Doc ID or click Browse" style="flex:1" />' +
-            '<button type="button" class="btn btn-outline" onclick="browseForFile(\'documents\', \'cfg-docId-' +
-            scriptId +
-            '\')" style="white-space:nowrap">Browse</button>' +
-            '</div>' +
-            '<div class="field-help">Create a new <a href="https://docs.google.com/document/create" target="_blank">blank Google Doc</a> or use Browse to pick one</div>' +
-            '</div>' +
-            '<div class="field-group">' +
-            '<label>Drive Folder ID (for attachments)</label>' +
-            '<div style="display:flex;gap:8px;">' +
-            '<input type="text" class="cfg-field" data-key="folderId" id="cfg-folderId-' +
-            scriptId +
-            '" placeholder="Paste Folder ID or click Browse" style="flex:1" />' +
-            '<button type="button" class="btn btn-outline" onclick="browseForFile(\'folders\', \'cfg-folderId-' +
-            scriptId +
-            '\')" style="white-space:nowrap">Browse</button>' +
-            '</div>' +
-            '<div class="field-help">Open Google Drive folder or use Browse to pick one</div>' +
-            '</div>' +
-            '<button class="btn btn-primary" onclick="saveConfig(\'' +
-            scriptId +
-            "', '" +
-            catalogId +
-            '\')">Save Configuration</button>'
-        } else if (catalogId === 'calendar-to-sheets') {
-          let calendarSelectHtml = ''
-          if (userCalendars.length > 0) {
-            const opts = userCalendars
-              .map(
-                (cal) =>
-                  '<option value="' +
-                  escapeHtml(cal.id) +
-                  '"' +
-                  (cal.primary ? ' selected' : '') +
-                  '>' +
-                  escapeHtml(cal.name) +
-                  (cal.primary ? ' (primary)' : '') +
-                  '</option>'
-              )
-              .join('')
-            calendarSelectHtml =
-              '<select class="cfg-field" data-key="calendarId">' +
-              opts +
-              '</select>'
-          } else {
-            calendarSelectHtml =
-              '<input type="text" class="cfg-field" data-key="calendarId" placeholder="your-email@gmail.com" />'
-          }
-          container.innerHTML =
-            '<div class="field-group">' +
-            '<label>Calendar</label>' +
-            calendarSelectHtml +
-            '</div>' +
-            '<div class="field-group">' +
-            '<label>Spreadsheet ID</label>' +
-            '<div style="display:flex;gap:8px;">' +
-            '<input type="text" class="cfg-field" data-key="spreadsheetId" id="cfg-spreadsheetId-' +
-            scriptId +
-            '" placeholder="Paste Spreadsheet ID or click Browse" style="flex:1" />' +
-            '<button type="button" class="btn btn-outline" onclick="browseForFile(\'spreadsheets\', \'cfg-spreadsheetId-' +
-            scriptId +
-            '\')" style="white-space:nowrap">Browse</button>' +
-            '</div>' +
-            '<div class="field-help">Open Google Sheet or use Browse to pick one</div>' +
-            '</div>' +
-            '<div class="field-group">' +
-            '<label>Sheet Name</label>' +
-            '<input type="text" class="cfg-field" data-key="sheetName" value="Sheet1" placeholder="Sheet1" />' +
-            '</div>' +
-            '<button class="btn btn-primary" onclick="saveConfig(\'' +
-            scriptId +
-            "', '" +
-            catalogId +
-            '\')">Save Configuration</button>'
-        }
-      }
-
-      /**
-       * Updates a deployed script to the latest version. Fetches the newest
-       * code.gs from GitHub and uploads it, preserving the user's config.gs.
-       */
-      async function updateScript(scriptId, catalogId) {
-        const btn = document.getElementById('btn-update-' + scriptId)
-        btn.disabled = true
-        btn.textContent = 'Updating...'
-        try {
-          // Fetch latest code.gs from GitHub
-          const files = await fetchScriptFiles(catalogId)
-          const latestCode = files.find((f) => f.name === 'code')
-          if (!latestCode) throw new Error('Could not fetch latest code.gs')
-
-          // Get current project content (preserves user's config.gs)
-          const project = await apiFetch(
-            `${APPS_SCRIPT_API}/projects/${scriptId}/content`
-          )
-          const updatedFiles = project.files.map((f) => {
-            if (f.name === 'code') return { ...f, source: latestCode.source }
-            return f
-          })
-
-          // Also update setup.gs with current trigger function
-          const catalogEntry = SCRIPT_CATALOG.find((s) => s.id === catalogId)
-          if (catalogEntry) {
-            const setupIdx = updatedFiles.findIndex((f) => f.name === 'setup')
-            const setupSource = buildSetupSource(catalogEntry.triggerFn)
-            if (setupIdx >= 0) {
-              updatedFiles[setupIdx] = {
-                ...updatedFiles[setupIdx],
-                source: setupSource,
-              }
-            }
-          }
-
-          await apiFetch(`${APPS_SCRIPT_API}/projects/${scriptId}/content`, {
-            method: 'PUT',
-            body: JSON.stringify({ files: updatedFiles }),
-          })
-
-          btn.textContent = '✅ Updated!'
-          btn.style.background = '#137333'
-          btn.style.color = '#fff'
-          btn.style.borderColor = '#137333'
-
-          // Refresh version info
-          scriptVersions.delete(catalogId)
-          await checkProjectVersion(scriptId, catalogId)
-        } catch (err) {
-          btn.textContent = 'Update'
-          btn.disabled = false
-          showStatus('error', `❌ Update failed: ${escapeHtml(err.message)}`)
-        }
-      }
-
-      /**
-       * Deletes (trashes) an Apps Script project via Drive API and removes
-       * it from the UI and local state.
-       */
-      async function deleteScript(scriptId, catalogId) {
-        if (
-          !confirm(
-            'Are you sure you want to delete this script project? This will move it to Trash in Google Drive.'
-          )
-        ) {
-          return
-        }
-        const btn = document.getElementById('btn-delete-' + scriptId)
-        btn.disabled = true
-        btn.textContent = 'Deleting...'
-        try {
-          // Trash the file via Drive API
-          await fetch(`https://www.googleapis.com/drive/v3/files/${scriptId}`, {
-            method: 'PATCH',
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ trashed: true }),
-          })
-
-          // Remove from local state
-          deployedScripts.delete(catalogId)
-          scriptVersions.delete(catalogId)
-          renderedConfigCards.delete(catalogId)
-
-          // Remove localStorage entry
-          try {
-            const map = JSON.parse(
-              localStorage.getItem(DEPLOY_STORAGE_KEY) || '{}'
-            )
-            for (const key of Object.keys(map)) {
-              if (key.startsWith(catalogId + '\n')) delete map[key]
-            }
-            localStorage.setItem(DEPLOY_STORAGE_KEY, JSON.stringify(map))
-          } catch {
-            /* best-effort */
-          }
-
-          // Remove the card from DOM
-          const card = document.getElementById('config-card-' + scriptId)
-          if (card) card.remove()
-
-          // Hide Step 3 if no cards remain
-          const remaining = document.querySelectorAll(
-            '#step3-scripts [id^="config-card-"]'
-          )
-          if (remaining.length === 0) {
-            document.getElementById('step3-card').style.display = 'none'
-          }
-
-          // Refresh Step 2 badges
-          renderScriptList()
-          setDeployEnabled()
-        } catch (err) {
-          btn.textContent = 'Delete'
-          btn.disabled = false
-          showStatus('error', `❌ Delete failed: ${escapeHtml(err.message)}`)
-        }
-      }
-
-      async function saveConfig(scriptId, catalogId) {
-        const form = document.getElementById('config-form-' + scriptId)
-        const btn = form.querySelector('.btn-primary')
-        btn.disabled = true
-        btn.textContent = 'Saving...'
-
-        try {
-          const configSource = buildConfigForScript(catalogId, form)
-          if (!configSource) throw new Error('Could not build config')
-
-          // Fetch current project content
-          const project = await apiFetch(
-            `${APPS_SCRIPT_API}/projects/${scriptId}/content`
-          )
-          const files = project.files.map((f) => {
-            if (f.name === 'config') return { ...f, source: configSource }
-            return f
-          })
-
-          // Upload updated content
-          await apiFetch(`${APPS_SCRIPT_API}/projects/${scriptId}/content`, {
-            method: 'PUT',
-            body: JSON.stringify({ files }),
-          })
-
-          btn.textContent = '✅ Saved!'
-          btn.style.background = '#137333'
-          btn.style.color = '#fff'
-
-          // Re-enable after a short delay so user can save again after edits
-          setTimeout(() => {
-            btn.textContent = 'Save Configuration'
-            btn.style.background = ''
-            btn.style.color = ''
-            btn.disabled = false
-          }, 2000)
-
-          // Show setup section
-          showSetupCta(scriptId)
-        } catch (err) {
-          btn.textContent = 'Save Configuration'
-          btn.disabled = false
-          const detail = err.apiDetail || err.stack || err.message
-          showStatus(
-            'error',
-            `❌ Failed to save config for ${escapeHtml(catalogId)}: ${escapeHtml(err.message)}` +
-              `<details style="margin-top:6px;font-size:12px;">` +
-              `<summary style="cursor:pointer;color:#888;">Error detail</summary>` +
-              `<div class="error-detail">${escapeHtml(String(detail))}</div></details>`
-          )
-        }
-      }
-
-      function buildConfigForScript(catalogId, formEl) {
-        if (catalogId === 'calendar-to-briefing-doc') {
-          const fields = Object.fromEntries(
-            Array.from(formEl.querySelectorAll('.cfg-field')).map((el) => [
-              el.dataset.key,
-              el.value.trim(),
-            ])
-          )
-          const excludedCalendars = Array.from(
-            formEl.querySelectorAll('.cfg-calendar:not(:checked)')
-          ).map((el) => el.value)
-          const excludeList = JSON.stringify(excludedCalendars)
-          const emailRecipients = JSON.stringify(
-            fields.email ? [fields.email] : []
-          )
-          const subject = JSON.stringify(fields.subject || 'Weekly Briefing')
-          const lookahead = Number.parseInt(fields.lookaheadDays, 10) || 7
-          const freq = JSON.stringify(fields.frequency || 'weekly')
-          const day = JSON.stringify(fields.triggerDay || 'MONDAY')
-          const hourParsed = Number.parseInt(fields.triggerHour, 10)
-          const hour = Number.isNaN(hourParsed) ? 7 : hourParsed
-          const interval = Number.parseInt(fields.triggerInterval, 10) || 1
-          let scheduleLines =
-            '    scheduleFrequency: ' +
-            freq +
-            ',\n' +
-            '    scheduleHour: ' +
-            hour +
-            ',\n'
-          if (fields.frequency === 'days') {
-            scheduleLines += '    scheduleIntervalDays: ' + interval + ',\n'
-          } else {
-            scheduleLines += '    scheduleDay: ' + day + ',\n'
-          }
-          return (
-            'var BRIEFING_CONFIGS = [\n' +
-            '  {\n' +
-            '    useAllCalendars: true,\n' +
-            '    excludeCalendars: ' +
-            excludeList +
-            ',\n' +
-            '    lookaheadDays: ' +
-            lookahead +
-            ',\n' +
-            '    emailRecipients: ' +
-            emailRecipients +
-            ',\n' +
-            '    emailSubject: ' +
-            subject +
-            ',\n' +
-            scheduleLines +
-            '  },\n' +
-            ']\n'
-          )
-        }
-        if (catalogId === 'gmail-to-drive-by-labels') {
-          const fields = Object.fromEntries(
-            Array.from(formEl.querySelectorAll('.cfg-field')).map((el) => [
-              el.dataset.key,
-              el.value.trim(),
-            ])
-          )
-          return `function getProcessConfig() {\n  return [\n    {\n      triggerLabel: ${JSON.stringify(fields.triggerLabel || '')},\n      processedLabel: ${JSON.stringify(fields.processedLabel || '')},\n      docId: ${JSON.stringify(fields.docId || '')},\n      folderId: ${JSON.stringify(fields.folderId || '')},\n    },\n  ]\n}\n`
-        }
-        if (catalogId === 'calendar-to-sheets') {
-          const fields = Object.fromEntries(
-            Array.from(formEl.querySelectorAll('.cfg-field')).map((el) => [
-              el.dataset.key,
-              el.value.trim(),
-            ])
-          )
-          return `var SYNC_CONFIGS = [{ spreadsheetId: ${JSON.stringify(fields.spreadsheetId || '')}, sheetName: ${JSON.stringify(fields.sheetName || 'Sheet1')}, calendarId: ${JSON.stringify(fields.calendarId || '')} }]\n`
-        }
-        return null
-      }
-
-      function showSetupCta(scriptId) {
-        const section = document.getElementById('setup-section-' + scriptId)
-        const safeId = escapeHtml(scriptId)
-        if (isSetupDone(scriptId)) {
-          section.innerHTML = `<div style="font-size:12px;color:#137333;">⏱ Trigger previously activated.</div>`
-        } else {
-          section.innerHTML =
-            `<div style="background:#fff8e1;border:1px solid #f9a825;border-radius:6px;padding:12px 16px;">` +
-            `<strong style="font-size:13px;">⏱ Final step — activate the hourly trigger</strong>` +
-            `<ol style="margin:8px 0 0 18px;font-size:13px;line-height:1.7;">` +
-            `<li>Click "Open in Apps Script" above</li>` +
-            `<li>In the toolbar, click <strong>Run</strong></li>` +
-            `<li>Select <strong>setup</strong> from the dropdown</li>` +
-            `</ol>` +
-            `<button class="btn" style="background:#137333;color:#fff;border:none;padding:7px 14px;border-radius:4px;font-size:13px;cursor:pointer;margin-top:10px;" ` +
-            `onclick="window.confirmSetupDone('${safeId}')">✅ Done — I ran setup()</button>` +
-            `</div>`
-        }
-        section.style.display = ''
       }
 
       // ── Script list ───────────────────────────────────────────────────────────────
 
       function renderScriptList() {
         const container = document.getElementById('script-list')
-        container.innerHTML = SCRIPT_CATALOG.map((s) => {
-          const deployed = deployedScripts.has(s.id)
-          const vInfo = scriptVersions.get(s.id)
-          let badge = ''
-          if (deployed && vInfo && vInfo.needsUpdate) {
-            badge =
-              ' <span class="deploy-badge" style="display:inline-block;background:#fff8e1;color:#e37400;font-size:11px;padding:2px 8px;border-radius:10px;margin-left:6px;">Update available</span>'
-          } else if (deployed) {
-            badge =
-              ' <span class="deploy-badge" style="display:inline-block;background:#e6f4ea;color:#137333;font-size:11px;padding:2px 8px;border-radius:10px;margin-left:6px;">Deployed</span>'
-          }
-          return `
+        container.innerHTML = SCRIPT_CATALOG.map(
+          (s) => `
     <label class="script-option" for="script-${s.id}">
       <input type="checkbox" name="script" id="script-${s.id}" value="${s.id}"
              onchange="setDeployEnabled()" />
       <span class="script-info">
-        <strong>${escapeHtml(s.name)}${badge}</strong>
+        <strong>${escapeHtml(s.name)}</strong>
         <span>${escapeHtml(s.description)}</span>
       </span>
     </label>
   `
-        }).join('')
+        ).join('')
       }
 
-      // Tested in src/deploy/tests/index.test.js (escapeHtml suite)
       function escapeHtml(str) {
         return String(str == null ? '' : str)
-          .replaceAll('&', '&amp;')
-          .replaceAll('<', '&lt;')
-          .replaceAll('>', '&gt;')
-          .replaceAll('"', '&quot;')
-          .replaceAll("'", '&#39;')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;')
       }
 
       /**
@@ -1693,121 +609,6 @@
       }
 
       // ── OAuth sign-in ─────────────────────────────────────────────────────────────
-
-      /**
-       * Extracts the @version tag from a code.gs source string.
-       * Returns the version string or null if not found.
-       */
-      function parseDeployedVersion(source) {
-        if (!source) return null
-        const match = source.match(/\/\/\s*@version\s+(\S+)/)
-        return match ? match[1] : null
-      }
-
-      // catalogId → { deployedVersion, latestVersion, needsUpdate }
-      const scriptVersions = new Map()
-
-      /**
-       * Searches Google Drive for existing Apps Script projects matching our
-       * "Petry-Projects – {name}" naming convention. Then fetches each project's
-       * content to check the deployed version against the catalog version.
-       */
-      async function loadExistingDeployments() {
-        if (!accessToken) return
-        try {
-          const q = encodeURIComponent(
-            "mimeType='application/vnd.google-apps.script' and name contains 'Petry-Projects' and trashed=false"
-          )
-          const res = await fetch(
-            `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=50`,
-            { headers: { Authorization: `Bearer ${accessToken}` } }
-          )
-          if (!res.ok) return
-          const data = await res.json()
-          const files = data.files || []
-
-          // Match Drive files to our catalog entries by title
-          const found = []
-          for (const file of files) {
-            for (const s of SCRIPT_CATALOG) {
-              const expectedTitle = `Petry-Projects \u2013 ${s.name}`
-              if (file.name === expectedTitle) {
-                const scriptId = validateScriptId(file.id)
-                found.push({
-                  scriptId,
-                  title: file.name,
-                  catalogId: s.id,
-                })
-                deployedScripts.set(s.id, {
-                  scriptId,
-                  title: file.name,
-                })
-                storeScriptId(s.id, file.name, scriptId)
-                break
-              }
-            }
-          }
-
-          // Refresh Step 2 badges immediately (before version check)
-          renderScriptList()
-          setDeployEnabled()
-
-          if (found.length > 0) {
-            renderConfigCards(found)
-          }
-
-          // Check versions in background (don't block UI)
-          for (const p of found) {
-            checkProjectVersion(p.scriptId, p.catalogId)
-          }
-        } catch {
-          // best-effort; ignore errors
-        }
-      }
-
-      /**
-       * Fetches a project's content to read its deployed @version tag,
-       * compares against the catalog version, and updates the UI.
-       */
-      async function checkProjectVersion(scriptId, catalogId) {
-        try {
-          const project = await apiFetch(
-            `${APPS_SCRIPT_API}/projects/${scriptId}/content`
-          )
-          const codeFile = (project.files || []).find((f) => f.name === 'code')
-          const deployedVersion = parseDeployedVersion(
-            codeFile ? codeFile.source : ''
-          )
-          const catalogEntry = SCRIPT_CATALOG.find((s) => s.id === catalogId)
-          const latestVersion = catalogEntry ? catalogEntry.version : null
-          const needsUpdate =
-            deployedVersion !== latestVersion && latestVersion != null
-
-          scriptVersions.set(catalogId, {
-            deployedVersion,
-            latestVersion,
-            needsUpdate,
-          })
-
-          // Update the badge in Step 2
-          renderScriptList()
-
-          // Update the config card header and Update button
-          const safeId = escapeHtml(scriptId)
-          const versionEl = document.getElementById('version-info-' + safeId)
-          if (versionEl) {
-            versionEl.innerHTML = needsUpdate
-              ? `<span style="color:#c5221f;font-size:12px;">v${escapeHtml(deployedVersion || '?')} → v${escapeHtml(latestVersion)}</span>`
-              : `<span style="color:#137333;font-size:12px;">v${escapeHtml(deployedVersion || latestVersion)} ✓</span>`
-          }
-          const updateBtn = document.getElementById('btn-update-' + safeId)
-          if (updateBtn) {
-            updateBtn.style.display = needsUpdate ? '' : 'none'
-          }
-        } catch {
-          // best-effort; version check is non-critical
-        }
-      }
 
       function handleSignIn() {
         tokenClient = google.accounts.oauth2.initTokenClient({
@@ -1825,13 +626,6 @@
             document.getElementById('auth-status').textContent = '✅ Signed in'
             document.getElementById('btn-signin').textContent =
               '✅ Signed in — click to re-authenticate'
-            // Show Step 2 now that we're authenticated
-            document.getElementById('step2-card').style.display = ''
-            // Fetch user data and detect existing deployments in parallel
-            fetchUserEmail()
-            fetchUserCalendars()
-            fetchGmailLabels()
-            loadExistingDeployments()
             setDeployEnabled()
           },
         })
@@ -1840,190 +634,6 @@
       }
 
       // ── Deployment ────────────────────────────────────────────────────────────────
-
-      /**
-       * Resolves the Apps Script project id for a catalog entry, reusing a
-       * previously stored project when it still exists, otherwise creating one.
-       */
-      async function resolveProjectId(catalogId, projectTitle, progress) {
-        const storedId = getStoredScriptId(catalogId, projectTitle)
-        if (storedId) {
-          showStatus(
-            'info',
-            `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Verifying existing project <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
-          )
-          try {
-            await apiFetch(`${APPS_SCRIPT_API}/projects/${storedId}`)
-            return storedId
-          } catch (err) {
-            // Only fall through to creation on 404 (Not Found).
-            // Other errors (e.g., rate limits, network issues) should propagate.
-            if (err.httpStatus !== 404) {
-              throw err
-            }
-          }
-        }
-
-        // Re-check localStorage in case another tab created the project while
-        // we were verifying or waiting — narrows the concurrent-tab race window.
-        const raceId = getStoredScriptId(catalogId, projectTitle)
-        if (raceId) {
-          try {
-            await apiFetch(`${APPS_SCRIPT_API}/projects/${raceId}`)
-            return raceId
-          } catch (raceErr) {
-            if (raceErr.httpStatus !== 404) throw raceErr
-          }
-        }
-
-        showStatus(
-          'info',
-          `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Creating project <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
-        )
-        const project = await apiFetch(`${APPS_SCRIPT_API}/projects`, {
-          method: 'POST',
-          body: JSON.stringify({ title: projectTitle }),
-        })
-        const projectId = validateScriptId(project.scriptId)
-        storeScriptId(catalogId, projectTitle, projectId)
-        return projectId
-      }
-
-      /**
-       * Deploys a single catalog script: fetches source, resolves/creates the
-       * project, and uploads files. Returns a deployment descriptor, or null if
-       * the catalog id is unknown (an error status is shown in that case).
-       */
-      async function deployOneScript(catalogId, index, total) {
-        const script = SCRIPT_CATALOG.find((s) => s.id === catalogId)
-        if (!script) {
-          showStatus(
-            'error',
-            `❌ Unknown script selection: ${escapeHtml(catalogId)}`
-          )
-          return null
-        }
-        const projectTitle = `Petry-Projects – ${script.name}`
-        const progress = total > 1 ? ` (${index + 1}/${total})` : ''
-
-        showStatus(
-          'info',
-          `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Fetching source files for <strong>${escapeHtml(script.name)}</strong>${progress}…`
-        )
-
-        // Fetch source files for the selected script.
-        const files = await fetchScriptFiles(catalogId)
-
-        // ── Idempotent project lookup / creation ────────────────────────
-        const projectId = await resolveProjectId(
-          catalogId,
-          projectTitle,
-          progress
-        )
-
-        showStatus(
-          'info',
-          `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Uploading files for <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
-        )
-
-        // All scripts use an hourly trigger. Schedule logic lives in config.gs.
-        const setupSource = buildSetupSource(script.triggerFn)
-
-        // Upload source files: manifest + setup.gs + code.gs + config.gs (template).
-        await apiFetch(`${APPS_SCRIPT_API}/projects/${projectId}/content`, {
-          method: 'PUT',
-          body: JSON.stringify({
-            files: [
-              {
-                name: 'appsscript',
-                type: 'JSON',
-                source: APPSSCRIPT_MANIFEST,
-              },
-              {
-                name: 'setup',
-                type: 'SERVER_JS',
-                source: setupSource,
-              },
-              ...files.map((f) => ({
-                name: f.name,
-                type: 'SERVER_JS',
-                source: f.source,
-              })),
-            ],
-          }),
-        })
-
-        deployedScripts.set(catalogId, {
-          scriptId: projectId,
-          title: projectTitle,
-        })
-        return { scriptId: projectId, title: projectTitle, catalogId }
-      }
-
-      /** Builds the success banner HTML for a set of deployed projects. */
-      // Tested in src/deploy/tests/index.test.js (buildDeploySuccessHtml suite)
-      function buildDeploySuccessHtml(deployedProjects) {
-        if (!Array.isArray(deployedProjects)) return ''
-        const projectLinksHtml = deployedProjects
-          .map((p) => {
-            const safeId = escapeHtml(p.scriptId)
-            return (
-              `<div style="border:1px solid #c8e6c9;border-radius:6px;padding:12px 16px;margin-top:12px;">` +
-              `<div style="font-size:13px;font-weight:600;color:#137333;">✅ Deployed successfully</div>` +
-              `<a class="result-link" href="https://script.google.com/d/${safeId}/edit" ` +
-              `target="_blank" rel="noopener" style="margin-top:6px;display:block;">` +
-              `${escapeHtml(p.title)} ↗</a>` +
-              `</div>`
-            )
-          })
-          .join('')
-
-        const headline =
-          deployedProjects.length === 1
-            ? 'Script deployed!'
-            : `${deployedProjects.length} scripts deployed!`
-
-        return (
-          `✅ <strong>${headline}</strong>` +
-          `<span style="font-size:13px;color:#137333;display:block;margin-top:4px;">` +
-          `Now configure each script below, then activate the trigger.</span>` +
-          projectLinksHtml
-        )
-      }
-
-      // Tested in src/deploy/tests/index.test.js (buildDeployErrorHtml suite)
-      function buildDeployErrorHtml(err) {
-        if (!err) return '❌ Deployment failed: Unknown error'
-        const isApiDisabled =
-          err.message && err.message.includes('Apps Script API')
-        const errorDetail = err.stack || err.message || String(err)
-        const safeErrorDetail = escapeHtml(errorDetail)
-        const errorDetailBlock =
-          `<details style="margin-top:6px;font-size:12px;">` +
-          `<summary style="cursor:pointer;color:#888;">Error detail</summary>` +
-          `<div class="error-detail">${safeErrorDetail}</div>` +
-          `<button class="copy-btn" data-copy="${safeErrorDetail}"` +
-          ` onclick="var d=document.createElement('div');d.innerHTML=this.dataset.copy;navigator.clipboard.writeText(d.textContent).catch(()=>{})">` +
-          `📋 Copy error</button>` +
-          `</details>`
-        if (isApiDisabled) {
-          return (
-            '❌ Deployment failed: User has not enabled the Apps Script API.' +
-            '<a href="https://script.google.com/home/usersettings" target="_blank" rel="noopener"' +
-            ' style="display:block;margin-top:8px;">' +
-            '👉 Enable it at script.google.com/home/usersettings' +
-            '</a>' +
-            '<span style="font-size:12px;color:#888;display:block;margin-top:4px;">' +
-            'After enabling, wait a minute then try again.' +
-            '</span>' +
-            errorDetailBlock
-          )
-        }
-        return (
-          `❌ Deployment failed: ${escapeHtml(err.message || String(err))}` +
-          errorDetailBlock
-        )
-      }
 
       async function handleDeploy() {
         const selectedIds = Array.from(
@@ -2043,41 +653,169 @@
         btn.disabled = true
         btn.innerHTML = '<span class="spinner"></span> Deploying…'
 
-        const deployedProjects = []
         try {
+          const deployedProjects = []
           const total = selectedIds.length
 
           for (let i = 0; i < total; i++) {
-            const descriptor = await deployOneScript(selectedIds[i], i, total)
-            if (!descriptor) continue
-            deployedProjects.push(descriptor)
-          }
+            const catalogId = selectedIds[i]
+            const script = SCRIPT_CATALOG.find((s) => s.id === catalogId)
+            if (!script) {
+              showStatus(
+                'error',
+                `❌ Unknown script selection: ${escapeHtml(catalogId)}`
+              )
+              return
+            }
+            const projectTitle = `Petry-Projects – ${script.name}`
+            const progress = total > 1 ? ` (${i + 1}/${total})` : ''
 
-          // Refresh Step 2 to show deployment badges
-          renderScriptList()
-
-          if (deployedProjects.length === 0) {
-            showStatus('error', '❌ No scripts were deployed successfully.')
-          } else {
-            showStatus('ok', buildDeploySuccessHtml(deployedProjects))
-            // Show Step 3 config cards
-            renderConfigCards(deployedProjects)
-          }
-        } catch (err) {
-          // Show any partial successes alongside the failure
-          if (deployedProjects.length > 0) {
-            renderScriptList()
-            renderConfigCards(deployedProjects)
             showStatus(
-              'error',
-              buildDeploySuccessHtml(deployedProjects) +
-                '<div style="margin-top:12px;">' +
-                buildDeployErrorHtml(err) +
-                '</div>'
+              'info',
+              `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Fetching source files for <strong>${escapeHtml(script.name)}</strong>${progress}…`
             )
-          } else {
-            showStatus('error', buildDeployErrorHtml(err))
+
+            // Fetch source files for the selected script.
+            const files = await fetchScriptFiles(catalogId)
+
+            // ── Idempotent project lookup / creation ────────────────────────
+            let projectId = null
+            const storedId = getStoredScriptId(catalogId, projectTitle)
+            if (storedId) {
+              showStatus(
+                'info',
+                `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Verifying existing project <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
+              )
+              try {
+                await apiFetch(`${APPS_SCRIPT_API}/projects/${storedId}`)
+                projectId = storedId
+              } catch {
+                // Project no longer exists — fall through to creation.
+              }
+            }
+
+            if (!projectId) {
+              showStatus(
+                'info',
+                `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Creating project <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
+              )
+              const project = await apiFetch(`${APPS_SCRIPT_API}/projects`, {
+                method: 'POST',
+                body: JSON.stringify({ title: projectTitle }),
+              })
+              projectId = validateScriptId(project.scriptId)
+              storeScriptId(catalogId, projectTitle, projectId)
+            }
+
+            showStatus(
+              'info',
+              `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Uploading files for <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
+            )
+
+            // Upload source files: manifest + setup.gs + code.gs + config.gs.
+            await apiFetch(`${APPS_SCRIPT_API}/projects/${projectId}/content`, {
+              method: 'PUT',
+              body: JSON.stringify({
+                files: [
+                  {
+                    name: 'appsscript',
+                    type: 'JSON',
+                    source: APPSSCRIPT_MANIFEST,
+                  },
+                  {
+                    name: 'setup',
+                    type: 'SERVER_JS',
+                    source: buildSetupSource(script.triggerFn),
+                  },
+                  ...files.map((f) => ({
+                    name: f.name,
+                    type: 'SERVER_JS',
+                    source: f.source,
+                  })),
+                ],
+              }),
+            })
+
+            deployedProjects.push({ scriptId: projectId, title: projectTitle })
           }
+
+          const setupStepsHtml =
+            `<ol style="margin:8px 0 0 18px;font-size:13px;line-height:1.7;">` +
+            `<li>Click the script link above to open it in Apps Script</li>` +
+            `<li>In the toolbar, click <strong>Run</strong></li>` +
+            `<li>Select <strong>setup</strong> from the dropdown</li>` +
+            `</ol>`
+
+          const projectSectionsHtml = deployedProjects
+            .map((p) => {
+              const safeId = escapeHtml(p.scriptId)
+              const triggerSection = isSetupDone(p.scriptId)
+                ? `<details id="setup-done-${safeId}" style="margin-top:8px;font-size:12px;">` +
+                  `<summary style="cursor:pointer;color:#137333;">` +
+                  `⏱ You had previously enabled the hourly trigger. Click here to review instructions.` +
+                  `</summary>` +
+                  setupStepsHtml +
+                  `</details>`
+                : `<div id="setup-cta-${safeId}" ` +
+                  `style="background:#fff8e1;border:1px solid #f9a825;border-radius:6px;` +
+                  `padding:12px 16px;margin-top:12px;">` +
+                  `<strong style="font-size:13px;">⏱ One more step — activate the hourly trigger</strong>` +
+                  setupStepsHtml +
+                  `<button class="btn" ` +
+                  `style="background:#137333;color:#fff;border:none;padding:7px 14px;` +
+                  `border-radius:4px;font-size:13px;cursor:pointer;margin-top:10px;" ` +
+                  `onclick="window.confirmSetupDone('${safeId}')">` +
+                  `✅ Done — I ran setup()</button>` +
+                  `</div>`
+
+              return (
+                `<div style="border:1px solid #c8e6c9;border-radius:6px;padding:12px 16px;margin-top:12px;">` +
+                `<div style="font-size:13px;font-weight:600;color:#137333;">✅ Deployed successfully</div>` +
+                `<a class="result-link" href="https://script.google.com/d/${safeId}/edit" ` +
+                `target="_blank" rel="noopener" style="margin-top:6px;display:block;">` +
+                `${escapeHtml(p.title)} ↗</a>` +
+                triggerSection +
+                `</div>`
+              )
+            })
+            .join('')
+
+          showStatus(
+            'ok',
+            `
+      ✅ <strong>${deployedProjects.length === 1 ? 'Script deployed!' : `${deployedProjects.length} scripts deployed!`}</strong>
+      <span style="font-size:13px;color:#137333;display:block;margin-top:4px;">
+        Follow the <strong>README</strong> for each script to complete configuration
+        (e.g. set label names, document IDs, etc.).
+      </span>
+      ${projectSectionsHtml}
+    `
+          )
+        } catch (err) {
+          const isApiDisabled =
+            err.message && err.message.includes('Apps Script API')
+          const errorDetail = err.stack || err.message || String(err)
+          const errorDetailBlock =
+            `<details style="margin-top:6px;font-size:12px;">` +
+            `<summary style="cursor:pointer;color:#888;">Error detail</summary>` +
+            `<div class="error-detail">${escapeHtml(errorDetail)}</div>` +
+            `<button class="copy-btn" data-copy="${encodeURIComponent(errorDetail)}"` +
+            ` onclick="navigator.clipboard.writeText(decodeURIComponent(this.dataset.copy)).catch(()=>{})">` +
+            `📋 Copy error</button>` +
+            `</details>`
+          const errorHtml = isApiDisabled
+            ? '❌ Deployment failed: User has not enabled the Apps Script API.' +
+              '<a href="https://script.google.com/home/usersettings" target="_blank" rel="noopener"' +
+              ' style="display:block;margin-top:8px;">' +
+              '👉 Enable it at script.google.com/home/usersettings' +
+              '</a>' +
+              '<span style="font-size:12px;color:#888;display:block;margin-top:4px;">' +
+              'After enabling, wait a minute then try again.' +
+              '</span>' +
+              errorDetailBlock
+            : `❌ Deployment failed: ${escapeHtml(err.message)}` +
+              errorDetailBlock
+          showStatus('error', errorHtml)
         } finally {
           btn.disabled = false
           btn.innerHTML = 'Deploy to my account'
@@ -2115,7 +853,7 @@
           headers: {
             Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
-            ...options.headers,
+            ...(options.headers || {}),
           },
         })
         if (!res.ok) {
@@ -2130,11 +868,8 @@
                 ? `${json.error.message} — ${JSON.stringify(json.error.details)}`
                 : json.error.message
             }
-          } catch (parseError) {
-            console.debug(
-              'apiFetch: response body was not valid JSON',
-              parseError
-            )
+          } catch (_) {
+            /* ignore parse errors */
           }
           const err = new Error(message)
           err.httpStatus = res.status

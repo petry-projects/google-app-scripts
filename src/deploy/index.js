@@ -49,19 +49,6 @@ function getScriptCatalog() {
         'https://www.googleapis.com/auth/spreadsheets',
       ],
     },
-    {
-      id: 'calendar-to-briefing-doc',
-      name: 'Calendar to Briefing Doc',
-      description:
-        'Generates a weekly calendar briefing and emails it to configured ' +
-        'recipients, grouped by day with times, locations, attendees, and ' +
-        'conflict warnings. Shows which calendar each event comes from.',
-      files: ['code.gs', 'config.gs'],
-      scopes: [
-        'https://www.googleapis.com/auth/calendar.readonly',
-        'https://www.googleapis.com/auth/gmail.send',
-      ],
-    },
   ]
 }
 
@@ -75,7 +62,7 @@ function getScriptCatalog() {
 function getScriptById(scriptId) {
   if (!scriptId) return null
   const catalog = getScriptCatalog()
-  return catalog.find((s) => s.id === scriptId) ?? null
+  return catalog.find((s) => s.id === scriptId) || null
 }
 
 /**
@@ -100,7 +87,7 @@ function buildProjectContent(files) {
       throw new Error('Each file must have a non-empty string name')
     }
     if (typeof f.source !== 'string') {
-      throw new TypeError('Each file must have a string source')
+      throw new Error('Each file must have a string source')
     }
   }
   return {
@@ -212,145 +199,12 @@ async function deployScript(fetchFn, accessToken, title, files) {
   }
 }
 
-const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1'
-
-/**
- * Creates a new Gmail label in the authenticated user's account.
- *
- * @param {Function} fetchFn - A `fetch`-compatible function (injectable for testing).
- * @param {string} accessToken - A valid OAuth 2.0 access token with the
- *   `https://www.googleapis.com/auth/gmail.labels` scope.
- * @param {string} labelName - The name of the label to create. Nested labels
- *   use `/` as a separator (e.g. `"Projects/receipts"`).
- * @returns {Promise<{id: string, name: string}>} The created label object.
- * @throws {Error} On missing arguments or a non-OK HTTP response.
- */
-async function createGmailLabel(fetchFn, accessToken, labelName) {
-  if (typeof fetchFn !== 'function')
-    throw new Error('fetchFn must be a function')
-  if (!accessToken) throw new Error('accessToken is required')
-  if (!labelName) throw new Error('labelName is required')
-
-  const response = await fetchFn(`${GMAIL_API_BASE}/users/me/labels`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ name: labelName }),
-  })
-
-  if (!response.ok) {
-    const text = await response.text()
-    throw new Error(`Failed to create Gmail label: ${response.status} ${text}`)
-  }
-
-  return response.json()
-}
-
-/**
- * Escapes HTML special characters to prevent XSS injection.
- *
- * @param {string|null} str - The string to escape.
- * @returns {string} The escaped string, or empty string if input is null/undefined.
- */
-function escapeHtml(str) {
-  return String(str == null ? '' : str)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#x27;')
-}
-
-/**
- * Builds the success banner HTML for a set of deployed projects.
- *
- * @param {Array<{scriptId: string, title: string, catalogId: string}>} deployedProjects
- * @returns {string} HTML string for the success banner.
- */
-function buildDeploySuccessHtml(deployedProjects) {
-  if (!Array.isArray(deployedProjects)) return ''
-
-  const projectLinksHtml = deployedProjects
-    .map((p) => {
-      const safeId = escapeHtml(p.scriptId)
-      return (
-        `<div style="border:1px solid #c8e6c9;border-radius:6px;padding:12px 16px;margin-top:12px;">` +
-        `<div style="font-size:13px;font-weight:600;color:#137333;">✅ Deployed successfully</div>` +
-        `<a class="result-link" href="https://script.google.com/d/${safeId}/edit" ` +
-        `target="_blank" rel="noopener noreferrer" style="margin-top:6px;display:block;">` +
-        `${escapeHtml(p.title)} ↗</a>` +
-        `</div>`
-      )
-    })
-    .join('')
-
-  const headline =
-    deployedProjects.length === 1
-      ? 'Script deployed!'
-      : `${deployedProjects.length} scripts deployed!`
-
-  return (
-    `✅ <strong>${headline}</strong>` +
-    `<span style="font-size:13px;color:#137333;display:block;margin-top:4px;">` +
-    `Now configure each script below, then activate the trigger.</span>` +
-    projectLinksHtml
-  )
-}
-
-/**
- * Builds the failure banner HTML for a deployment error.
- *
- * @param {Error} err - The error that occurred.
- * @returns {string} HTML string for the error banner.
- */
-function buildDeployErrorHtml(err) {
-  if (!err) return '❌ Deployment failed: Unknown error'
-
-  const isApiDisabled = err.message?.includes('Apps Script API')
-  const errorDetail = err.stack || err.message || String(err)
-  const safeErrorDetail = escapeHtml(errorDetail)
-  const errorDetailBlock =
-    `<details style="margin-top:6px;font-size:12px;">` +
-    `<summary style="cursor:pointer;color:#888;">Error detail</summary>` +
-    `<div class="error-detail">${safeErrorDetail}</div>` +
-    `<button class="copy-btn" data-copy="${safeErrorDetail}"` +
-    ` onclick="var d=document.createElement('div');d.innerHTML=this.dataset.copy;navigator.clipboard.writeText(d.textContent).catch(()=>{})">` +
-    `📋 Copy error</button>` +
-    `</details>`
-
-  if (isApiDisabled) {
-    return (
-      '❌ Deployment failed: User has not enabled the Apps Script API.' +
-      '<a href="https://script.google.com/home/usersettings" target="_blank" rel="noopener noreferrer"' +
-      ' style="display:block;margin-top:8px;">' +
-      '👉 Enable it at script.google.com/home/usersettings' +
-      '</a>' +
-      '<span style="font-size:12px;color:#888;display:block;margin-top:4px;">' +
-      'After enabling, wait a minute then try again.' +
-      '</span>' +
-      errorDetailBlock
-    )
-  }
-
-  return (
-    `❌ Deployment failed: ${escapeHtml(err.message || String(err))}` +
-    errorDetailBlock
-  )
-}
-
 module.exports = {
   APPS_SCRIPT_API_BASE,
-  GMAIL_API_BASE,
   getScriptCatalog,
   getScriptById,
   buildProjectContent,
   createProject,
   updateProjectContent,
   deployScript,
-  createGmailLabel,
-  escapeHtml,
-  buildDeploySuccessHtml,
-  buildDeployErrorHtml,
 }

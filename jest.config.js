@@ -17,6 +17,7 @@ module.exports = {
   },
   collectCoverageFrom: [
     'src/**/*.{js,ts,gs}',
+    'gas-installer/src/**/*.{js,ts,gs}',
     '!**/node_modules/**',
     '!**/coverage/**',
     '!**/tests/**',

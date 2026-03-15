@@ -21,8 +21,8 @@ const APPS_SCRIPT_API_BASE = 'https://script.googleapis.com/v1'
  */
 function getFileType(filename) {
   if (!filename || typeof filename !== 'string') return null
-  if (filename.endsWith('.gs')) return 'SERVER_JS'
-  if (filename.endsWith('.html')) return 'HTML'
+  if (/\.gs$/.test(filename)) return 'SERVER_JS'
+  if (/\.html$/.test(filename)) return 'HTML'
   return null
 }
 
@@ -42,7 +42,8 @@ function filterGithubItems(items) {
   return items
     .filter(
       (item) =>
-        item?.type === 'file' &&
+        item &&
+        item.type === 'file' &&
         typeof item.name === 'string' &&
         item.download_url
     )

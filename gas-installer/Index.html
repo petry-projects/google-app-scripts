@@ -168,7 +168,7 @@
       }
       .status-info {
         background: #e8f0fe;
-        color: #1765cc;
+        color: #1a73e8;
       }
       .status-ok {
         background: #e6f4ea;
@@ -371,10 +371,10 @@
 
       function escapeHtml(str) {
         return String(str)
-          .replaceAll('&', '&amp;')
-          .replaceAll('<', '&lt;')
-          .replaceAll('>', '&gt;')
-          .replaceAll('"', '&quot;')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
       }
     </script>
   </body>

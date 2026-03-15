@@ -119,8 +119,8 @@ test.describe('gas-installer Index.html', () => {
   }) => {
     await expect(page.locator('#script-gmail')).toBeVisible()
     await expect(page.locator('#script-calendar')).toBeVisible()
-    await expect(page.locator('#script-gmail')).not.toBeChecked()
-    await expect(page.locator('#script-calendar')).not.toBeChecked()
+    expect(await page.locator('#script-gmail').isChecked()).toBe(false)
+    expect(await page.locator('#script-calendar').isChecked()).toBe(false)
   })
 
   test('renders project title input with placeholder', async ({ page }) => {
@@ -203,37 +203,6 @@ test.describe('gas-installer Index.html', () => {
     await page.fill('#project-title', 'My Project')
     await page.locator('#btn-deploy').click()
     await expect(page.locator('#status-msg.status-info')).toBeVisible()
-  })
-
-  test('status-info banner meets WCAG AA contrast (>= 4.5:1)', async ({
-    page,
-  }) => {
-    const contrast = await page.evaluate(() => {
-      const el = document.createElement('div')
-      el.className = 'status-msg status-info'
-      el.textContent = 'sample'
-      document.body.appendChild(el)
-      const cs = getComputedStyle(el)
-      const fg = cs.color
-      const bg = cs.backgroundColor
-      el.remove()
-
-      const channels = (s) =>
-        ((s || '').match(/\d+(\.\d+)?/g) || []).map(Number)
-      const luminance = ([r, g, b]) => {
-        const lin = [r, g, b].map((v) => {
-          v /= 255
-          return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)
-        })
-        return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
-      }
-      const l1 = luminance(channels(fg))
-      const l2 = luminance(channels(bg))
-      const lighter = Math.max(l1, l2)
-      const darker = Math.min(l1, l2)
-      return (lighter + 0.05) / (darker + 0.05)
-    })
-    expect(contrast).toBeGreaterThanOrEqual(4.5)
   })
 
   test('showStatus ok applies status-ok class', async ({ page }) => {
