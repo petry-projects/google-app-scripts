@@ -1,0 +1,887 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Deploy Google Apps Scripts</title>
+    <style>
+      /* ── Reset & base ────────────────────────────────────────────────────── */
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: 'Google Sans', Roboto, Arial, sans-serif;
+        background: #f8f9fa;
+        color: #202124;
+        min-height: 100vh;
+      }
+
+      /* ── Layout ──────────────────────────────────────────────────────────── */
+      .container {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 40px 24px 80px;
+      }
+      header {
+        text-align: center;
+        margin-bottom: 40px;
+      }
+      header h1 {
+        font-size: 28px;
+        font-weight: 400;
+        color: #1a73e8;
+        margin-bottom: 8px;
+      }
+      header p {
+        font-size: 15px;
+        color: #5f6368;
+      }
+
+      /* ── Cards ───────────────────────────────────────────────────────────── */
+      .card {
+        background: #fff;
+        border-radius: 8px;
+        box-shadow:
+          0 1px 3px rgba(60, 64, 67, 0.15),
+          0 1px 2px rgba(60, 64, 67, 0.3);
+        padding: 24px;
+        margin-bottom: 20px;
+      }
+      .card h2 {
+        font-size: 16px;
+        font-weight: 500;
+        margin-bottom: 16px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .card h2 .step-badge {
+        background: #1a73e8;
+        color: #fff;
+        border-radius: 50%;
+        width: 24px;
+        height: 24px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        flex-shrink: 0;
+      }
+
+      /* ── Inputs ──────────────────────────────────────────────────────────── */
+      label {
+        display: block;
+        font-size: 13px;
+        color: #5f6368;
+        margin-bottom: 4px;
+      }
+      input[type='text'] {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #dadce0;
+        border-radius: 4px;
+        font-size: 14px;
+        color: #202124;
+        transition: border-color 0.15s;
+      }
+      input[type='text']:focus {
+        outline: none;
+        border-color: #1a73e8;
+        box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+      }
+
+      /* ── Script list ─────────────────────────────────────────────────────── */
+      .script-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .script-option {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 14px;
+        border: 1px solid #dadce0;
+        border-radius: 6px;
+        cursor: pointer;
+        transition:
+          border-color 0.15s,
+          background 0.15s;
+      }
+      .script-option:hover {
+        background: #f1f3f4;
+      }
+      .script-option:has(input[type='checkbox']:checked) {
+        border-color: #1a73e8;
+        background: #e8f0fe;
+      }
+      .script-option input[type='checkbox'] {
+        margin-top: 3px;
+        flex-shrink: 0;
+        accent-color: #1a73e8;
+        width: 16px;
+        height: 16px;
+      }
+      .script-option .script-info strong {
+        display: block;
+        font-size: 14px;
+      }
+      .script-option .script-info span {
+        font-size: 13px;
+        color: #5f6368;
+      }
+
+      /* ── Buttons ─────────────────────────────────────────────────────────── */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 4px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition:
+          background 0.15s,
+          box-shadow 0.15s;
+      }
+      .btn-primary {
+        background: #1a73e8;
+        color: #fff;
+      }
+      .btn-primary:hover {
+        background: #1765cc;
+      }
+      .btn-primary:disabled {
+        background: #a8c7fa;
+        cursor: not-allowed;
+      }
+      .btn-outline {
+        background: #fff;
+        color: #1a73e8;
+        border: 1px solid #dadce0;
+      }
+      .btn-outline:hover {
+        background: #f1f3f4;
+      }
+
+      /* ── Status / result ─────────────────────────────────────────────────── */
+      #status-area {
+        display: none;
+      }
+      .status-msg {
+        padding: 14px 16px;
+        border-radius: 6px;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .status-info {
+        background: #e8f0fe;
+        color: #1a73e8;
+      }
+      .status-ok {
+        background: #e6f4ea;
+        color: #137333;
+      }
+      .status-error {
+        background: #fce8e6;
+        color: #c5221f;
+      }
+
+      .result-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: #1a73e8;
+        text-decoration: none;
+        font-weight: 500;
+      }
+      .result-link:hover {
+        text-decoration: underline;
+      }
+
+      /* ── Setup instructions ───────────────────────────────────────────────── */
+      details summary {
+        cursor: pointer;
+        font-size: 14px;
+        color: #1a73e8;
+        user-select: none;
+        margin-top: 12px;
+      }
+      details[open] summary {
+        margin-bottom: 12px;
+      }
+      .setup-steps {
+        padding-left: 20px;
+      }
+      .setup-steps li {
+        font-size: 13px;
+        margin-bottom: 8px;
+        line-height: 1.5;
+      }
+      .setup-steps a {
+        color: #1a73e8;
+      }
+      code {
+        background: #f1f3f4;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 12px;
+      }
+
+      /* ── Error detail (copyable) ─────────────────────────────────────────── */
+      .error-detail {
+        margin-top: 6px;
+        font-size: 11px;
+        color: #555;
+        background: #fff8f8;
+        border: 1px solid #f5c6cb;
+        border-radius: 4px;
+        padding: 6px 8px;
+        font-family: monospace;
+        white-space: pre-wrap;
+        word-break: break-all;
+        max-height: 120px;
+        overflow-y: auto;
+        user-select: text;
+      }
+      .copy-btn {
+        margin-top: 4px;
+        font-size: 11px;
+        padding: 2px 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        background: #f8f8f8;
+        cursor: pointer;
+        color: #444;
+      }
+      .copy-btn:hover {
+        background: #eee;
+      }
+
+      /* ── Spinner ─────────────────────────────────────────────────────────── */
+      .spinner {
+        width: 18px;
+        height: 18px;
+        border: 2px solid rgba(255, 255, 255, 0.4);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        flex-shrink: 0;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>🚀 Deploy Google Apps Scripts</h1>
+        <p>
+          Deploy a script from this repository directly to your Google account
+          using your browser.
+        </p>
+      </header>
+
+      <!-- Step 1 – Sign in -->
+      <div class="card">
+        <h2><span class="step-badge">1</span>Sign in with Google</h2>
+        <p style="font-size: 13px; color: #5f6368; margin-bottom: 14px">
+          Sign in to the Google account where you want the script project
+          created. You will be asked to grant permission to create and edit Apps
+          Script projects.
+        </p>
+        <button
+          class="btn btn-outline"
+          id="btn-signin"
+          onclick="handleSignIn()"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              fill="#4285F4"
+              d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+            />
+            <path
+              fill="#34A853"
+              d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+            />
+            <path
+              fill="#FBBC05"
+              d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"
+            />
+            <path
+              fill="#EA4335"
+              d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+            />
+          </svg>
+          Sign in with Google
+        </button>
+        <span
+          id="auth-status"
+          style="font-size: 13px; margin-left: 12px; color: #5f6368"
+        ></span>
+      </div>
+
+      <!-- Step 2 – Choose script -->
+      <div class="card">
+        <h2><span class="step-badge">2</span>Choose scripts to deploy</h2>
+        <div class="script-list" id="script-list">
+          <!-- populated by JS -->
+        </div>
+      </div>
+
+      <!-- Deploy button -->
+      <div style="text-align: right; margin-bottom: 20px">
+        <button
+          class="btn btn-primary"
+          id="btn-deploy"
+          onclick="handleDeploy()"
+          disabled
+        >
+          Deploy to my account
+        </button>
+      </div>
+
+      <!-- Status / result area -->
+      <div id="status-area">
+        <div id="status-msg" class="status-msg"></div>
+      </div>
+    </div>
+
+    <!-- Google Identity Services -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+    <script>
+      /**
+       * Deployment page for the Google Apps Script Productivity Suite.
+       *
+       * Uses the Google Identity Services (GIS) token-based OAuth flow to obtain
+       * an access token, then calls the Apps Script REST API to create a new project
+       * and upload the selected script's source files.
+       */
+
+      // ── Constants ────────────────────────────────────────────────────────────────
+
+      const APPS_SCRIPT_API = 'https://script.googleapis.com/v1'
+
+      // OAuth 2.0 Client ID for the Petry-Projects Google Cloud project.
+      const OAUTH_CLIENT_ID =
+        '873060687431-smmudbpd5rlogt0r7immp0u3tdqb2t3p.apps.googleusercontent.com'
+
+      // Required OAuth scope: create, read, and update Apps Script projects.
+      const OAUTH_SCOPE = 'https://www.googleapis.com/auth/script.projects'
+
+      // Script catalog — mirrors src/deploy/index.js getScriptCatalog().
+      const SCRIPT_CATALOG = [
+        {
+          id: 'gmail-to-drive-by-labels',
+          name: 'Gmail to Drive By Labels',
+          description:
+            'Archives emails from specific Gmail labels into a Google Doc ' +
+            '(text) and a Google Drive Folder (attachments).',
+          triggerFn: 'storeEmailsAndAttachments',
+        },
+        {
+          id: 'calendar-to-sheets',
+          name: 'Calendar to Sheets',
+          description:
+            'Syncs Google Calendar events into a Google Sheet, keeping rows ' +
+            'up to date on changes and deletions.',
+          triggerFn: 'syncAllCalendarsToSheetsGAS',
+        },
+      ]
+
+      // Base URL for fetching raw script files from this repository on GitHub.
+      const GITHUB_RAW_BASE =
+        'https://raw.githubusercontent.com/petry-projects/google-app-scripts/main/src'
+
+      // Default Apps Script manifest required by the API for every project.
+      // oauthScopes is intentionally omitted — Google infers required scopes
+      // from the uploaded code so the project's runtime permissions are never
+      // accidentally restricted.  executionApi.access is set to 'MYSELF' so
+      // the project is registered as API-executable on creation.
+      const APPSSCRIPT_MANIFEST = JSON.stringify({
+        timeZone: 'America/New_York',
+        dependencies: {},
+        exceptionLogging: 'STACKDRIVER',
+        runtimeVersion: 'V8',
+        executionApi: { access: 'MYSELF' },
+      })
+
+      // localStorage key used to persist deployed scriptIds for idempotency.
+      const DEPLOY_STORAGE_KEY = 'gas_copilot_deployed'
+
+      // localStorage key used to record which projects have had setup() run.
+      const SETUP_STORAGE_KEY = 'gas_copilot_setup_done'
+
+      // ── State ─────────────────────────────────────────────────────────────────────
+
+      let tokenClient = null
+      let accessToken = null
+
+      // ── Idempotency helpers ───────────────────────────────────────────────────────
+
+      /**
+       * Returns the Apps Script project ID previously deployed for
+       * (catalogId, title), or null if none recorded.
+       */
+      function getStoredScriptId(catalogId, title) {
+        try {
+          const map = JSON.parse(
+            localStorage.getItem(DEPLOY_STORAGE_KEY) || '{}'
+          )
+          const id = map[catalogId + '\n' + title]
+          return id ? validateScriptId(id) : null
+        } catch {
+          return null
+        }
+      }
+
+      /**
+       * Persists the mapping (catalogId, title) → scriptId so subsequent
+       * deploys can reuse the same Apps Script project.
+       */
+      function storeScriptId(catalogId, title, scriptId) {
+        try {
+          const map = JSON.parse(
+            localStorage.getItem(DEPLOY_STORAGE_KEY) || '{}'
+          )
+          map[catalogId + '\n' + title] = scriptId
+          localStorage.setItem(DEPLOY_STORAGE_KEY, JSON.stringify(map))
+        } catch {
+          // best-effort; ignore storage errors
+        }
+      }
+
+      /**
+       * Returns true if the user has previously confirmed that setup() was
+       * run for the given Apps Script project ID.
+       */
+      function isSetupDone(scriptId) {
+        try {
+          const map = JSON.parse(
+            localStorage.getItem(SETUP_STORAGE_KEY) || '{}'
+          )
+          return !!map[scriptId]
+        } catch {
+          return false
+        }
+      }
+
+      /**
+       * Records that setup() has been run for scriptId and updates the
+       * on-screen CTA to reflect the trigger is now active.
+       * Exposed as window.confirmSetupDone for use by inline onclick handlers.
+       */
+      function confirmSetupDone(scriptId) {
+        try {
+          validateScriptId(scriptId)
+        } catch {
+          return // reject tampered IDs
+        }
+        try {
+          const map = JSON.parse(
+            localStorage.getItem(SETUP_STORAGE_KEY) || '{}'
+          )
+          map[scriptId] = true
+          localStorage.setItem(SETUP_STORAGE_KEY, JSON.stringify(map))
+        } catch {
+          // best-effort; ignore storage errors
+        }
+        const safeId = escapeHtml(scriptId)
+        const cta = document.getElementById('setup-cta-' + scriptId)
+        if (cta) {
+          cta.outerHTML =
+            `<details id="setup-done-${safeId}" style="margin-top:8px;font-size:12px;">` +
+            `<summary style="cursor:pointer;color:#137333;">` +
+            `⏱ You had previously enabled the hourly trigger. Click here to review instructions.` +
+            `</summary>` +
+            `<ol style="margin:8px 0 0 18px;font-size:13px;line-height:1.7;">` +
+            `<li>Click the script link above to open it in Apps Script</li>` +
+            `<li>In the toolbar, click <strong>Run</strong></li>` +
+            `<li>Select <strong>setup</strong> from the dropdown</li>` +
+            `</ol>` +
+            `</details>`
+        }
+      }
+      window.confirmSetupDone = confirmSetupDone
+
+      /**
+       * Generates the source for setup.gs — an idempotent function that
+       * deletes any existing hourly trigger for `triggerFn` and creates a
+       * fresh one.  This file is uploaded alongside code.gs and config.gs.
+       * The user must run setup() once manually from the Apps Script editor
+       * to activate the hourly trigger.
+       */
+      function buildSetupSource(triggerFn) {
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(triggerFn)) {
+          throw new Error(
+            'Invalid trigger function name: ' + JSON.stringify(triggerFn)
+          )
+        }
+        return (
+          "var HOURLY_TRIGGER_FN = '" +
+          triggerFn +
+          "';\n\n" +
+          'function setup() {\n' +
+          '  var triggers = ScriptApp.getProjectTriggers();\n' +
+          '  for (var i = 0; i < triggers.length; i++) {\n' +
+          '    if (triggers[i].getHandlerFunction() === HOURLY_TRIGGER_FN) {\n' +
+          '      ScriptApp.deleteTrigger(triggers[i]);\n' +
+          '    }\n' +
+          '  }\n' +
+          '  ScriptApp.newTrigger(HOURLY_TRIGGER_FN)\n' +
+          '    .timeBased()\n' +
+          '    .everyHours(1)\n' +
+          '    .create();\n' +
+          '}\n'
+        )
+      }
+
+      // ── DOM helpers ───────────────────────────────────────────────────────────────
+
+      function showStatus(type, html) {
+        const area = document.getElementById('status-area')
+        const msg = document.getElementById('status-msg')
+        area.style.display = 'block'
+        msg.className = `status-msg status-${type}`
+        msg.innerHTML = html
+        area.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }
+
+      function setDeployEnabled() {
+        const hasToken = !!accessToken
+        const hasScript = !!document.querySelector(
+          'input[name="script"]:checked'
+        )
+        document.getElementById('btn-deploy').disabled = !(
+          hasToken && hasScript
+        )
+      }
+
+      // ── Script list ───────────────────────────────────────────────────────────────
+
+      function renderScriptList() {
+        const container = document.getElementById('script-list')
+        container.innerHTML = SCRIPT_CATALOG.map(
+          (s) => `
+    <label class="script-option" for="script-${s.id}">
+      <input type="checkbox" name="script" id="script-${s.id}" value="${s.id}"
+             onchange="setDeployEnabled()" />
+      <span class="script-info">
+        <strong>${escapeHtml(s.name)}</strong>
+        <span>${escapeHtml(s.description)}</span>
+      </span>
+    </label>
+  `
+        ).join('')
+      }
+
+      function escapeHtml(str) {
+        return String(str == null ? '' : str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;')
+      }
+
+      /**
+       * Validates that a script ID from the API or localStorage contains only
+       * safe alphanumeric/hyphen/underscore characters.  Throws if the value
+       * looks tampered-with so it can never be injected into HTML or URLs.
+       */
+      function validateScriptId(id) {
+        if (typeof id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(id)) {
+          throw new Error(`Invalid script ID: ${String(id).slice(0, 64)}`)
+        }
+        return id
+      }
+
+      // ── OAuth sign-in ─────────────────────────────────────────────────────────────
+
+      function handleSignIn() {
+        tokenClient = google.accounts.oauth2.initTokenClient({
+          client_id: OAUTH_CLIENT_ID,
+          scope: OAUTH_SCOPE,
+          callback: (tokenResponse) => {
+            if (tokenResponse.error) {
+              showStatus(
+                'error',
+                `❌ Sign-in failed: ${escapeHtml(tokenResponse.error)}`
+              )
+              return
+            }
+            accessToken = tokenResponse.access_token
+            document.getElementById('auth-status').textContent = '✅ Signed in'
+            document.getElementById('btn-signin').textContent =
+              '✅ Signed in — click to re-authenticate'
+            setDeployEnabled()
+          },
+        })
+
+        tokenClient.requestAccessToken()
+      }
+
+      // ── Deployment ────────────────────────────────────────────────────────────────
+
+      async function handleDeploy() {
+        const selectedIds = Array.from(
+          document.querySelectorAll('input[name="script"]:checked')
+        ).map((el) => el.value)
+
+        if (!accessToken) {
+          showStatus('error', '⚠️ Please sign in first.')
+          return
+        }
+        if (selectedIds.length === 0) {
+          showStatus('error', '⚠️ Please select a script.')
+          return
+        }
+
+        const btn = document.getElementById('btn-deploy')
+        btn.disabled = true
+        btn.innerHTML = '<span class="spinner"></span> Deploying…'
+
+        try {
+          const deployedProjects = []
+          const total = selectedIds.length
+
+          for (let i = 0; i < total; i++) {
+            const catalogId = selectedIds[i]
+            const script = SCRIPT_CATALOG.find((s) => s.id === catalogId)
+            if (!script) {
+              showStatus(
+                'error',
+                `❌ Unknown script selection: ${escapeHtml(catalogId)}`
+              )
+              return
+            }
+            const projectTitle = `Petry-Projects – ${script.name}`
+            const progress = total > 1 ? ` (${i + 1}/${total})` : ''
+
+            showStatus(
+              'info',
+              `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Fetching source files for <strong>${escapeHtml(script.name)}</strong>${progress}…`
+            )
+
+            // Fetch source files for the selected script.
+            const files = await fetchScriptFiles(catalogId)
+
+            // ── Idempotent project lookup / creation ────────────────────────
+            let projectId = null
+            const storedId = getStoredScriptId(catalogId, projectTitle)
+            if (storedId) {
+              showStatus(
+                'info',
+                `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Verifying existing project <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
+              )
+              try {
+                await apiFetch(`${APPS_SCRIPT_API}/projects/${storedId}`)
+                projectId = storedId
+              } catch {
+                // Project no longer exists — fall through to creation.
+              }
+            }
+
+            if (!projectId) {
+              showStatus(
+                'info',
+                `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Creating project <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
+              )
+              const project = await apiFetch(`${APPS_SCRIPT_API}/projects`, {
+                method: 'POST',
+                body: JSON.stringify({ title: projectTitle }),
+              })
+              projectId = validateScriptId(project.scriptId)
+              storeScriptId(catalogId, projectTitle, projectId)
+            }
+
+            showStatus(
+              'info',
+              `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Uploading files for <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
+            )
+
+            // Upload source files: manifest + setup.gs + code.gs + config.gs.
+            await apiFetch(`${APPS_SCRIPT_API}/projects/${projectId}/content`, {
+              method: 'PUT',
+              body: JSON.stringify({
+                files: [
+                  {
+                    name: 'appsscript',
+                    type: 'JSON',
+                    source: APPSSCRIPT_MANIFEST,
+                  },
+                  {
+                    name: 'setup',
+                    type: 'SERVER_JS',
+                    source: buildSetupSource(script.triggerFn),
+                  },
+                  ...files.map((f) => ({
+                    name: f.name,
+                    type: 'SERVER_JS',
+                    source: f.source,
+                  })),
+                ],
+              }),
+            })
+
+            deployedProjects.push({ scriptId: projectId, title: projectTitle })
+          }
+
+          const setupStepsHtml =
+            `<ol style="margin:8px 0 0 18px;font-size:13px;line-height:1.7;">` +
+            `<li>Click the script link above to open it in Apps Script</li>` +
+            `<li>In the toolbar, click <strong>Run</strong></li>` +
+            `<li>Select <strong>setup</strong> from the dropdown</li>` +
+            `</ol>`
+
+          const projectSectionsHtml = deployedProjects
+            .map((p) => {
+              const safeId = escapeHtml(p.scriptId)
+              const triggerSection = isSetupDone(p.scriptId)
+                ? `<details id="setup-done-${safeId}" style="margin-top:8px;font-size:12px;">` +
+                  `<summary style="cursor:pointer;color:#137333;">` +
+                  `⏱ You had previously enabled the hourly trigger. Click here to review instructions.` +
+                  `</summary>` +
+                  setupStepsHtml +
+                  `</details>`
+                : `<div id="setup-cta-${safeId}" ` +
+                  `style="background:#fff8e1;border:1px solid #f9a825;border-radius:6px;` +
+                  `padding:12px 16px;margin-top:12px;">` +
+                  `<strong style="font-size:13px;">⏱ One more step — activate the hourly trigger</strong>` +
+                  setupStepsHtml +
+                  `<button class="btn" ` +
+                  `style="background:#137333;color:#fff;border:none;padding:7px 14px;` +
+                  `border-radius:4px;font-size:13px;cursor:pointer;margin-top:10px;" ` +
+                  `onclick="window.confirmSetupDone('${safeId}')">` +
+                  `✅ Done — I ran setup()</button>` +
+                  `</div>`
+
+              return (
+                `<div style="border:1px solid #c8e6c9;border-radius:6px;padding:12px 16px;margin-top:12px;">` +
+                `<div style="font-size:13px;font-weight:600;color:#137333;">✅ Deployed successfully</div>` +
+                `<a class="result-link" href="https://script.google.com/d/${safeId}/edit" ` +
+                `target="_blank" rel="noopener" style="margin-top:6px;display:block;">` +
+                `${escapeHtml(p.title)} ↗</a>` +
+                triggerSection +
+                `</div>`
+              )
+            })
+            .join('')
+
+          showStatus(
+            'ok',
+            `
+      ✅ <strong>${deployedProjects.length === 1 ? 'Script deployed!' : `${deployedProjects.length} scripts deployed!`}</strong>
+      <span style="font-size:13px;color:#137333;display:block;margin-top:4px;">
+        Follow the <strong>README</strong> for each script to complete configuration
+        (e.g. set label names, document IDs, etc.).
+      </span>
+      ${projectSectionsHtml}
+    `
+          )
+        } catch (err) {
+          const isApiDisabled =
+            err.message && err.message.includes('Apps Script API')
+          const errorDetail = err.stack || err.message || String(err)
+          const errorDetailBlock =
+            `<details style="margin-top:6px;font-size:12px;">` +
+            `<summary style="cursor:pointer;color:#888;">Error detail</summary>` +
+            `<div class="error-detail">${escapeHtml(errorDetail)}</div>` +
+            `<button class="copy-btn" data-copy="${encodeURIComponent(errorDetail)}"` +
+            ` onclick="navigator.clipboard.writeText(decodeURIComponent(this.dataset.copy)).catch(()=>{})">` +
+            `📋 Copy error</button>` +
+            `</details>`
+          const errorHtml = isApiDisabled
+            ? '❌ Deployment failed: User has not enabled the Apps Script API.' +
+              '<a href="https://script.google.com/home/usersettings" target="_blank" rel="noopener"' +
+              ' style="display:block;margin-top:8px;">' +
+              '👉 Enable it at script.google.com/home/usersettings' +
+              '</a>' +
+              '<span style="font-size:12px;color:#888;display:block;margin-top:4px;">' +
+              'After enabling, wait a minute then try again.' +
+              '</span>' +
+              errorDetailBlock
+            : `❌ Deployment failed: ${escapeHtml(err.message)}` +
+              errorDetailBlock
+          showStatus('error', errorHtml)
+        } finally {
+          btn.disabled = false
+          btn.innerHTML = 'Deploy to my account'
+          setDeployEnabled()
+        }
+      }
+
+      // ── Helpers ───────────────────────────────────────────────────────────────────
+
+      /**
+       * Fetches the code.gs and config.gs source files for `scriptId` from GitHub.
+       * Returns an array of `{ name, source }` objects ready for the API.
+       */
+      async function fetchScriptFiles(scriptId) {
+        const fileNames = ['code', 'config']
+        const results = await Promise.all(
+          fileNames.map(async (name) => {
+            const url = `${GITHUB_RAW_BASE}/${scriptId}/${name}.gs`
+            const res = await fetch(url)
+            if (!res.ok)
+              throw new Error(`Could not fetch ${name}.gs (${res.status})`)
+            return { name, source: await res.text() }
+          })
+        )
+        return results
+      }
+
+      /**
+       * Thin wrapper around fetch that attaches the Bearer token and
+       * Content-Type header, then throws on non-OK responses.
+       */
+      async function apiFetch(url, options = {}) {
+        const res = await fetch(url, {
+          ...options,
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            ...(options.headers || {}),
+          },
+        })
+        if (!res.ok) {
+          const body = await res.text()
+          let message = `HTTP ${res.status}`
+          let detail = body
+          try {
+            const json = JSON.parse(body)
+            if (json.error && json.error.message) {
+              message = json.error.message
+              detail = json.error.details
+                ? `${json.error.message} — ${JSON.stringify(json.error.details)}`
+                : json.error.message
+            }
+          } catch (_) {
+            /* ignore parse errors */
+          }
+          const err = new Error(message)
+          err.httpStatus = res.status
+          err.apiDetail = detail
+          throw err
+        }
+        return res.json()
+      }
+
+      // ── Init ──────────────────────────────────────────────────────────────────────
+
+      renderScriptList()
+    </script>
+  </body>
+</html>

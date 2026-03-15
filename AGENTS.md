@@ -85,6 +85,8 @@ if (typeof module !== 'undefined' && module.exports) {
 ## Code style & commits
 
 - Follow repository style and lint rules.
+- ALWAYS run `npx prettier --write .` before committing — pre-commit hooks do not run in agent sessions, so formatting must be applied manually.
+- ALWAYS ensure `npm run check` (prettier check + lint) passes before committing.
 - ALWAYS ensure `npm run lint` and `npm test` passes before committing.
 - ALWAYS ensure `npm test -- --coverage` passes before committing.
 - Keep commits small and include tests with behavior changes.
