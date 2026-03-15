@@ -263,7 +263,7 @@ test.describe('deploy index.html', () => {
   }) => {
     await expect(
       page.locator('#script-list input[value="gmail-to-drive-by-labels"]')
-    ).toBeVisible()
+    ).toBeAttached()
     await expect(page.locator('#script-list')).toContainText(
       'Gmail to Drive By Labels'
     )
@@ -272,7 +272,7 @@ test.describe('deploy index.html', () => {
   test('script list shows Calendar to Sheets option', async ({ page }) => {
     await expect(
       page.locator('#script-list input[value="calendar-to-sheets"]')
-    ).toBeVisible()
+    ).toBeAttached()
     await expect(page.locator('#script-list')).toContainText(
       'Calendar to Sheets'
     )
@@ -339,11 +339,13 @@ test.describe('deploy index.html', () => {
   test('handleDeploy shows error when called without an access token', async ({
     page,
   }) => {
-    // Select a script and force-enable the button, but do NOT sign in
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
+    // Programmatically select a script and force-enable the button without
+    // signing in (which would show the deploy section and set an access token).
     await page.evaluate(() => {
+      const cb = document.querySelector(
+        '#script-list input[value="gmail-to-drive-by-labels"]'
+      )
+      if (cb) cb.checked = true
       document.getElementById('btn-deploy').disabled = false
     })
     await page.evaluate(() => window.handleDeploy())
@@ -696,6 +698,8 @@ test.describe('deploy index.html', () => {
     })
 
     await signIn(page)
+    // Prior deployments exist → deploy section is collapsed; re-expand it.
+    await page.locator('#btn-show-deploy').click()
     await page
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
@@ -751,6 +755,8 @@ test.describe('deploy index.html', () => {
     })
 
     await signIn(page)
+    // Prior deployments exist → deploy section is collapsed; re-expand it.
+    await page.locator('#btn-show-deploy').click()
     await page
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
@@ -1771,7 +1777,8 @@ test.describe('deploy index.html', () => {
     await page.locator('#btn-deploy').click()
     await page.waitForSelector('#step4-card')
 
-    // Deploy again
+    // After first deploy the section collapses; re-expand to deploy again.
+    await page.locator('#btn-show-deploy').click()
     await page.locator('#btn-deploy').click()
     await page.waitForSelector('.status-ok')
 
@@ -1782,11 +1789,13 @@ test.describe('deploy index.html', () => {
   // ── Select all ──────────────────────────────────────────────────────────────
 
   test('Select all button is present in script list', async ({ page }) => {
+    await signIn(page)
     await expect(page.locator('#btn-select-all')).toBeVisible()
     await expect(page.locator('#btn-select-all')).toHaveText('Select all')
   })
 
   test('Select all checks all script checkboxes', async ({ page }) => {
+    await signIn(page)
     await page.locator('#btn-select-all').click()
     const checkboxes = page.locator('input[name="script"]')
     for (const checkbox of await checkboxes.all()) {
@@ -1797,11 +1806,13 @@ test.describe('deploy index.html', () => {
   test('Select all button label becomes "Deselect all" when all checked', async ({
     page,
   }) => {
+    await signIn(page)
     await page.locator('#btn-select-all').click()
     await expect(page.locator('#btn-select-all')).toHaveText('Deselect all')
   })
 
   test('Deselect all unchecks all script checkboxes', async ({ page }) => {
+    await signIn(page)
     // First check all
     await page.locator('#btn-select-all').click()
     // Then deselect all
@@ -1821,6 +1832,7 @@ test.describe('deploy index.html', () => {
   test('Select all label updates when individual checkboxes are toggled', async ({
     page,
   }) => {
+    await signIn(page)
     // Select all then uncheck one — label should revert to "Select all"
     await page.locator('#btn-select-all').click()
     await expect(page.locator('#btn-select-all')).toHaveText('Deselect all')
@@ -1956,10 +1968,11 @@ test.describe('deploy index.html', () => {
     const calSelect = page.locator('.config-row [name="calendarId"]').first()
     await expect(calSelect).toHaveValue('primary')
 
+    // Sheet name is derived from the calendar name, not from the stored value
     const sheetNameInput = page
       .locator('.config-row [name="sheetName"]')
       .first()
-    await expect(sheetNameInput).toHaveValue('MySheet')
+    await expect(sheetNameInput).toHaveValue('Primary Calendar')
   })
 
   test('parseCalendarConfig correctly parses SYNC_CONFIGS source', async ({
@@ -2124,11 +2137,39 @@ test.describe('deploy index.html', () => {
     await expect(page.locator('.config-row')).toHaveCount(1)
   })
 
-  // ── Collapse deploy section when all scripts deployed ────────────────────────
+  // ── Deploy section visibility ─────────────────────────────────────────────────
 
-  test('deploy section is visible by default', async ({ page }) => {
+  test('deploy section is hidden before sign-in', async ({ page }) => {
+    await expect(page.locator('#deploy-section')).not.toBeVisible()
+    await expect(page.locator('#btn-show-deploy')).not.toBeVisible()
+  })
+
+  test('deploy section is shown after sign-in with no prior deployments', async ({
+    page,
+  }) => {
+    await expect(page.locator('#deploy-section')).not.toBeVisible()
+    await signIn(page)
     await expect(page.locator('#deploy-section')).toBeVisible()
     await expect(page.locator('#btn-show-deploy')).not.toBeVisible()
+    // Configure section should not appear until after a deploy
+    await expect(page.locator('#step4-card')).not.toBeAttached()
+  })
+
+  test('deploy section collapses after any scripts are deployed', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    // Deploy only one script
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+
+    // Deploy section collapses as soon as configure section is rendered
+    await expect(page.locator('#deploy-section')).not.toBeVisible()
+    await expect(page.locator('#btn-show-deploy')).toBeVisible()
   })
 
   test('deploy section collapses after both scripts are deployed', async ({
@@ -2144,23 +2185,6 @@ test.describe('deploy index.html', () => {
     // Deploy section should now be hidden
     await expect(page.locator('#deploy-section')).not.toBeVisible()
     await expect(page.locator('#btn-show-deploy')).toBeVisible()
-  })
-
-  test('deploy section stays visible when only one script is deployed', async ({
-    page,
-  }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    // Only deploy one script
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
-
-    // Only 1 of 2 scripts deployed → section stays open
-    await expect(page.locator('#deploy-section')).toBeVisible()
-    await expect(page.locator('#btn-show-deploy')).not.toBeVisible()
   })
 
   test('clicking Show deployment options reveals the deploy section again', async ({
@@ -2179,7 +2203,7 @@ test.describe('deploy index.html', () => {
     await expect(page.locator('#btn-show-deploy')).not.toBeVisible()
   })
 
-  test('deploy section collapses on sign-in when both scripts already deployed', async ({
+  test('deploy section collapses on sign-in when scripts already deployed', async ({
     page,
   }) => {
     // Pre-seed localStorage with BOTH scripts deployed
@@ -2198,6 +2222,29 @@ test.describe('deploy index.html', () => {
     await signIn(page)
     await page.waitForSelector('#step4-card')
 
+    await expect(page.locator('#deploy-section')).not.toBeVisible()
+    await expect(page.locator('#btn-show-deploy')).toBeVisible()
+  })
+
+  test('deploy section collapses on sign-in when only one script was previously deployed', async ({
+    page,
+  }) => {
+    // Pre-seed localStorage with only ONE script deployed
+    await page.evaluate((key) => {
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          'gmail-to-drive-by-labels\nPetry-Projects – Gmail to Drive':
+            'proj-gmail',
+        })
+      )
+    }, 'gas_copilot_deployed')
+
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page.waitForSelector('#step4-card')
+
+    // Any prior deployment → deploy section collapsed
     await expect(page.locator('#deploy-section')).not.toBeVisible()
     await expect(page.locator('#btn-show-deploy')).toBeVisible()
   })
