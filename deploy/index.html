@@ -478,12 +478,15 @@
         'https://raw.githubusercontent.com/petry-projects/google-app-scripts/main/src'
 
       // Default Apps Script manifest required by the API for every project.
-      // oauthScopes is omitted so Google infers required scopes from the code.
+      // oauthScopes is omitted so Google infers required scopes from the code,
+      // except for script.scriptapp which must be declared explicitly so that
+      // ScriptApp.newTrigger() inside setup.gs is authorized at runtime.
       const APPSSCRIPT_MANIFEST = JSON.stringify({
         timeZone: 'America/New_York',
         dependencies: {},
         exceptionLogging: 'STACKDRIVER',
         runtimeVersion: 'V8',
+        oauthScopes: ['https://www.googleapis.com/auth/script.scriptapp'],
       })
 
       // localStorage key used to persist deployed scriptIds for idempotency.
@@ -530,10 +533,16 @@
       /**
        * Generates the source for setup.gs — an idempotent function that
        * deletes any existing hourly trigger for `triggerFn` and creates a
-       * fresh one.  This file is uploaded alongside code.gs and config.gs
-       * and then executed immediately via scripts.run.
+       * fresh one.  This file is uploaded alongside code.gs and config.gs.
+       * The user must run setup() once manually from the Apps Script editor
+       * to activate the hourly trigger.
        */
       function buildSetupSource(triggerFn) {
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(triggerFn)) {
+          throw new Error(
+            'Invalid trigger function name: ' + JSON.stringify(triggerFn)
+          )
+        }
         return (
           "var HOURLY_TRIGGER_FN = '" +
           triggerFn +

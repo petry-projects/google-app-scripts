@@ -405,7 +405,9 @@ test.describe('deploy index.html', () => {
     const parsed = JSON.parse(manifest.source)
     expect(parsed).toHaveProperty('runtimeVersion', 'V8')
     expect(parsed).not.toHaveProperty('executionApi')
-    expect(parsed).not.toHaveProperty('oauthScopes')
+    expect(parsed).toHaveProperty('oauthScopes', [
+      'https://www.googleapis.com/auth/script.scriptapp',
+    ])
   })
 
   test('handleDeploy includes setup.gs with hourly trigger in content upload', async ({
