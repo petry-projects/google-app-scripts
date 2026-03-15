@@ -556,7 +556,9 @@
         const hasScript = !!document.querySelector(
           'input[name="script"]:checked'
         )
-        document.getElementById('btn-deploy').disabled = !(hasToken && hasScript)
+        document.getElementById('btn-deploy').disabled = !(
+          hasToken && hasScript
+        )
       }
 
       // ── Script list ───────────────────────────────────────────────────────────────
