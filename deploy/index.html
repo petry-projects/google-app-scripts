@@ -664,7 +664,7 @@
                 'error',
                 `❌ Unknown script selection: ${escapeHtml(catalogId)}`
               )
-              break
+              return
             }
             const projectTitle = `Petry-Projects – ${script.name}`
             const progress = total > 1 ? ` (${i + 1}/${total})` : ''
