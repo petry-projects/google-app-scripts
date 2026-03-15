@@ -272,6 +272,68 @@ test.describe('deploy index.html', () => {
     )
   })
 
+  test('handleDeploy shows setup CTA when setup has not been confirmed', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+    // CTA box should be visible with numbered steps and the confirm button
+    await expect(page.locator('[id^="setup-cta-"]')).toBeVisible()
+    await expect(page.locator('[id^="setup-cta-"]')).toContainText(
+      'One more step'
+    )
+    await expect(
+      page.locator('button:has-text("Done — I ran setup()")')
+    ).toBeVisible()
+  })
+
+  test('clicking confirm button replaces CTA with trigger-active indicator', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('[id^="setup-cta-"]')
+    await page.locator('button:has-text("Done — I ran setup()")').click()
+    await expect(page.locator('[id^="setup-done-"]')).toBeVisible()
+    await expect(page.locator('[id^="setup-done-"]')).toContainText(
+      'Hourly trigger is active'
+    )
+    await expect(page.locator('[id^="setup-cta-"]')).toHaveCount(0)
+  })
+
+  test('handleDeploy shows trigger-active when setup already confirmed in localStorage', async ({
+    page,
+  }) => {
+    // Pre-seed setup confirmation in localStorage so the CTA is skipped
+    await mockSuccessfulDeploy(page)
+    await page.evaluate(() => {
+      localStorage.setItem(
+        'gas_copilot_setup_done',
+        JSON.stringify({ 'mock-project-id-abc': true })
+      )
+    })
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+    await expect(page.locator('[id^="setup-done-"]')).toBeVisible()
+    await expect(page.locator('[id^="setup-done-"]')).toContainText(
+      'Hourly trigger is active'
+    )
+    await expect(page.locator('[id^="setup-cta-"]')).toHaveCount(0)
+  })
+
   test('deploy button resets to "Deploy to my account" after successful deploy', async ({
     page,
   }) => {

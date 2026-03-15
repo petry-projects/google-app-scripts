@@ -420,6 +420,9 @@
       // localStorage key used to persist deployed scriptIds for idempotency.
       const DEPLOY_STORAGE_KEY = 'gas_copilot_deployed'
 
+      // localStorage key used to record which projects have had setup() run.
+      const SETUP_STORAGE_KEY = 'gas_copilot_setup_done'
+
       // ── State ─────────────────────────────────────────────────────────────────────
 
       let tokenClient = null
@@ -457,6 +460,46 @@
           // best-effort; ignore storage errors
         }
       }
+
+      /**
+       * Returns true if the user has previously confirmed that setup() was
+       * run for the given Apps Script project ID.
+       */
+      function isSetupDone(scriptId) {
+        try {
+          const map = JSON.parse(
+            localStorage.getItem(SETUP_STORAGE_KEY) || '{}'
+          )
+          return !!map[scriptId]
+        } catch {
+          return false
+        }
+      }
+
+      /**
+       * Records that setup() has been run for scriptId and updates the
+       * on-screen CTA to reflect the trigger is now active.
+       * Exposed as window.confirmSetupDone for use by inline onclick handlers.
+       */
+      function confirmSetupDone(scriptId) {
+        try {
+          const map = JSON.parse(
+            localStorage.getItem(SETUP_STORAGE_KEY) || '{}'
+          )
+          map[scriptId] = true
+          localStorage.setItem(SETUP_STORAGE_KEY, JSON.stringify(map))
+        } catch {
+          // best-effort; ignore storage errors
+        }
+        const cta = document.getElementById('setup-cta-' + scriptId)
+        if (cta) {
+          cta.outerHTML =
+            `<span id="setup-done-${scriptId}" ` +
+            `style="font-size:12px;color:#137333;display:block;margin-top:8px;">` +
+            `✅ Hourly trigger is active.</span>`
+        }
+      }
+      window.confirmSetupDone = confirmSetupDone
 
       /**
        * Generates the source for setup.gs — an idempotent function that
@@ -659,25 +702,41 @@
             deployedProjects.push({ scriptId: projectId, title: projectTitle })
           }
 
-          const linksHtml = deployedProjects
-            .map(
-              (p) =>
-                `<a class="result-link" href="https://script.google.com/d/${p.scriptId}/edit" target="_blank" rel="noopener" style="margin-top:12px;display:block;">
-        ${escapeHtml(p.title)} ↗
-      </a>`
-            )
-            .join('')
-
           const countMsg =
             deployedProjects.length === 1
               ? `Your project <em>${escapeHtml(deployedProjects[0].title)}</em> is ready.`
               : `${deployedProjects.length} projects deployed successfully.`
 
-          const triggerNote =
-            `<span style="font-size:12px;color:#b06000;display:block;margin-top:8px;">` +
-            `⏱ To activate the hourly trigger: open the script, then run ` +
-            `<strong>setup()</strong> once from the editor.` +
-            `</span>`
+          const projectSectionsHtml = deployedProjects
+            .map((p) => {
+              const link =
+                `<a class="result-link" href="https://script.google.com/d/${p.scriptId}/edit" ` +
+                `target="_blank" rel="noopener" style="margin-top:12px;display:block;">` +
+                `${escapeHtml(p.title)} ↗</a>`
+
+              const triggerSection = isSetupDone(p.scriptId)
+                ? `<span id="setup-done-${p.scriptId}" ` +
+                  `style="font-size:12px;color:#137333;display:block;margin-top:8px;">` +
+                  `✅ Hourly trigger is active.</span>`
+                : `<div id="setup-cta-${p.scriptId}" ` +
+                  `style="background:#fff8e1;border:1px solid #f9a825;border-radius:6px;` +
+                  `padding:12px 16px;margin-top:12px;">` +
+                  `<strong style="font-size:13px;">⏱ One more step — activate the hourly trigger</strong>` +
+                  `<ol style="margin:8px 0 10px 18px;font-size:13px;line-height:1.7;">` +
+                  `<li>Click the script link above to open it in Apps Script</li>` +
+                  `<li>In the toolbar, click <strong>Run</strong></li>` +
+                  `<li>Select <strong>setup</strong> from the dropdown</li>` +
+                  `</ol>` +
+                  `<button class="btn" ` +
+                  `style="background:#137333;color:#fff;border:none;padding:7px 14px;` +
+                  `border-radius:4px;font-size:13px;cursor:pointer;" ` +
+                  `onclick="window.confirmSetupDone('${p.scriptId}')">` +
+                  `✅ Done — I ran setup()</button>` +
+                  `</div>`
+
+              return link + triggerSection
+            })
+            .join('')
 
           showStatus(
             'ok',
@@ -688,8 +747,7 @@
         follow the <strong>README</strong> to complete configuration
         (e.g. set label names, document IDs, etc.).
       </span>
-      ${triggerNote}
-      ${linksHtml}
+      ${projectSectionsHtml}
     `
           )
         } catch (err) {
