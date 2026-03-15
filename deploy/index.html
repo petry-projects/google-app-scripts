@@ -266,6 +266,86 @@
         background: #eee;
       }
 
+      /* ── Config panel (Step 4) ───────────────────────────────────────────── */
+      #config-area {
+        margin-top: 0;
+      }
+      .config-panel {
+        margin-bottom: 20px;
+      }
+      .config-panel + .config-panel {
+        border-top: 1px solid #dadce0;
+        padding-top: 20px;
+      }
+      .config-row {
+        border: 1px solid #dadce0;
+        border-radius: 6px;
+        padding: 14px;
+        margin-bottom: 12px;
+      }
+      .config-fields {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px 16px;
+      }
+      .config-field > label {
+        font-size: 12px;
+        color: #5f6368;
+        margin-bottom: 4px;
+      }
+      .config-field select,
+      .config-field input[type='text'],
+      .config-field input[type='number'] {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid #dadce0;
+        border-radius: 4px;
+        font-size: 13px;
+        color: #202124;
+      }
+      .picker-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .picker-name {
+        flex: 1;
+        font-size: 13px;
+        color: #5f6368;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+      }
+      .btn-sm {
+        padding: 6px 12px;
+        font-size: 12px;
+      }
+      .btn-danger {
+        background: #fce8e6;
+        color: #c5221f;
+        border: 1px solid #f5c6cb;
+      }
+      .btn-danger:hover {
+        background: #f5c6cb;
+      }
+      .config-row-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 10px;
+      }
+      .config-add-save {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid #f1f3f4;
+      }
+      .save-status {
+        font-size: 13px;
+      }
+
       /* ── Spinner ─────────────────────────────────────────────────────────── */
       .spinner {
         width: 18px;
@@ -356,10 +436,16 @@
       <div id="status-area">
         <div id="status-msg" class="status-msg"></div>
       </div>
+
+      <!-- Step 4 – Configure (rendered after successful deploy) -->
+      <div id="config-area"></div>
     </div>
 
     <!-- Google Identity Services -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+    <!-- Google APIs (Drive Picker) -->
+    <script src="https://apis.google.com/js/api.js" async defer></script>
 
     <script>
       /**
@@ -378,8 +464,17 @@
       const OAUTH_CLIENT_ID =
         '873060687431-smmudbpd5rlogt0r7immp0u3tdqb2t3p.apps.googleusercontent.com'
 
-      // Required OAuth scope: create, read, and update Apps Script projects.
-      const OAUTH_SCOPE = 'https://www.googleapis.com/auth/script.projects'
+      // Required OAuth scopes:
+      //   script.projects   — create, read, and update Apps Script projects
+      //   drive.readonly    — browse and pick Drive resources via the Picker API
+      //   gmail.labels      — list Gmail labels for the config dropdowns
+      //   calendar.readonly — list calendars for the config dropdowns
+      const OAUTH_SCOPE = [
+        'https://www.googleapis.com/auth/script.projects',
+        'https://www.googleapis.com/auth/drive.readonly',
+        'https://www.googleapis.com/auth/gmail.labels',
+        'https://www.googleapis.com/auth/calendar.readonly',
+      ].join(' ')
 
       // Script catalog — mirrors src/deploy/index.js getScriptCatalog().
       const SCRIPT_CATALOG = [
@@ -405,6 +500,12 @@
       const GITHUB_RAW_BASE =
         'https://raw.githubusercontent.com/petry-projects/google-app-scripts/main/src'
 
+      // Gmail REST API base URL.
+      const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1'
+
+      // Google Calendar REST API base URL.
+      const CALENDAR_API = 'https://www.googleapis.com/calendar/v3'
+
       // Default Apps Script manifest required by the API for every project.
       // oauthScopes is intentionally omitted — Google infers required scopes
       // from the uploaded code so the project's runtime permissions are never
@@ -428,6 +529,8 @@
 
       let tokenClient = null
       let accessToken = null
+      // Incrementing counter for unique config row IDs.
+      let configRowCounter = 0
 
       // ── Idempotency helpers ───────────────────────────────────────────────────────
 
@@ -736,7 +839,11 @@
               }),
             })
 
-            deployedProjects.push({ scriptId: projectId, title: projectTitle })
+            deployedProjects.push({
+              scriptId: projectId,
+              title: projectTitle,
+              catalogId,
+            })
           }
 
           const setupStepsHtml =
@@ -785,12 +892,14 @@
             `
       ✅ <strong>${deployedProjects.length === 1 ? 'Script deployed!' : `${deployedProjects.length} scripts deployed!`}</strong>
       <span style="font-size:13px;color:#137333;display:block;margin-top:4px;">
-        Follow the <strong>README</strong> for each script to complete configuration
-        (e.g. set label names, document IDs, etc.).
+        Scroll down to <strong>Step 4</strong> to configure each script.
       </span>
       ${projectSectionsHtml}
     `
           )
+
+          // Render Step 4 configuration panels (errors are non-fatal).
+          renderConfigSection(deployedProjects).catch(() => {})
         } catch (err) {
           const isApiDisabled =
             err.message && err.message.includes('Apps Script API')
@@ -820,6 +929,448 @@
           btn.disabled = false
           btn.innerHTML = 'Deploy to my account'
           setDeployEnabled()
+        }
+      }
+
+      // ── Step 4: Configure ─────────────────────────────────────────────────────────
+
+      /**
+       * Loads Gmail labels from the Gmail API.
+       * Returns an array of { id, name } objects sorted by name.
+       */
+      async function loadGmailLabels() {
+        const data = await apiFetch(`${GMAIL_API}/users/me/labels`)
+        return (data.labels || []).sort((a, b) => a.name.localeCompare(b.name))
+      }
+
+      /**
+       * Loads the user's calendar list from the Calendar API.
+       * Returns an array of { id, summary } objects sorted by summary.
+       */
+      async function loadCalendars() {
+        const data = await apiFetch(`${CALENDAR_API}/users/me/calendarList`)
+        return (data.items || []).sort((a, b) =>
+          a.summary.localeCompare(b.summary)
+        )
+      }
+
+      /**
+       * Opens the Google Drive Picker for the given viewId.
+       * Calls callback({ id, name }) when the user picks a resource.
+       */
+      function openPicker(viewId, token, callback) {
+        if (typeof gapi === 'undefined') {
+          alert(
+            'Google APIs not available. Please refresh the page and try again.'
+          )
+          return
+        }
+        gapi.load('picker', () => {
+          const view = new google.picker.DocsView(viewId)
+          if (viewId === google.picker.ViewId.FOLDERS) {
+            view.setSelectFolderEnabled(true).setIncludeFolders(true)
+          }
+          const picker = new google.picker.PickerBuilder()
+            .addView(view)
+            .setOAuthToken(token)
+            .setCallback((data) => {
+              if (
+                data[google.picker.Response.ACTION] ===
+                google.picker.Action.PICKED
+              ) {
+                const doc = data[google.picker.Response.DOCUMENTS][0]
+                callback({
+                  id: doc[google.picker.Document.ID],
+                  name: doc[google.picker.Document.NAME],
+                })
+              }
+            })
+            .build()
+          picker.setVisible(true)
+        })
+      }
+
+      // ── Picker field handlers (exposed as window.* for inline onclick) ──────────
+
+      function handlePickDoc(rowId) {
+        openPicker(
+          google.picker.ViewId.DOCUMENTS,
+          accessToken,
+          ({ id, name }) => {
+            document.getElementById('doc-id-' + rowId).value = id
+            document.getElementById('doc-name-' + rowId).textContent = name
+          }
+        )
+      }
+      window.handlePickDoc = handlePickDoc
+
+      function handlePickFolder(rowId) {
+        openPicker(
+          google.picker.ViewId.FOLDERS,
+          accessToken,
+          ({ id, name }) => {
+            document.getElementById('folder-id-' + rowId).value = id
+            document.getElementById('folder-name-' + rowId).textContent = name
+          }
+        )
+      }
+      window.handlePickFolder = handlePickFolder
+
+      function handlePickSheet(rowId) {
+        openPicker(
+          google.picker.ViewId.SPREADSHEETS,
+          accessToken,
+          ({ id, name }) => {
+            document.getElementById('sheet-id-' + rowId).value = id
+            document.getElementById('sheet-name-display-' + rowId).textContent =
+              name
+          }
+        )
+      }
+      window.handlePickSheet = handlePickSheet
+
+      // ── Row management ────────────────────────────────────────────────────────────
+
+      /**
+       * Removes the config row with the given rowId from the DOM.
+       * Exposed as window.removeConfigRow for inline onclick handlers.
+       */
+      function removeConfigRow(rowId) {
+        const row = document.getElementById('row-' + rowId)
+        if (row) row.remove()
+      }
+      window.removeConfigRow = removeConfigRow
+
+      // ── Row HTML builders ─────────────────────────────────────────────────────────
+
+      function makeLabelOptions(labels) {
+        return labels
+          .map(
+            (l) =>
+              `<option value="${escapeHtml(l.name)}">${escapeHtml(l.name)}</option>`
+          )
+          .join('')
+      }
+
+      function makeCalendarOptions(calendars) {
+        return calendars
+          .map(
+            (c) =>
+              `<option value="${escapeHtml(c.id)}">${escapeHtml(c.summary)}</option>`
+          )
+          .join('')
+      }
+
+      function buildGmailRowHtml(rowId, labelOpts) {
+        const rid = escapeHtml(rowId)
+        return (
+          `<div class="config-row" id="row-${rid}">` +
+          `<div class="config-fields">` +
+          `<div class="config-field">` +
+          `<label>Trigger label</label>` +
+          `<select name="triggerLabel"><option value="">— select —</option>${labelOpts}</select>` +
+          `</div>` +
+          `<div class="config-field">` +
+          `<label>Processed label</label>` +
+          `<select name="processedLabel"><option value="">— select —</option>${labelOpts}</select>` +
+          `</div>` +
+          `<div class="config-field">` +
+          `<label>Destination Google Doc</label>` +
+          `<div class="picker-row">` +
+          `<span class="picker-name" id="doc-name-${rid}">None selected</span>` +
+          `<input type="hidden" name="docId" id="doc-id-${rid}" value="">` +
+          `<button type="button" class="btn btn-outline btn-sm"` +
+          ` onclick="window.handlePickDoc('${rid}')">Pick Doc</button>` +
+          `</div></div>` +
+          `<div class="config-field">` +
+          `<label>Destination Drive folder</label>` +
+          `<div class="picker-row">` +
+          `<span class="picker-name" id="folder-name-${rid}">None selected</span>` +
+          `<input type="hidden" name="folderId" id="folder-id-${rid}" value="">` +
+          `<button type="button" class="btn btn-outline btn-sm"` +
+          ` onclick="window.handlePickFolder('${rid}')">Pick Folder</button>` +
+          `</div></div>` +
+          `<div class="config-field">` +
+          `<label>Batch size (optional)</label>` +
+          `<input type="number" name="batchSize" value="250" min="1">` +
+          `</div>` +
+          `</div>` +
+          `<div class="config-row-actions">` +
+          `<button type="button" class="btn btn-danger btn-sm"` +
+          ` onclick="window.removeConfigRow('${rid}')">Remove</button>` +
+          `</div></div>`
+        )
+      }
+
+      function buildCalendarRowHtml(rowId, calendarOpts) {
+        const rid = escapeHtml(rowId)
+        return (
+          `<div class="config-row" id="row-${rid}">` +
+          `<div class="config-fields">` +
+          `<div class="config-field">` +
+          `<label>Calendar</label>` +
+          `<select name="calendarId"><option value="">— select —</option>${calendarOpts}</select>` +
+          `</div>` +
+          `<div class="config-field">` +
+          `<label>Spreadsheet</label>` +
+          `<div class="picker-row">` +
+          `<span class="picker-name" id="sheet-name-display-${rid}">None selected</span>` +
+          `<input type="hidden" name="spreadsheetId" id="sheet-id-${rid}" value="">` +
+          `<button type="button" class="btn btn-outline btn-sm"` +
+          ` onclick="window.handlePickSheet('${rid}')">Pick Sheet</button>` +
+          `</div></div>` +
+          `<div class="config-field">` +
+          `<label>Sheet name</label>` +
+          `<input type="text" name="sheetName" value="Sheet1" placeholder="Sheet1">` +
+          `</div>` +
+          `</div>` +
+          `<div class="config-row-actions">` +
+          `<button type="button" class="btn btn-danger btn-sm"` +
+          ` onclick="window.removeConfigRow('${rid}')">Remove</button>` +
+          `</div></div>`
+        )
+      }
+
+      // ── Row add helpers ───────────────────────────────────────────────────────────
+
+      function addGmailConfigRow(projectId, labels) {
+        const container = document.getElementById('config-rows-' + projectId)
+        if (!container) return
+        const rowId = 'r' + ++configRowCounter
+        const labelOpts = makeLabelOptions(labels)
+        container.insertAdjacentHTML(
+          'beforeend',
+          buildGmailRowHtml(rowId, labelOpts)
+        )
+      }
+
+      function addCalendarConfigRow(projectId, calendars) {
+        const container = document.getElementById('config-rows-' + projectId)
+        if (!container) return
+        const rowId = 'r' + ++configRowCounter
+        const calOpts = makeCalendarOptions(calendars)
+        container.insertAdjacentHTML(
+          'beforeend',
+          buildCalendarRowHtml(rowId, calOpts)
+        )
+      }
+
+      /**
+       * Adds a new config row for the given project.
+       * Exposed as window.handleAddConfigRow for inline onclick handlers.
+       */
+      window.handleAddConfigRow = function (projectId, catalogId) {
+        const panel = document.getElementById('config-panel-' + projectId)
+        if (!panel) return
+        if (catalogId === 'gmail-to-drive-by-labels') {
+          addGmailConfigRow(projectId, panel._gmailLabels || [])
+        } else if (catalogId === 'calendar-to-sheets') {
+          addCalendarConfigRow(projectId, panel._calendars || [])
+        }
+      }
+
+      // ── Config source generators ──────────────────────────────────────────────────
+
+      /**
+       * Generates the config.gs source for gmail-to-drive-by-labels.
+       * Exposed as window.buildGmailConfigSource for testing.
+       */
+      function buildGmailConfigSource(entries) {
+        const rows = entries.map((e) => {
+          const batchSize = parseInt(e.batchSize, 10) || 250
+          return (
+            '    {\n' +
+            `      triggerLabel: ${JSON.stringify(e.triggerLabel)},\n` +
+            `      processedLabel: ${JSON.stringify(e.processedLabel)},\n` +
+            `      docId: ${JSON.stringify(e.docId)},\n` +
+            `      folderId: ${JSON.stringify(e.folderId)},\n` +
+            `      batchSize: ${batchSize},\n` +
+            '    }'
+          )
+        })
+        return (
+          'function getProcessConfig() {\n' +
+          '  return [\n' +
+          rows.join(',\n') +
+          '\n  ];\n' +
+          '}\n'
+        )
+      }
+      window.buildGmailConfigSource = buildGmailConfigSource
+
+      /**
+       * Generates the config.gs source for calendar-to-sheets.
+       * Exposed as window.buildCalendarConfigSource for testing.
+       */
+      function buildCalendarConfigSource(entries) {
+        const rows = entries.map(
+          (e) =>
+            '  { ' +
+            `spreadsheetId: ${JSON.stringify(e.spreadsheetId)}, ` +
+            `sheetName: ${JSON.stringify(e.sheetName || 'Sheet1')}, ` +
+            `calendarId: ${JSON.stringify(e.calendarId)} ` +
+            '}'
+        )
+        return `var SYNC_CONFIGS = [\n${rows.join(',\n')}\n];\n`
+      }
+      window.buildCalendarConfigSource = buildCalendarConfigSource
+
+      // ── Entry collection ──────────────────────────────────────────────────────────
+
+      function collectGmailEntries(containerId) {
+        const container = document.getElementById(containerId)
+        if (!container) return []
+        return Array.from(container.querySelectorAll('.config-row')).map(
+          (row) => ({
+            triggerLabel: row.querySelector('[name="triggerLabel"]').value,
+            processedLabel: row.querySelector('[name="processedLabel"]').value,
+            docId: row.querySelector('[name="docId"]').value,
+            folderId: row.querySelector('[name="folderId"]').value,
+            batchSize: row.querySelector('[name="batchSize"]').value,
+          })
+        )
+      }
+
+      function collectCalendarEntries(containerId) {
+        const container = document.getElementById(containerId)
+        if (!container) return []
+        return Array.from(container.querySelectorAll('.config-row')).map(
+          (row) => ({
+            calendarId: row.querySelector('[name="calendarId"]').value,
+            spreadsheetId: row.querySelector('[name="spreadsheetId"]').value,
+            sheetName:
+              row.querySelector('[name="sheetName"]').value || 'Sheet1',
+          })
+        )
+      }
+
+      // ── Save configuration ────────────────────────────────────────────────────────
+
+      /**
+       * Reads the deployed project's content, replaces config.gs with the
+       * values entered by the user, and writes it back via the Apps Script API.
+       * Exposed as window.handleSaveConfig for inline onclick handlers.
+       */
+      async function handleSaveConfig(projectId, catalogId) {
+        const saveBtn = document.getElementById('save-btn-' + projectId)
+        const saveStatus = document.getElementById('save-status-' + projectId)
+        const rowsContainerId = 'config-rows-' + projectId
+
+        saveBtn.disabled = true
+        saveBtn.innerHTML = '<span class="spinner"></span> Saving…'
+        saveStatus.textContent = ''
+
+        try {
+          let newSource
+          if (catalogId === 'gmail-to-drive-by-labels') {
+            const entries = collectGmailEntries(rowsContainerId)
+            newSource = buildGmailConfigSource(entries)
+          } else if (catalogId === 'calendar-to-sheets') {
+            const entries = collectCalendarEntries(rowsContainerId)
+            newSource = buildCalendarConfigSource(entries)
+          } else {
+            throw new Error('Unknown catalog ID: ' + catalogId)
+          }
+
+          // Read current project files.
+          const content = await apiFetch(
+            `${APPS_SCRIPT_API}/projects/${projectId}/content`
+          )
+          const files = (content.files || []).filter((f) => f.name !== 'config')
+          files.push({ name: 'config', type: 'SERVER_JS', source: newSource })
+
+          // Write updated files.
+          await apiFetch(`${APPS_SCRIPT_API}/projects/${projectId}/content`, {
+            method: 'PUT',
+            body: JSON.stringify({ files }),
+          })
+
+          saveStatus.innerHTML =
+            '<span style="color:#137333;">✅ Configuration saved!</span>'
+        } catch (err) {
+          saveStatus.innerHTML = `<span style="color:#c5221f;">❌ ${escapeHtml(err.message)}</span>`
+        } finally {
+          saveBtn.disabled = false
+          saveBtn.innerHTML = 'Save Configuration'
+        }
+      }
+      window.handleSaveConfig = handleSaveConfig
+
+      // ── Step 4 rendering ──────────────────────────────────────────────────────────
+
+      /**
+       * Renders the Step 4 "Configure scripts" card and one config panel per
+       * deployed project.  Async because it loads Gmail labels / calendars.
+       */
+      async function renderConfigSection(deployedProjects) {
+        const area = document.getElementById('config-area')
+        if (!area) return
+
+        // Clear any previous render (idempotent re-deploy).
+        area.innerHTML = ''
+
+        const card = document.createElement('div')
+        card.className = 'card'
+        card.id = 'step4-card'
+        card.innerHTML =
+          `<h2><span class="step-badge">4</span>Configure scripts</h2>` +
+          `<p style="font-size:13px;color:#5f6368;margin-bottom:16px;">` +
+          `Set up each deployed script. Changes are saved directly to your Apps Script project.` +
+          `</p>` +
+          `<div id="config-panels"></div>`
+        area.appendChild(card)
+
+        const panelsContainer = card.querySelector('#config-panels')
+
+        for (const { scriptId, catalogId } of deployedProjects) {
+          const scriptMeta = SCRIPT_CATALOG.find((s) => s.id === catalogId)
+          const scriptName = scriptMeta ? scriptMeta.name : catalogId
+          const safeId = escapeHtml(scriptId)
+          const safeCatalogId = escapeHtml(catalogId)
+
+          const panelEl = document.createElement('div')
+          panelEl.className = 'config-panel'
+          panelEl.id = 'config-panel-' + scriptId
+          panelEl.innerHTML =
+            `<h3 style="font-size:14px;font-weight:500;margin-bottom:12px;">` +
+            `${escapeHtml(scriptName)}</h3>` +
+            `<div id="config-rows-${safeId}"></div>` +
+            `<div class="config-add-save">` +
+            `<button type="button" class="btn btn-outline btn-sm"` +
+            ` id="add-btn-${safeId}"` +
+            ` onclick="window.handleAddConfigRow('${safeId}','${safeCatalogId}')">` +
+            `+ Add entry</button>` +
+            `<div style="display:flex;align-items:center;gap:12px;">` +
+            `<span class="save-status" id="save-status-${safeId}"></span>` +
+            `<button type="button" class="btn btn-primary btn-sm"` +
+            ` id="save-btn-${safeId}"` +
+            ` onclick="window.handleSaveConfig('${safeId}','${safeCatalogId}')">` +
+            `Save Configuration</button>` +
+            `</div></div>`
+          panelsContainer.appendChild(panelEl)
+
+          // Load API resources and add the initial row.
+          try {
+            if (catalogId === 'gmail-to-drive-by-labels') {
+              const labels = await loadGmailLabels()
+              panelEl._gmailLabels = labels
+              addGmailConfigRow(scriptId, labels)
+            } else if (catalogId === 'calendar-to-sheets') {
+              const calendars = await loadCalendars()
+              panelEl._calendars = calendars
+              addCalendarConfigRow(scriptId, calendars)
+            }
+          } catch (err) {
+            const rowsContainer = document.getElementById(
+              'config-rows-' + scriptId
+            )
+            if (rowsContainer) {
+              rowsContainer.innerHTML =
+                `<p style="color:#c5221f;font-size:13px;">` +
+                `Failed to load resources: ${escapeHtml(err.message)}` +
+                `</p>`
+            }
+          }
         }
       }
 

@@ -7,6 +7,7 @@
  * External dependencies are fully mocked:
  *   - Google Identity Services (GIS) script blocked via page.route() and
  *     replaced with a synchronous mock injected via addInitScript.
+ *   - Google APIs (gapi / Drive Picker) script blocked and replaced with mock.
  *   - GitHub raw file requests intercepted via page.route().
  *   - Apps Script REST API requests intercepted via page.route().
  */
@@ -20,7 +21,7 @@ const PAGE_URL = `file://${path.resolve(__dirname, '..', 'index.html')}`
 
 /**
  * Injected into the browser before any page scripts run.
- * Replaces google.accounts.oauth2 with a synchronous stub.
+ * Sets window.google.accounts.oauth2 with a synchronous stub.
  *
  * Modes (controlled via window.__authMode):
  *   'success' – immediately calls callback with a fake access_token
@@ -30,29 +31,100 @@ function injectGisMock() {
   window.__authMode = 'success'
   window.__clientIdUsed = null
 
-  window.google = {
-    accounts: {
-      oauth2: {
-        initTokenClient(config) {
-          window.__clientIdUsed = config.client_id
-          return {
-            requestAccessToken() {
-              if (window.__authMode === 'success') {
-                config.callback({ access_token: 'mock-access-token-xyz' })
-              } else {
-                config.callback({ error: 'access_denied' })
-              }
-            },
-          }
-        },
+  // Use || {} so this is safe to call before or after injectGapiMock.
+  window.google = window.google || {}
+  window.google.accounts = {
+    oauth2: {
+      initTokenClient(config) {
+        window.__clientIdUsed = config.client_id
+        return {
+          requestAccessToken() {
+            if (window.__authMode === 'success') {
+              config.callback({ access_token: 'mock-access-token-xyz' })
+            } else {
+              config.callback({ error: 'access_denied' })
+            }
+          },
+        }
       },
+    },
+  }
+}
+
+// ── gapi / Drive Picker mock ──────────────────────────────────────────────────
+
+/**
+ * Injected after injectGisMock.
+ * Provides window.gapi and window.google.picker stubs so that
+ * openPicker() and the config panel work without real Google APIs.
+ */
+function injectGapiMock() {
+  window.__pickerOpened = false
+  window.__pickerViewId = null
+  window.__pickerCallback = null
+
+  // gapi.load immediately invokes the callback (picker module "loaded")
+  window.gapi = {
+    load(module, callback) {
+      if (typeof callback === 'function') callback()
+    },
+  }
+
+  // Use || {} so this is safe to call before or after injectGisMock.
+  window.google = window.google || {}
+  window.google.picker = {
+    ViewId: {
+      DOCUMENTS: 'documents',
+      FOLDERS: 'folders',
+      SPREADSHEETS: 'spreadsheets',
+    },
+    Response: {
+      ACTION: 'action',
+      DOCUMENTS: 'docs',
+    },
+    Action: {
+      PICKED: 'picked',
+    },
+    Document: {
+      ID: 'id',
+      NAME: 'name',
+    },
+    DocsView: class {
+      constructor(viewId) {
+        window.__pickerViewId = viewId
+      }
+      setSelectFolderEnabled() {
+        return this
+      }
+      setIncludeFolders() {
+        return this
+      }
+    },
+    PickerBuilder: class {
+      addView() {
+        return this
+      }
+      setOAuthToken() {
+        return this
+      }
+      setCallback(cb) {
+        window.__pickerCallback = cb
+        return this
+      }
+      build() {
+        return {
+          setVisible(v) {
+            if (v) window.__pickerOpened = true
+          },
+        }
+      }
     },
   }
 }
 
 // ── Route helpers ─────────────────────────────────────────────────────────────
 
-/** Sets up routes for a complete, successful deploy flow. */
+/** Sets up routes for a complete, successful deploy + configure flow. */
 async function mockSuccessfulDeploy(page) {
   // GitHub raw source files
   await page.route('https://raw.githubusercontent.com/**', async (route) => {
@@ -63,7 +135,7 @@ async function mockSuccessfulDeploy(page) {
     })
   })
 
-  // Apps Script REST API — project creation and content upload
+  // Apps Script REST API — project creation, content upload, and content read
   await page.route('https://script.googleapis.com/**', async (route) => {
     const url = route.request().url()
     const method = route.request().method()
@@ -74,6 +146,18 @@ async function mockSuccessfulDeploy(page) {
         contentType: 'application/json',
         body: JSON.stringify({ scriptId: 'mock-project-id-abc' }),
       })
+    } else if (method === 'GET' && url.includes('/content')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          files: [
+            { name: 'appsscript', type: 'JSON', source: '{}' },
+            { name: 'code', type: 'SERVER_JS', source: '// code' },
+            { name: 'config', type: 'SERVER_JS', source: '// config' },
+          ],
+        }),
+      })
     } else if (method === 'PUT' && url.includes('/content')) {
       await route.fulfill({
         status: 200,
@@ -83,6 +167,35 @@ async function mockSuccessfulDeploy(page) {
     } else {
       await route.continue()
     }
+  })
+
+  // Gmail labels API
+  await page.route('https://gmail.googleapis.com/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        labels: [
+          { id: 'Label_1', name: 'inbox' },
+          { id: 'Label_2', name: 'archive' },
+          { id: 'Label_3', name: 'work' },
+        ],
+      }),
+    })
+  })
+
+  // Calendar list API
+  await page.route('https://www.googleapis.com/calendar/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [
+          { id: 'primary', summary: 'Primary Calendar' },
+          { id: 'work@example.com', summary: 'Work' },
+        ],
+      }),
+    })
   })
 }
 
@@ -95,11 +208,20 @@ async function signIn(page) {
 
 test.describe('deploy index.html', () => {
   test.beforeEach(async ({ page }) => {
-    // Block the real GIS script so it cannot overwrite our mock
+    // Block external scripts so they cannot overwrite our mocks
     await page.route('https://accounts.google.com/**', (route) => route.abort())
+    await page.route('https://apis.google.com/**', (route) => route.abort())
+    // Abort Gmail / Calendar by default; individual tests may override.
+    await page.route('https://gmail.googleapis.com/**', (route) =>
+      route.abort()
+    )
+    await page.route('https://www.googleapis.com/calendar/**', (route) =>
+      route.abort()
+    )
 
-    // Inject the synchronous GIS mock before page scripts run
+    // Inject mocks before page scripts run (order matters: GIS first, then gapi)
     await page.addInitScript(injectGisMock)
+    await page.addInitScript(injectGapiMock)
 
     await page.goto(PAGE_URL)
   })
@@ -1080,5 +1202,591 @@ test.describe('deploy index.html', () => {
     await page.waitForSelector('.status-ok')
 
     expect(capturedTitle).toBe('Petry-Projects – Gmail to Drive By Labels')
+  })
+
+  // ── Step 4: Configure ───────────────────────────────────────────────────────
+
+  test('Step 4 card appears after successful deployment', async ({ page }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+    // Step 4 card should be in the DOM
+    await expect(page.locator('#step4-card')).toBeVisible()
+    await expect(page.locator('#step4-card')).toContainText('Configure scripts')
+  })
+
+  test('Step 4 card shows step badge with number 4', async ({ page }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+    await expect(page.locator('#step4-card .step-badge')).toHaveText('4')
+  })
+
+  test('Step 4 shows a config panel for gmail-to-drive-by-labels', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+    await expect(page.locator('#step4-card')).toContainText(
+      'Gmail to Drive By Labels'
+    )
+    await expect(page.locator('[id^="config-panel-"]')).toHaveCount(1)
+  })
+
+  test('Step 4 shows a config panel for calendar-to-sheets', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+    await expect(page.locator('#step4-card')).toContainText(
+      'Calendar to Sheets'
+    )
+    await expect(page.locator('[id^="config-panel-"]')).toHaveCount(1)
+  })
+
+  test('Step 4 shows two config panels when both scripts are deployed', async ({
+    page,
+  }) => {
+    let counter = 0
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        counter++
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ scriptId: `id-${counter}` }),
+        })
+      } else if (url.includes('/content')) {
+        await route.fulfill({ status: 200, body: '{}' })
+      } else {
+        await route.continue()
+      }
+    })
+    await page.route('https://gmail.googleapis.com/**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        body: JSON.stringify({ labels: [] }),
+      })
+    })
+    await page.route(
+      'https://www.googleapis.com/calendar/**',
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ items: [] }),
+        })
+      }
+    )
+
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+
+    await expect(page.locator('[id^="config-panel-"]')).toHaveCount(2)
+  })
+
+  test('Gmail labels populate the trigger and processed label dropdowns', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+
+    // Wait for a config row to appear (labels loaded)
+    await page.waitForSelector('.config-row')
+
+    // Trigger label dropdown should contain the mocked labels
+    const triggerSelect = page
+      .locator('.config-row [name="triggerLabel"]')
+      .first()
+    await expect(triggerSelect).toContainText('inbox')
+    await expect(triggerSelect).toContainText('archive')
+    await expect(triggerSelect).toContainText('work')
+
+    // Processed label dropdown should also be populated
+    const processedSelect = page
+      .locator('.config-row [name="processedLabel"]')
+      .first()
+    await expect(processedSelect).toContainText('inbox')
+  })
+
+  test('Calendar list populates the calendar dropdown', async ({ page }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+
+    await page.waitForSelector('.config-row')
+
+    const calSelect = page.locator('.config-row [name="calendarId"]').first()
+    await expect(calSelect).toContainText('Primary Calendar')
+    await expect(calSelect).toContainText('Work')
+  })
+
+  test('initial config row is added automatically after deploy', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('.config-row')
+
+    await expect(page.locator('.config-row')).toHaveCount(1)
+  })
+
+  test('clicking Add entry adds a new config row for gmail-to-drive-by-labels', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('.config-row')
+
+    await page.locator('[id^="add-btn-"]').first().click()
+    await expect(page.locator('.config-row')).toHaveCount(2)
+  })
+
+  test('clicking Remove deletes the config row', async ({ page }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('.config-row')
+
+    // Add a second row so there is one left after removal
+    await page.locator('[id^="add-btn-"]').first().click()
+    await expect(page.locator('.config-row')).toHaveCount(2)
+
+    // Remove the first row
+    await page.locator('.btn-danger').first().click()
+    await expect(page.locator('.config-row')).toHaveCount(1)
+  })
+
+  test('Step 4 shows Save Configuration button', async ({ page }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+
+    await expect(
+      page.locator('button:has-text("Save Configuration")')
+    ).toBeVisible()
+  })
+
+  test('Save Configuration calls GET content then PUT content on Apps Script API', async ({
+    page,
+  }) => {
+    const apiCalls = []
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      apiCalls.push({ method, url })
+      if (method === 'POST' && url.endsWith('/projects')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ scriptId: 'proj-abc' }),
+        })
+      } else if (method === 'GET' && url.includes('/content')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({
+            files: [
+              { name: 'appsscript', type: 'JSON', source: '{}' },
+              { name: 'code', type: 'SERVER_JS', source: '// code' },
+              { name: 'config', type: 'SERVER_JS', source: '// old config' },
+            ],
+          }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        await route.fulfill({ status: 200, body: '{}' })
+      } else {
+        await route.continue()
+      }
+    })
+    await page.route('https://gmail.googleapis.com/**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        body: JSON.stringify({ labels: [{ id: 'L1', name: 'mylabel' }] }),
+      })
+    })
+
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('.config-row')
+
+    await page.locator('button:has-text("Save Configuration")').click()
+    await page.waitForSelector('[id^="save-status-"]:has-text("saved")')
+
+    const contentGetCalls = apiCalls.filter(
+      (c) => c.method === 'GET' && c.url.includes('/projects/proj-abc/content')
+    )
+    const contentPutCalls = apiCalls.filter(
+      (c) => c.method === 'PUT' && c.url.includes('/projects/proj-abc/content')
+    )
+    expect(contentGetCalls.length).toBeGreaterThanOrEqual(1)
+    expect(contentPutCalls.length).toBeGreaterThanOrEqual(1)
+  })
+
+  test('Save Configuration writes new config.gs and keeps other files', async ({
+    page,
+  }) => {
+    let lastPutBody = null
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ scriptId: 'proj-xyz' }),
+        })
+      } else if (method === 'GET' && url.includes('/content')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({
+            files: [
+              { name: 'appsscript', type: 'JSON', source: '{}' },
+              { name: 'code', type: 'SERVER_JS', source: '// code' },
+              { name: 'config', type: 'SERVER_JS', source: '// old' },
+            ],
+          }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        lastPutBody = JSON.parse(route.request().postData())
+        await route.fulfill({ status: 200, body: '{}' })
+      } else {
+        await route.continue()
+      }
+    })
+    await page.route('https://gmail.googleapis.com/**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        body: JSON.stringify({ labels: [{ id: 'L1', name: 'work' }] }),
+      })
+    })
+
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('.config-row')
+
+    // Select a label value and click Save
+    await page
+      .locator('.config-row [name="triggerLabel"]')
+      .first()
+      .selectOption('work')
+    await page
+      .locator('.config-row [name="processedLabel"]')
+      .first()
+      .selectOption('work')
+    await page.locator('button:has-text("Save Configuration")').click()
+    await page.waitForSelector('[id^="save-status-"]:has-text("saved")')
+
+    expect(lastPutBody).not.toBeNull()
+    // appsscript and code files must be preserved
+    expect(lastPutBody.files.find((f) => f.name === 'appsscript')).toBeDefined()
+    expect(lastPutBody.files.find((f) => f.name === 'code')).toBeDefined()
+    // config file must be the new one
+    const configFile = lastPutBody.files.find((f) => f.name === 'config')
+    expect(configFile).toBeDefined()
+    expect(configFile.source).toContain('getProcessConfig')
+    expect(configFile.source).toContain('"work"')
+    // old config source must be replaced
+    expect(configFile.source).not.toContain('// old')
+  })
+
+  test('Save Configuration for calendar-to-sheets writes SYNC_CONFIGS', async ({
+    page,
+  }) => {
+    let lastPutBody = null
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ scriptId: 'cal-proj' }),
+        })
+      } else if (method === 'GET' && url.includes('/content')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({
+            files: [{ name: 'config', type: 'SERVER_JS', source: '// old' }],
+          }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        lastPutBody = JSON.parse(route.request().postData())
+        await route.fulfill({ status: 200, body: '{}' })
+      } else {
+        await route.continue()
+      }
+    })
+    await page.route(
+      'https://www.googleapis.com/calendar/**',
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({
+            items: [{ id: 'primary', summary: 'Primary' }],
+          }),
+        })
+      }
+    )
+
+    await signIn(page)
+    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('.config-row')
+
+    await page
+      .locator('.config-row [name="calendarId"]')
+      .first()
+      .selectOption('primary')
+    await page.locator('button:has-text("Save Configuration")').click()
+    await page.waitForSelector('[id^="save-status-"]:has-text("saved")')
+
+    expect(lastPutBody).not.toBeNull()
+    const configFile = lastPutBody.files.find((f) => f.name === 'config')
+    expect(configFile).toBeDefined()
+    expect(configFile.source).toContain('SYNC_CONFIGS')
+    expect(configFile.source).toContain('"primary"')
+  })
+
+  test('Save Configuration shows success message on success', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('.config-row')
+
+    await page.locator('button:has-text("Save Configuration")').click()
+    await page.waitForSelector('[id^="save-status-"]:has-text("saved")')
+
+    await expect(page.locator('[id^="save-status-"]').first()).toContainText(
+      'Configuration saved'
+    )
+  })
+
+  test('Save Configuration shows error message on failure', async ({
+    page,
+  }) => {
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ scriptId: 'err-proj' }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        await route.fulfill({ status: 200, body: '{}' })
+      } else if (method === 'GET' && url.includes('/content')) {
+        await route.fulfill({
+          status: 403,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: { message: 'Permission denied' } }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+    await page.route('https://gmail.googleapis.com/**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        body: JSON.stringify({ labels: [] }),
+      })
+    })
+
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+    // Labels loaded with empty list, so no rows needed from API
+    // (the initial row still appears, just with no label options)
+    await page.waitForSelector('.config-row')
+
+    await page.locator('button:has-text("Save Configuration")').click()
+    await page.waitForSelector(
+      '[id^="save-status-"]:has-text("Permission denied")'
+    )
+
+    await expect(page.locator('[id^="save-status-"]').first()).toContainText(
+      'Permission denied'
+    )
+  })
+
+  test('buildGmailConfigSource generates correct config.gs source', async ({
+    page,
+  }) => {
+    const source = await page.evaluate(() => {
+      return window.buildGmailConfigSource([
+        {
+          triggerLabel: 'my-label',
+          processedLabel: 'archived',
+          docId: 'doc123',
+          folderId: 'folder456',
+          batchSize: '100',
+        },
+      ])
+    })
+    expect(source).toContain('function getProcessConfig()')
+    expect(source).toContain('"my-label"')
+    expect(source).toContain('"archived"')
+    expect(source).toContain('"doc123"')
+    expect(source).toContain('"folder456"')
+    expect(source).toContain('100')
+  })
+
+  test('buildGmailConfigSource uses default batchSize of 250 when not provided', async ({
+    page,
+  }) => {
+    const source = await page.evaluate(() => {
+      return window.buildGmailConfigSource([
+        {
+          triggerLabel: 'lbl',
+          processedLabel: 'done',
+          docId: 'd',
+          folderId: 'f',
+          batchSize: '',
+        },
+      ])
+    })
+    expect(source).toContain('250')
+  })
+
+  test('buildCalendarConfigSource generates correct config.gs source', async ({
+    page,
+  }) => {
+    const source = await page.evaluate(() => {
+      return window.buildCalendarConfigSource([
+        {
+          calendarId: 'cal@example.com',
+          spreadsheetId: 'sheet789',
+          sheetName: 'MySheet',
+        },
+      ])
+    })
+    expect(source).toContain('SYNC_CONFIGS')
+    expect(source).toContain('"cal@example.com"')
+    expect(source).toContain('"sheet789"')
+    expect(source).toContain('"MySheet"')
+  })
+
+  test('buildCalendarConfigSource uses Sheet1 as default sheetName', async ({
+    page,
+  }) => {
+    const source = await page.evaluate(() => {
+      return window.buildCalendarConfigSource([
+        {
+          calendarId: 'c',
+          spreadsheetId: 's',
+          sheetName: '',
+        },
+      ])
+    })
+    expect(source).toContain('"Sheet1"')
+  })
+
+  test('Step 4 is not shown before deployment', async ({ page }) => {
+    await expect(page.locator('#step4-card')).toHaveCount(0)
+    await expect(page.locator('#config-area')).toBeAttached()
+    await expect(page.locator('#config-area')).toBeEmpty()
+  })
+
+  test('re-deploying replaces previous Step 4 card', async ({ page }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+
+    // Deploy again
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    // Should still be exactly one Step 4 card
+    await expect(page.locator('#step4-card')).toHaveCount(1)
+  })
+
+  test('Step 4 success message directs user to configure', async ({ page }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+    await expect(page.locator('.status-ok')).toContainText('Step 4')
   })
 })
