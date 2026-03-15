@@ -1779,14 +1779,218 @@ test.describe('deploy index.html', () => {
     await expect(page.locator('#step4-card')).toHaveCount(1)
   })
 
-  test('Step 4 success message directs user to configure', async ({ page }) => {
-    await mockSuccessfulDeploy(page)
+  // ── Select all ──────────────────────────────────────────────────────────────
+
+  test('Select all button is present in script list', async ({ page }) => {
+    await expect(page.locator('#btn-select-all')).toBeVisible()
+    await expect(page.locator('#btn-select-all')).toHaveText('Select all')
+  })
+
+  test('Select all checks all script checkboxes', async ({ page }) => {
+    await page.locator('#btn-select-all').click()
+    const checkboxes = page.locator('input[name="script"]')
+    for (const checkbox of await checkboxes.all()) {
+      await expect(checkbox).toBeChecked()
+    }
+  })
+
+  test('Select all button label becomes "Deselect all" when all checked', async ({
+    page,
+  }) => {
+    await page.locator('#btn-select-all').click()
+    await expect(page.locator('#btn-select-all')).toHaveText('Deselect all')
+  })
+
+  test('Deselect all unchecks all script checkboxes', async ({ page }) => {
+    // First check all
+    await page.locator('#btn-select-all').click()
+    // Then deselect all
+    await page.locator('#btn-select-all').click()
+    const checkboxes = page.locator('input[name="script"]')
+    for (const checkbox of await checkboxes.all()) {
+      await expect(checkbox).not.toBeChecked()
+    }
+  })
+
+  test('Select all enables deploy button after sign-in', async ({ page }) => {
     await signIn(page)
+    await page.locator('#btn-select-all').click()
+    await expect(page.locator('#btn-deploy')).toBeEnabled()
+  })
+
+  test('Select all label updates when individual checkboxes are toggled', async ({
+    page,
+  }) => {
+    // Select all then uncheck one — label should revert to "Select all"
+    await page.locator('#btn-select-all').click()
+    await expect(page.locator('#btn-select-all')).toHaveText('Deselect all')
     await page
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
+    await expect(page.locator('#btn-select-all')).toHaveText('Select all')
+  })
+
+  // ── Auto-set sheet name from calendar name ──────────────────────────────────
+
+  test('selecting a calendar auto-fills the sheet name input', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('.status-ok')
-    await expect(page.locator('.status-ok')).toContainText('Step 4')
+    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('.config-row')
+
+    const calSelect = page.locator('.config-row [name="calendarId"]').first()
+    await calSelect.selectOption('work@example.com')
+
+    const sheetName = page.locator('.config-row [name="sheetName"]').first()
+    await expect(sheetName).toHaveValue('Work')
+  })
+
+  test('auto-fill does not overwrite sheet name when calendar is deselected', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('.config-row')
+
+    // Selecting "— select —" (empty value) should not change the sheet name
+    const calSelect = page.locator('.config-row [name="calendarId"]').first()
+    await calSelect.selectOption('primary')
+    const sheetName = page.locator('.config-row [name="sheetName"]').first()
+    await expect(sheetName).toHaveValue('Primary Calendar')
+
+    // Selecting empty should not reset
+    await calSelect.selectOption('')
+    await expect(sheetName).toHaveValue('Primary Calendar')
+  })
+
+  // ── Step 4 appears on sign-in if previously deployed ───────────────────────
+
+  test('Step 4 appears automatically on sign-in when projects were already deployed', async ({
+    page,
+  }) => {
+    // Pre-seed localStorage with a previously deployed project
+    await page.evaluate((key) => {
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          'calendar-to-sheets\nPetry-Projects – Calendar to Sheets':
+            'existing-proj-id',
+        })
+      )
+    }, 'gas_copilot_deployed')
+
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+
+    // Step 4 should appear without clicking Deploy
+    await page.waitForSelector('#step4-card')
+    await expect(page.locator('#step4-card')).toBeVisible()
+  })
+
+  test('Step 4 pre-populates calendar rows from existing config.gs', async ({
+    page,
+  }) => {
+    // Pre-seed localStorage
+    await page.evaluate((key) => {
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          'calendar-to-sheets\nPetry-Projects – Calendar to Sheets':
+            'existing-proj-id',
+        })
+      )
+    }, 'gas_copilot_deployed')
+
+    // Return an existing config.gs with a known SYNC_CONFIGS
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (
+        method === 'GET' &&
+        url.includes('/projects/existing-proj-id/content')
+      ) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({
+            files: [
+              {
+                name: 'config',
+                type: 'SERVER_JS',
+                source:
+                  'var SYNC_CONFIGS = [{ spreadsheetId: "sheet-abc", sheetName: "MySheet", calendarId: "primary" }];\n',
+              },
+            ],
+          }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+    await page.route(
+      'https://www.googleapis.com/calendar/**',
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({
+            items: [{ id: 'primary', summary: 'Primary Calendar' }],
+          }),
+        })
+      }
+    )
+
+    await signIn(page)
+    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('.config-row')
+
+    // The existing entry should be pre-populated
+    const calSelect = page.locator('.config-row [name="calendarId"]').first()
+    await expect(calSelect).toHaveValue('primary')
+
+    const sheetNameInput = page
+      .locator('.config-row [name="sheetName"]')
+      .first()
+    await expect(sheetNameInput).toHaveValue('MySheet')
+  })
+
+  test('parseCalendarConfig correctly parses SYNC_CONFIGS source', async ({
+    page,
+  }) => {
+    const entries = await page.evaluate(() => {
+      return window.parseCalendarConfig(
+        'var SYNC_CONFIGS = [{ spreadsheetId: "s1", sheetName: "Sh", calendarId: "c1" }];\n'
+      )
+    })
+    expect(entries).toEqual([
+      { spreadsheetId: 's1', sheetName: 'Sh', calendarId: 'c1' },
+    ])
+  })
+
+  test('parseGmailConfig correctly parses getProcessConfig source', async ({
+    page,
+  }) => {
+    const entries = await page.evaluate(() => {
+      return window.parseGmailConfig(
+        'function getProcessConfig() { return [{ triggerLabel: "t", processedLabel: "p", docId: "d", folderId: "f", batchSize: 50 }]; }\n'
+      )
+    })
+    expect(entries).toEqual([
+      {
+        triggerLabel: 't',
+        processedLabel: 'p',
+        docId: 'd',
+        folderId: 'f',
+        batchSize: 50,
+      },
+    ])
   })
 })
