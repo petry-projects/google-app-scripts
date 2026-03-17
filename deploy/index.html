@@ -953,11 +953,31 @@
               `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Uploading files for <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
             )
 
-            // Upload source files: manifest + setup.gs + code.gs.
-            // On redeploy, skip config.gs to preserve user-configured values.
-            const filesToUpload = isRedeploy
-              ? files.filter((f) => f.name !== 'config')
-              : files
+            // Upload source files: manifest + setup.gs + code.gs + config.gs.
+            // On redeploy, preserve the existing config.gs so user-configured
+            // values are never overwritten; fall back to the GitHub default only
+            // when no config file exists in the project yet.
+            const codeSource = files.find((f) => f.name === 'code')?.source
+            if (codeSource == null) {
+              throw new Error('Could not retrieve code.gs from GitHub.')
+            }
+            let configSource = files.find((f) => f.name === 'config')?.source
+            if (isRedeploy) {
+              try {
+                const existing = await apiFetch(
+                  `${APPS_SCRIPT_API}/projects/${projectId}/content`
+                )
+                const existingConfig = (existing.files || []).find(
+                  (f) => f.name === 'config'
+                )
+                if (existingConfig) configSource = existingConfig.source
+              } catch {
+                // Could not fetch existing content — use GitHub default.
+              }
+            }
+            if (configSource == null) {
+              throw new Error('Could not retrieve config.gs.')
+            }
             await apiFetch(`${APPS_SCRIPT_API}/projects/${projectId}/content`, {
               method: 'PUT',
               body: JSON.stringify({
@@ -972,11 +992,16 @@
                     type: 'SERVER_JS',
                     source: buildSetupSource(script.triggerFn),
                   },
-                  ...filesToUpload.map((f) => ({
-                    name: f.name,
+                  {
+                    name: 'code',
                     type: 'SERVER_JS',
-                    source: f.source,
-                  })),
+                    source: codeSource,
+                  },
+                  {
+                    name: 'config',
+                    type: 'SERVER_JS',
+                    source: configSource,
+                  },
                 ],
               }),
             })

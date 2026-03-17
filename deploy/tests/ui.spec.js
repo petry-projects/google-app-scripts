@@ -728,6 +728,8 @@ test.describe('deploy index.html', () => {
     })
 
     let uploadBody = null
+    const savedConfigSource =
+      'function getProcessConfig() { return [{ triggerLabel: "my-label", processedLabel: "done", docId: "doc1", folderId: "folder1", batchSize: 250 }]; }\n'
 
     await page.route('https://raw.githubusercontent.com/**', async (route) => {
       await route.fulfill({ status: 200, body: '// code' })
@@ -747,6 +749,24 @@ test.describe('deploy index.html', () => {
             title: 'Petry-Projects – Gmail to Drive By Labels',
           }),
         })
+      } else if (
+        method === 'GET' &&
+        url.includes('/projects/existing-script-id/content')
+      ) {
+        // Return the user's previously-saved config.gs.
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({
+            files: [
+              { name: 'code', type: 'SERVER_JS', source: '// user code' },
+              {
+                name: 'config',
+                type: 'SERVER_JS',
+                source: savedConfigSource,
+              },
+            ],
+          }),
+        })
       } else if (method === 'PUT' && url.includes('/content')) {
         uploadBody = JSON.parse(route.request().postData())
         await route.fulfill({ status: 200, body: '{}' })
@@ -764,13 +784,81 @@ test.describe('deploy index.html', () => {
     await page.waitForSelector('.status-ok')
 
     expect(uploadBody).not.toBeNull()
-    // config.gs must NOT be included in the upload on redeploy so user
-    // configuration is never overwritten.
+    // config.gs must be included with the USER'S saved source (not GitHub default).
     const configFile = uploadBody.files.find((f) => f.name === 'config')
-    expect(configFile).toBeUndefined()
-    // code.gs must still be uploaded.
+    expect(configFile).toBeDefined()
+    expect(configFile.source).toBe(savedConfigSource)
+    // code.gs must still be uploaded (fresh from GitHub).
     const codeFile = uploadBody.files.find((f) => f.name === 'code')
     expect(codeFile).toBeDefined()
+  })
+
+  test('handleDeploy falls back to GitHub config.gs when project has no config yet', async ({
+    page,
+  }) => {
+    await page.evaluate(() => {
+      localStorage.setItem(
+        'gas_copilot_deployed',
+        JSON.stringify({
+          'gmail-to-drive-by-labels\nPetry-Projects – Gmail to Drive By Labels':
+            'existing-no-config-id',
+        })
+      )
+    })
+
+    let uploadBody = null
+
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (
+        method === 'GET' &&
+        url.includes('/projects/existing-no-config-id') &&
+        !url.includes('/content')
+      ) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({
+            scriptId: 'existing-no-config-id',
+            title: 'Petry-Projects – Gmail to Drive By Labels',
+          }),
+        })
+      } else if (
+        method === 'GET' &&
+        url.includes('/projects/existing-no-config-id/content')
+      ) {
+        // Project exists but has no config.gs yet.
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({
+            files: [{ name: 'code', type: 'SERVER_JS', source: '// code' }],
+          }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        uploadBody = JSON.parse(route.request().postData())
+        await route.fulfill({ status: 200, body: '{}' })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+    await page.locator('#btn-show-deploy').click()
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    expect(uploadBody).not.toBeNull()
+    // config.gs must be included — using the GitHub default since none existed.
+    const configFile = uploadBody.files.find((f) => f.name === 'config')
+    expect(configFile).toBeDefined()
+    // The GitHub mock returns '// code' for all files; verify config is present.
+    expect(configFile.source).toBeDefined()
   })
 
   test('handleDeploy creates new project if stored project was deleted', async ({
