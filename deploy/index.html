@@ -919,6 +919,7 @@
 
             // ── Idempotent project lookup / creation ────────────────────────
             let projectId = null
+            let isRedeploy = false
             const storedId = getStoredScriptId(catalogId, projectTitle)
             if (storedId) {
               showStatus(
@@ -928,6 +929,7 @@
               try {
                 await apiFetch(`${APPS_SCRIPT_API}/projects/${storedId}`)
                 projectId = storedId
+                isRedeploy = true
               } catch {
                 // Project no longer exists — fall through to creation.
               }
@@ -951,7 +953,11 @@
               `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Uploading files for <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
             )
 
-            // Upload source files: manifest + setup.gs + code.gs + config.gs.
+            // Upload source files: manifest + setup.gs + code.gs.
+            // On redeploy, skip config.gs to preserve user-configured values.
+            const filesToUpload = isRedeploy
+              ? files.filter((f) => f.name !== 'config')
+              : files
             await apiFetch(`${APPS_SCRIPT_API}/projects/${projectId}/content`, {
               method: 'PUT',
               body: JSON.stringify({
@@ -966,7 +972,7 @@
                     type: 'SERVER_JS',
                     source: buildSetupSource(script.triggerFn),
                   },
-                  ...files.map((f) => ({
+                  ...filesToUpload.map((f) => ({
                     name: f.name,
                     type: 'SERVER_JS',
                     source: f.source,
@@ -1479,9 +1485,26 @@
           let newSource
           if (catalogId === 'gmail-to-drive-by-labels') {
             const entries = collectGmailEntries(rowsContainerId)
+            const invalid = entries.some(
+              (e) =>
+                !e.triggerLabel || !e.processedLabel || !e.docId || !e.folderId
+            )
+            if (invalid) {
+              throw new Error(
+                'All entries must have a trigger label, processed label, destination Doc, and destination Folder selected.'
+              )
+            }
             newSource = buildGmailConfigSource(entries)
           } else if (catalogId === 'calendar-to-sheets') {
             const entries = collectCalendarEntries(rowsContainerId)
+            const invalid = entries.some(
+              (e) => !e.calendarId || !e.spreadsheetId
+            )
+            if (invalid) {
+              throw new Error(
+                'All entries must have a calendar and a spreadsheet selected.'
+              )
+            }
             newSource = buildCalendarConfigSource(entries)
           } else {
             throw new Error('Unknown catalog ID: ' + catalogId)
