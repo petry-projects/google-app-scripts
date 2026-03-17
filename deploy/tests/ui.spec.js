@@ -2139,8 +2139,8 @@ test.describe('deploy index.html', () => {
 
     // Exactly the 1 real row — no additional blank row
     await expect(page.locator('.config-row')).toHaveCount(1)
-    // "+ Add entry" button must be hidden — user is editing existing config only
-    await expect(page.locator('[id^="add-btn-"]').first()).not.toBeVisible()
+    // "+ Add entry" button must be visible — user can add more entries
+    await expect(page.locator('[id^="add-btn-"]').first()).toBeVisible()
   })
 
   // ── Deploy section visibility ─────────────────────────────────────────────────
