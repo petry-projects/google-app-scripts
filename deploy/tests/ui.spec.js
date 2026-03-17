@@ -714,6 +714,65 @@ test.describe('deploy index.html', () => {
     )
   })
 
+  test('handleDeploy does not overwrite config.gs when redeploying an existing project', async ({
+    page,
+  }) => {
+    await page.evaluate(() => {
+      localStorage.setItem(
+        'gas_copilot_deployed',
+        JSON.stringify({
+          'gmail-to-drive-by-labels\nPetry-Projects – Gmail to Drive By Labels':
+            'existing-script-id',
+        })
+      )
+    })
+
+    let uploadBody = null
+
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (
+        method === 'GET' &&
+        url.includes('/projects/existing-script-id') &&
+        !url.includes('/content')
+      ) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({
+            scriptId: 'existing-script-id',
+            title: 'Petry-Projects – Gmail to Drive By Labels',
+          }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        uploadBody = JSON.parse(route.request().postData())
+        await route.fulfill({ status: 200, body: '{}' })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+    await page.locator('#btn-show-deploy').click()
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    expect(uploadBody).not.toBeNull()
+    // config.gs must NOT be included in the upload on redeploy so user
+    // configuration is never overwritten.
+    const configFile = uploadBody.files.find((f) => f.name === 'config')
+    expect(configFile).toBeUndefined()
+    // code.gs must still be uploaded.
+    const codeFile = uploadBody.files.find((f) => f.name === 'code')
+    expect(codeFile).toBeDefined()
+  })
+
   test('handleDeploy creates new project if stored project was deleted', async ({
     page,
   }) => {
@@ -1470,6 +1529,20 @@ test.describe('deploy index.html', () => {
     await page.waitForSelector('#step4-card')
     await page.waitForSelector('.config-row')
 
+    // Fill all required fields before saving.
+    await page
+      .locator('.config-row [name="triggerLabel"]')
+      .first()
+      .selectOption('mylabel')
+    await page
+      .locator('.config-row [name="processedLabel"]')
+      .first()
+      .selectOption('mylabel')
+    await page.evaluate(() => {
+      document.querySelector('[name="docId"]').value = 'doc-id-1'
+      document.querySelector('[name="folderId"]').value = 'folder-id-1'
+    })
+
     await page.locator('button:has-text("Save Configuration")').click()
     await page.waitForSelector('[id^="save-status-"]:has-text("saved")')
 
@@ -1531,7 +1604,7 @@ test.describe('deploy index.html', () => {
     await page.waitForSelector('#step4-card')
     await page.waitForSelector('.config-row')
 
-    // Select a label value and click Save
+    // Select a label value and fill all required fields, then click Save
     await page
       .locator('.config-row [name="triggerLabel"]')
       .first()
@@ -1540,6 +1613,10 @@ test.describe('deploy index.html', () => {
       .locator('.config-row [name="processedLabel"]')
       .first()
       .selectOption('work')
+    await page.evaluate(() => {
+      document.querySelector('[name="docId"]').value = 'doc-id-1'
+      document.querySelector('[name="folderId"]').value = 'folder-id-1'
+    })
     await page.locator('button:has-text("Save Configuration")').click()
     await page.waitForSelector('[id^="save-status-"]:has-text("saved")')
 
@@ -1607,6 +1684,9 @@ test.describe('deploy index.html', () => {
       .locator('.config-row [name="calendarId"]')
       .first()
       .selectOption('primary')
+    await page.evaluate(() => {
+      document.querySelector('[name="spreadsheetId"]').value = 'sheet-id-1'
+    })
     await page.locator('button:has-text("Save Configuration")').click()
     await page.waitForSelector('[id^="save-status-"]:has-text("saved")')
 
@@ -1628,6 +1708,20 @@ test.describe('deploy index.html', () => {
     await page.locator('#btn-deploy').click()
     await page.waitForSelector('#step4-card')
     await page.waitForSelector('.config-row')
+
+    // Fill all required fields before saving.
+    await page
+      .locator('.config-row [name="triggerLabel"]')
+      .first()
+      .selectOption('inbox')
+    await page
+      .locator('.config-row [name="processedLabel"]')
+      .first()
+      .selectOption('archive')
+    await page.evaluate(() => {
+      document.querySelector('[name="docId"]').value = 'doc-id-1'
+      document.querySelector('[name="folderId"]').value = 'folder-id-1'
+    })
 
     await page.locator('button:has-text("Save Configuration")').click()
     await page.waitForSelector('[id^="save-status-"]:has-text("saved")')
@@ -1666,7 +1760,7 @@ test.describe('deploy index.html', () => {
     await page.route('https://gmail.googleapis.com/**', async (route) => {
       await route.fulfill({
         status: 200,
-        body: JSON.stringify({ labels: [] }),
+        body: JSON.stringify({ labels: [{ id: 'L1', name: 'inbox' }] }),
       })
     })
 
@@ -1676,9 +1770,21 @@ test.describe('deploy index.html', () => {
       .click()
     await page.locator('#btn-deploy').click()
     await page.waitForSelector('#step4-card')
-    // Labels loaded with empty list, so no rows needed from API
-    // (the initial row still appears, just with no label options)
     await page.waitForSelector('.config-row')
+
+    // Fill all required fields so validation passes and the API call is made.
+    await page
+      .locator('.config-row [name="triggerLabel"]')
+      .first()
+      .selectOption('inbox')
+    await page
+      .locator('.config-row [name="processedLabel"]')
+      .first()
+      .selectOption('inbox')
+    await page.evaluate(() => {
+      document.querySelector('[name="docId"]').value = 'doc-id-1'
+      document.querySelector('[name="folderId"]').value = 'folder-id-1'
+    })
 
     await page.locator('button:has-text("Save Configuration")').click()
     await page.waitForSelector(
@@ -1687,6 +1793,101 @@ test.describe('deploy index.html', () => {
 
     await expect(page.locator('[id^="save-status-"]').first()).toContainText(
       'Permission denied'
+    )
+  })
+
+  test('Save Configuration shows validation error for gmail when required fields are missing', async ({
+    page,
+  }) => {
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ scriptId: 'val-proj' }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        await route.fulfill({ status: 200, body: '{}' })
+      } else {
+        await route.continue()
+      }
+    })
+    await page.route('https://gmail.googleapis.com/**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        body: JSON.stringify({ labels: [{ id: 'L1', name: 'inbox' }] }),
+      })
+    })
+
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('.config-row')
+
+    // Attempt to save without filling any required fields.
+    await page.locator('button:has-text("Save Configuration")').click()
+
+    await expect(page.locator('[id^="save-status-"]').first()).toContainText(
+      'trigger label, processed label, destination Doc, and destination Folder'
+    )
+  })
+
+  test('Save Configuration shows validation error for calendar when required fields are missing', async ({
+    page,
+  }) => {
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ scriptId: 'val-cal-proj' }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        await route.fulfill({ status: 200, body: '{}' })
+      } else {
+        await route.continue()
+      }
+    })
+    await page.route(
+      'https://www.googleapis.com/calendar/**',
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({
+            items: [{ id: 'primary', summary: 'Primary Calendar' }],
+          }),
+        })
+      }
+    )
+
+    await signIn(page)
+    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('.config-row')
+
+    // Select a calendar but leave spreadsheet empty.
+    await page
+      .locator('.config-row [name="calendarId"]')
+      .first()
+      .selectOption('primary')
+
+    // Attempt to save without a spreadsheet.
+    await page.locator('button:has-text("Save Configuration")').click()
+
+    await expect(page.locator('[id^="save-status-"]').first()).toContainText(
+      'calendar and a spreadsheet'
     )
   })
 
