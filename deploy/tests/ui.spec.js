@@ -2277,6 +2277,31 @@ test.describe('deploy index.html', () => {
     ])
   })
 
+  test('parseCalendarConfig returns empty array for default GitHub config.gs (no sample entries)', async ({
+    page,
+  }) => {
+    // This is the exact content of src/calendar-to-sheets/config.gs deployed to
+    // Apps Script on first deploy. It must parse to an empty array so that
+    // no sample config boxes appear in the UI.
+    const source = [
+      '// Calendar to Sheets configuration.',
+      '// Supports multiple calendar-to-sheet mappings.',
+      '// Use the web-based deploy tool to configure entries, or edit directly below.',
+      '//',
+      '// Example (do not uncomment — edit var SYNC_CONFIGS below instead):',
+      '// var SYNC_CONFIGS = [',
+      "//   { spreadsheetId: 'aSpreadsheetId', sheetName: 'Sheet1', calendarId: 'aCalendarId' },",
+      "//   { spreadsheetId: 'anotherSpreadsheetId', sheetName: 'Sheet2', calendarId: 'anotherCalendarId' },",
+      '// ]',
+      '',
+      'var SYNC_CONFIGS = []',
+    ].join('\n')
+    const entries = await page.evaluate((src) => {
+      return window.parseCalendarConfig(src)
+    }, source)
+    expect(entries).toEqual([])
+  })
+
   test('parseGmailConfig correctly parses getProcessConfig source', async ({
     page,
   }) => {
@@ -2294,6 +2319,40 @@ test.describe('deploy index.html', () => {
         batchSize: 50,
       },
     ])
+  })
+
+  test('parseGmailConfig returns empty array for default GitHub config.gs (no sample entries)', async ({
+    page,
+  }) => {
+    // This is the exact content of src/gmail-to-drive-by-labels/config.gs deployed
+    // to Apps Script on first deploy. It must parse to an empty array so that
+    // no sample config boxes appear in the UI.
+    const source = [
+      '// --- CONFIGURATION SECTION ---',
+      '',
+      '// This function returns the configuration array.',
+      '// Use the web-based deploy tool to configure entries, or edit the return value below.',
+      '//',
+      '// Example (do not uncomment — edit the return [] below instead):',
+      '// function getProcessConfig() {',
+      '//   return [',
+      '//     {',
+      "//       triggerLabel: 'my-label',",
+      "//       processedLabel: 'my-label-archived',",
+      "//       docId: 'GOOGLE_DOC_ID', // Text goes here",
+      "//       folderId: 'DRIVE_FOLDER_ID', // Attachments go here",
+      '//       batchSize: 250, // Optional: threads per batch (default: 250)',
+      '//     },',
+      '//   ]',
+      '// }',
+      'function getProcessConfig() {',
+      '  return []',
+      '}',
+    ].join('\n')
+    const entries = await page.evaluate((src) => {
+      return window.parseGmailConfig(src)
+    }, source)
+    expect(entries).toEqual([])
   })
 
   // ── No blank row when existing configs loaded ───────────────────────────────

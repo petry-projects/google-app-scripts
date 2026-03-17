@@ -1,7 +1,9 @@
 // --- CONFIGURATION SECTION ---
 
 // This function returns the configuration array.
-// Add one object per calendar-to-label mapping. Example:
+// Use the web-based deploy tool to configure entries, or edit the return value below.
+//
+// Example (do not uncomment — edit the return [] below instead):
 // function getProcessConfig() {
 //   return [
 //     {
