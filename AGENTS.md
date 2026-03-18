@@ -82,6 +82,17 @@ if (typeof module !== 'undefined' && module.exports) {
 
 ---
 
+## Pull request reviews
+
+- When addressing PR review comments, **always mark each resolved comment thread as Resolved** on GitHub after the fix is pushed. Use the GitHub GraphQL API via `gh api graphql` with the `resolveReviewThread` mutation:
+  ```bash
+  gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "PRRT_..."}) { thread { id isResolved } } }'
+  ```
+  Retrieve thread IDs first with a `reviewThreads` query on the pull request.
+- Resolve all addressed threads in one pass after pushing the fix commit, not one at a time during implementation.
+
+---
+
 ## Code style & commits
 
 - Follow repository style and lint rules.
