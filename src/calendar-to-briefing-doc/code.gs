@@ -114,8 +114,9 @@ function _writeBriefingDocGAS_(doc, title, groupedEvents, timezone) {
 }
 
 /**
- * Main trigger function. Schedule via a weekly time-driven trigger
- * (e.g., every Monday at 7 AM) using the deploy page's setup.gs.
+ * Main trigger function. The deploy page installs an hourly trigger by default.
+ * For a true weekly cadence, replace it with a weekly time-driven trigger
+ * (e.g., every Monday at 7 AM) in the Apps Script editor.
  */
 function generateWeeklyBriefing() {
   var configs = getBriefingConfigs_()
@@ -139,8 +140,9 @@ function generateWeeklyBriefing() {
       // Round start down to the beginning of today so events before the trigger
       // time are not silently excluded from Day 1 of the briefing.
       now.setHours(0, 0, 0, 0)
-      var lookaheadMs = (cfg.lookaheadDays || 7) * 24 * 60 * 60 * 1000
-      var end = new Date(now.getTime() + lookaheadMs)
+      // Advance by calendar days (not raw ms) to handle DST transitions correctly.
+      var end = new Date(now)
+      end.setDate(end.getDate() + (cfg.lookaheadDays || 7))
       var events = calendar.getEvents(now, end)
 
       // Group events by day
@@ -161,7 +163,10 @@ function generateWeeklyBriefing() {
       )
 
       var startKey = Utilities.formatDate(now, timezone, 'yyyy-MM-dd')
-      var endKey = Utilities.formatDate(end, timezone, 'yyyy-MM-dd')
+      // end is exclusive (start of the day after the last included day), so
+      // subtract 1ms to get a timestamp within the last included day for labeling.
+      var lastIncludedDay = new Date(end.getTime() - 1)
+      var endKey = Utilities.formatDate(lastIncludedDay, timezone, 'yyyy-MM-dd')
       var briefingTitle =
         'Weekly Briefing: ' +
         _formatDayLabelGAS_(startKey) +

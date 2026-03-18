@@ -18,7 +18,7 @@ This complements [`calendar-to-sheets`](../calendar-to-sheets/README.md), which 
 1. **Deploy** using the [browser deploy page](../../deploy/index.html) or manually create a new Google Apps Script project
 2. Copy `code.gs` and `config.gs` into the project
 3. In `config.gs`, fill in your `calendarId` and `docId` (and optionally `emailRecipients`)
-4. Run `setup()` from the Script Editor to install a weekly time-driven trigger (set to fire every Monday at your preferred hour)
+4. The deploy page installs an **hourly** trigger for `generateWeeklyBriefing`. For a true weekly cadence, see the **Trigger** section below to replace it with a weekly trigger
 5. Run `generateWeeklyBriefing()` manually once to verify the output
 
 ## Configuration

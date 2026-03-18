@@ -171,13 +171,17 @@ function generateBriefingForConfig(
   // Round start down to the beginning of today so events before the trigger
   // time are not silently excluded from Day 1 of the briefing.
   now.setHours(0, 0, 0, 0)
-  const lookaheadMs = (config.lookaheadDays || 7) * 24 * 60 * 60 * 1000
-  const end = new Date(now.getTime() + lookaheadMs)
+  // Advance by calendar days (not raw ms) to handle DST transitions correctly.
+  const end = new Date(now)
+  end.setDate(end.getDate() + (config.lookaheadDays || 7))
 
   const events = fetchEvents(calendar, now, end)
   const grouped = groupEventsByDay(events, getDateKey)
 
-  const briefingTitle = `Weekly Briefing: ${formatDayLabel(getDateKey(now))} \u2013 ${formatDayLabel(getDateKey(end))}`
+  // end is exclusive (start of the day after the last included day), so
+  // subtract 1ms to get a timestamp within the last included day for labeling.
+  const lastIncludedDay = new Date(end.getTime() - 1)
+  const briefingTitle = `Weekly Briefing: ${formatDayLabel(getDateKey(now))} \u2013 ${formatDayLabel(getDateKey(lastIncludedDay))}`
   writeBriefingDoc(doc, briefingTitle, grouped, formatTime, DocumentApp)
 
   if (config.emailRecipients && config.emailRecipients.length) {
