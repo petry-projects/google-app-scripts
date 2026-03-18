@@ -1593,6 +1593,11 @@
 
         const panelsContainer = card.querySelector('#config-panels')
 
+        // Count how many projects have a verified config.gs. When loadExisting
+        // is true (returning users), this guards against showing Step 4 for
+        // projects that were never fully deployed or have since been deleted.
+        let verifiedCount = 0
+
         for (const { scriptId, catalogId } of deployedProjects) {
           const scriptMeta = SCRIPT_CATALOG.find((s) => s.id === catalogId)
           const scriptName = scriptMeta ? scriptMeta.name : catalogId
@@ -1624,7 +1629,11 @@
           try {
             // Try to read the existing config for this project when requested.
             let existingEntries = null
+            // Verification only applies when loading from an existing deployment.
+            // Fresh deploys (loadExisting: false) always proceed to configuration.
+            let configVerified = !loadExisting
             if (loadExisting) {
+              let configError = null
               try {
                 const content = await apiFetch(
                   `${APPS_SCRIPT_API}/projects/${scriptId}/content`
@@ -1638,11 +1647,36 @@
                   } else if (catalogId === 'calendar-to-sheets') {
                     existingEntries = parseCalendarConfig(configFile.source)
                   }
+                  configVerified = true
+                } else {
+                  configError = new Error(
+                    'No config file was found in this project. ' +
+                      'Use "Show deployment options" above to re-deploy.'
+                  )
                 }
-              } catch {
-                // Ignore errors — fall through to single empty row.
+              } catch (err) {
+                configError = err
+              }
+
+              if (!configVerified) {
+                // Project is missing or lacks config.gs — show an error and
+                // disable Save so the user cannot configure an undeployed script.
+                const rowsContainer = document.getElementById(
+                  'config-rows-' + scriptId
+                )
+                if (rowsContainer) {
+                  rowsContainer.innerHTML =
+                    `<p style="color:#c5221f;font-size:13px;">` +
+                    `⚠️ ${escapeHtml(configError ? configError.message : 'Deployment could not be verified.')}` +
+                    `</p>`
+                }
+                const saveBtn = document.getElementById('save-btn-' + scriptId)
+                if (saveBtn) saveBtn.disabled = true
+                continue
               }
             }
+
+            verifiedCount++
 
             if (catalogId === 'gmail-to-drive-by-labels') {
               const labels = await loadGmailLabels()
@@ -1677,6 +1711,16 @@
             }
           }
         }
+
+        // If we were loading existing configs but none of the stored projects
+        // have a valid config.gs, the scripts were never fully deployed.
+        // Remove the Step 4 card and return the user to the deploy step.
+        if (loadExisting && verifiedCount === 0) {
+          area.innerHTML = ''
+          showDeploySection()
+          return
+        }
+
         // Collapse the deploy section now that the configure section is visible.
         collapseDeploySection()
       }

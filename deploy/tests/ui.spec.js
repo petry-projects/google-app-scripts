@@ -698,8 +698,9 @@ test.describe('deploy index.html', () => {
     })
 
     await signIn(page)
-    // Prior deployments exist → deploy section is collapsed; re-expand it.
-    await page.locator('#btn-show-deploy').click()
+    // Prior deployments without a valid config.gs → renderConfigSection falls
+    // back to showing the deploy section. No need to click "Show deployment
+    // options" — the section is already visible.
     await page
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
@@ -846,7 +847,7 @@ test.describe('deploy index.html', () => {
     })
 
     await signIn(page)
-    await page.locator('#btn-show-deploy').click()
+    // Project has no config.gs → renderConfigSection falls back to deploy section; no need to click "Show deployment options".
     await page
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
@@ -902,8 +903,7 @@ test.describe('deploy index.html', () => {
     })
 
     await signIn(page)
-    // Prior deployments exist → deploy section is collapsed; re-expand it.
-    await page.locator('#btn-show-deploy').click()
+    // Deleted project → renderConfigSection falls back to deploy section; no need to click "Show deployment options".
     await page
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
@@ -2601,5 +2601,92 @@ test.describe('deploy index.html', () => {
     // Any prior deployment → deploy section collapsed
     await expect(page.locator('#deploy-section')).not.toBeVisible()
     await expect(page.locator('#btn-show-deploy')).toBeVisible()
+  })
+
+  // ── Step 2 gating: Step 4 must not appear without a valid deployment ──────────
+
+  test('returning user with no config.gs in their project sees deploy section, not Step 4', async ({
+    page,
+  }) => {
+    // Simulate a returning user whose project was only partially deployed
+    // (project exists but config.gs was never uploaded — e.g. the upload failed).
+    await page.evaluate((key) => {
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          'calendar-to-sheets\nPetry-Projects – Calendar to Sheets':
+            'proj-no-config',
+        })
+      )
+    }, 'gas_copilot_deployed')
+
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (
+        method === 'GET' &&
+        url.includes('/projects/proj-no-config/content')
+      ) {
+        // Project exists but has no config.gs — only code.gs is present.
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({
+            files: [{ name: 'code', type: 'SERVER_JS', source: '// code' }],
+          }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+
+    // Step 4 must NOT appear — config.gs was never deployed.
+    await expect(page.locator('#step4-card')).not.toBeAttached()
+    // Deploy section must be visible so the user can re-deploy.
+    await expect(page.locator('#deploy-section')).toBeVisible()
+  })
+
+  test('returning user whose project API returns 404 sees deploy section, not Step 4', async ({
+    page,
+  }) => {
+    // Simulate a returning user whose project was deleted from Apps Script
+    // (localStorage has an entry but the project no longer exists).
+    await page.evaluate((key) => {
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          'calendar-to-sheets\nPetry-Projects – Calendar to Sheets':
+            'proj-deleted',
+        })
+      )
+    }, 'gas_copilot_deployed')
+
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'GET' && url.includes('/projects/proj-deleted/content')) {
+        // Project no longer exists.
+        await route.fulfill({
+          status: 404,
+          body: JSON.stringify({ error: { message: 'Not found' } }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+
+    // Step 4 must NOT appear — the project is gone.
+    await expect(page.locator('#step4-card')).not.toBeAttached()
+    // Deploy section must be visible so the user can re-deploy.
+    await expect(page.locator('#deploy-section')).toBeVisible()
   })
 })
