@@ -2066,9 +2066,9 @@ test.describe('deploy index.html', () => {
     // Must include a commented-out example (not live code).
     expect(source).toContain("triggerLabel: 'my-label'")
     expect(source).toContain("docId: 'GOOGLE_DOC_ID'")
-    // Must NOT have any live (uncommented) entries.
-    expect(source).not.toMatch(/^\s*triggerLabel:/m)
-    expect(source).not.toMatch(/^\s*docId:/m)
+    // Must NOT have any live (uncommented) entries — exclude lines starting with //.
+    expect(source).not.toMatch(/^\s*[^/\s].*triggerLabel:/m)
+    expect(source).not.toMatch(/^\s*[^/\s].*docId:/m)
   })
 
   test('buildEmptyCalendarConfigSource generates empty config.gs with commented example', async ({
@@ -2082,9 +2082,9 @@ test.describe('deploy index.html', () => {
     // Must include a commented-out example (not live code).
     expect(source).toContain('// var SYNC_CONFIGS = [')
     expect(source).toContain("spreadsheetId: 'aSpreadsheetId'")
-    // Must NOT have any live (uncommented) entries.
-    expect(source).not.toMatch(/^\s*spreadsheetId:/m)
-    expect(source).not.toMatch(/^\s*calendarId:/m)
+    // Must NOT have any live (uncommented) entries — exclude lines starting with //.
+    expect(source).not.toMatch(/^\s*[^/\s].*spreadsheetId:/m)
+    expect(source).not.toMatch(/^\s*[^/\s].*calendarId:/m)
   })
 
   test('Step 4 is not shown before deployment', async ({ page }) => {
