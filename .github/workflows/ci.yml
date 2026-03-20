@@ -17,6 +17,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          # For same-repo PRs, check out the head branch explicitly so tests
+          # run against the exact branch commit (not the synthetic merge commit).
+          # For fork PRs, omit ref so the action falls back to the merge commit
+          # (fork branch names don't exist in the base repo and cause checkout
+          # to fail when ref is set to head.ref unconditionally).
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref || '' }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -26,8 +34,68 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Check formatting and lint
+      # --- Same-repo PR: auto-fix and push is handled in the separate 'autofix' job ---
+
+      # --- Fork PR: check-only with instructions ---
+      - name: Check formatting and lint (fork PR)
+        if: >
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "Fork PR detected — running check-only (cannot push fixes to forks)."
+          echo "If this step fails, please run the following locally and push your changes:"
+          echo "  npm run format"
+          echo "  npm run lint -- --fix"
+          npm run check
+
+      # --- Push to main: check-only ---
+      - name: Check formatting and lint (push to main)
+        if: github.event_name == 'push'
         run: npm run check
 
       - name: Type check
         run: npm run typecheck
+
+  autofix:
+    needs: build-and-test
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Format and lint (auto-fix)
+        run: |
+          npm run format
+          npm run lint -- --fix
+
+      - name: Commit and push auto-fixes
+        run: |
+          if git diff --quiet; then
+            echo "No formatting or lint fixes needed."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "chore(ci): apply prettier/eslint auto-fixes"
+            git push
+          fi
+
+      - name: Verify no remaining issues after auto-fix
+        run: npm run check
