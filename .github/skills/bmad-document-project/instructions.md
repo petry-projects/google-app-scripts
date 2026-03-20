@@ -61,7 +61,7 @@
     <action>Create archive directory: {project_knowledge}/.archive/</action>
     <action>Move old state file to: {project_knowledge}/.archive/project-scan-report-{{timestamp}}.json</action>
     <action>Set resume_mode = false</action>
-    <action>Continue to Step 0.5</action>
+    <action>Continue to Step 3</action>
   </check>
 
   <check if="user selects 3">
@@ -73,7 +73,7 @@
     <action>Display: "Found old state file (>24 hours). Starting fresh scan."</action>
     <action>Archive old state file to: {project_knowledge}/.archive/project-scan-report-{{timestamp}}.json</action>
     <action>Set resume_mode = false</action>
-    <action>Continue to Step 0.5</action>
+    <action>Continue to Step 3</action>
   </check>
 
 </step>

@@ -1,6 +1,6 @@
 # BMAD PRD Purpose
 
-**The PRD is the top of the required funnel that feeds all subsequent product development work in rhw BMad Method.**
+**The PRD is the top of the required funnel that feeds all subsequent product development work in the BMad Method.**
 
 ---
 

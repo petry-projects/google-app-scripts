@@ -12,7 +12,7 @@ This uses **step-file architecture** for disciplined execution:
 
 ### Core Principles
 
-- **Micro-file Design**: Each step of the overall goal is a self contained instruction file that you will adhere too 1 file as directed at a time
+- **Micro-file Design**: Each step of the overall goal is a self contained instruction file that you will adhere to 1 file as directed at a time
 - **Just-In-Time Loading**: Only 1 current step file will be loaded and followed to completion - never load future step files until told to do so
 - **Sequential Enforcement**: Sequence within the step files must be completed in order, no skipping or optimization allowed
 - **State Tracking**: Document progress in output file frontmatter using `stepsCompleted` array when a workflow produces a document

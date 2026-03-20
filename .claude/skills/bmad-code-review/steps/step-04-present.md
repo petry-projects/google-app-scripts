@@ -1,5 +1,4 @@
 ---
----
 
 # Step 4: Present
 

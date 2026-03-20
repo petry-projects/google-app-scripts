@@ -1,5 +1,4 @@
 ---
----
 
 # Step 3: Triage
 
