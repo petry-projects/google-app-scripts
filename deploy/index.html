@@ -1579,6 +1579,11 @@
           let newSource
           if (catalogId === 'gmail-to-drive-by-labels') {
             const entries = collectGmailEntries(rowsContainerId)
+            if (entries.length === 0) {
+              throw new Error(
+                'Please add at least one configuration entry before saving.'
+              )
+            }
             const invalid = entries.some(
               (e) =>
                 !e.triggerLabel || !e.processedLabel || !e.docId || !e.folderId
@@ -1591,6 +1596,11 @@
             newSource = buildGmailConfigSource(entries)
           } else if (catalogId === 'calendar-to-sheets') {
             const entries = collectCalendarEntries(rowsContainerId)
+            if (entries.length === 0) {
+              throw new Error(
+                'Please add at least one configuration entry before saving.'
+              )
+            }
             const invalid = entries.some(
               (e) => !e.calendarId || !e.spreadsheetId
             )
@@ -1724,7 +1734,15 @@
                   )
                 }
               } catch (err) {
-                configError = err
+                // Replace the raw API 404 "Requested entity was not found" with
+                // a clear, actionable message so the user knows what to do.
+                configError =
+                  err.httpStatus === 404
+                    ? new Error(
+                        'This script project could not be found. ' +
+                          'Use "Show deployment options" above to re-deploy.'
+                      )
+                    : err
               }
 
               if (!configVerified) {
