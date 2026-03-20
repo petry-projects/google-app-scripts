@@ -49,6 +49,20 @@ function getScriptCatalog() {
         'https://www.googleapis.com/auth/spreadsheets',
       ],
     },
+    {
+      id: 'calendar-to-briefing-doc',
+      name: 'Calendar to Briefing Doc',
+      description:
+        'Generates a weekly Google Doc briefing from Calendar events, grouped ' +
+        'by day with times, locations, and attendees. Optionally emails the ' +
+        'briefing link to a configured recipient list.',
+      files: ['code.gs', 'config.gs'],
+      scopes: [
+        'https://www.googleapis.com/auth/calendar.readonly',
+        'https://www.googleapis.com/auth/documents',
+        'https://www.googleapis.com/auth/gmail.send',
+      ],
+    },
   ]
 }
 
