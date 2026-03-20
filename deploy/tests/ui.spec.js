@@ -133,7 +133,7 @@ test.describe('deploy index.html', () => {
 
   test('script list is populated on page load', async ({ page }) => {
     const checkboxes = page.locator('#script-list input[type="checkbox"]')
-    await expect(checkboxes).toHaveCount(2)
+    await expect(checkboxes).toHaveCount(3)
   })
 
   test('script list shows Gmail to Drive By Labels option', async ({
@@ -864,7 +864,7 @@ test.describe('deploy index.html', () => {
   test('script list uses checkboxes not radio buttons', async ({ page }) => {
     await expect(
       page.locator('#script-list input[type="checkbox"]')
-    ).toHaveCount(2)
+    ).toHaveCount(3)
     await expect(page.locator('#script-list input[type="radio"]')).toHaveCount(
       0
     )
