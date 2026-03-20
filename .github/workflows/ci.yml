@@ -18,8 +18,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
         with:
-          # For same-repo PRs, check out the head branch so we can push back
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref_name }}
+          # For same-repo PRs, check out the head branch explicitly so tests
+          # run against the exact branch commit (not the synthetic merge commit).
+          # For fork PRs, omit ref so the action falls back to the merge commit
+          # (fork branch names don't exist in the base repo and cause checkout
+          # to fail when ref is set to head.ref unconditionally).
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref || '' }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
@@ -31,28 +35,6 @@ jobs:
         run: npm ci
 
       # --- Same-repo PR: auto-fix and push is handled in the separate 'autofix' job ---
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
       # --- Fork PR: check-only with instructions ---
       - name: Check formatting and lint (fork PR)
@@ -114,3 +96,6 @@ jobs:
             git commit -m "chore(ci): apply prettier/eslint auto-fixes"
             git push
           fi
+
+      - name: Verify no remaining issues after auto-fix
+        run: npm run check
