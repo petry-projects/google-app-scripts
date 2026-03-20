@@ -1982,6 +1982,188 @@ test.describe('deploy index.html', () => {
     )
   })
 
+  test('Save Configuration shows error when gmail config has 0 entries', async ({
+    page,
+  }) => {
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ scriptId: 'zero-entry-gmail' }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        await route.fulfill({ status: 200, body: '{}' })
+      } else {
+        await route.continue()
+      }
+    })
+    await page.route('https://gmail.googleapis.com/**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        body: JSON.stringify({ labels: [{ id: 'L1', name: 'inbox' }] }),
+      })
+    })
+
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('.config-row')
+
+    // Remove the only config row so there are 0 entries.
+    await page.locator('.btn-danger').first().click()
+    await expect(page.locator('.config-row')).toHaveCount(0)
+
+    // Attempt to save with 0 entries.
+    await page.locator('button:has-text("Save Configuration")').click()
+
+    await expect(page.locator('[id^="save-status-"]').first()).toContainText(
+      'Please add at least one configuration entry before saving.'
+    )
+  })
+
+  test('Save Configuration shows error when calendar config has 0 entries', async ({
+    page,
+  }) => {
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ scriptId: 'zero-entry-cal' }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        await route.fulfill({ status: 200, body: '{}' })
+      } else {
+        await route.continue()
+      }
+    })
+    await page.route(
+      'https://www.googleapis.com/calendar/**',
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({
+            items: [{ id: 'primary', summary: 'Primary Calendar' }],
+          }),
+        })
+      }
+    )
+
+    await signIn(page)
+    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('.config-row')
+
+    // Remove the only config row so there are 0 entries.
+    await page.locator('.btn-danger').first().click()
+    await expect(page.locator('.config-row')).toHaveCount(0)
+
+    // Attempt to save with 0 entries.
+    await page.locator('button:has-text("Save Configuration")').click()
+
+    await expect(page.locator('[id^="save-status-"]').first()).toContainText(
+      'Please add at least one configuration entry before saving.'
+    )
+  })
+
+  test('returning user with 404 project sees friendly error not raw API message', async ({
+    page,
+  }) => {
+    // Simulate a returning user with two deployments:
+    // - calendar-to-sheets loads fine (verifiedCount will be 1)
+    // - gmail-to-drive-by-labels project content returns 404
+    // The bad project's panel should show a friendly message, not the raw API error.
+    await page.evaluate((key) => {
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          'gmail-to-drive-by-labels\nPetry-Projects – Gmail to Drive by Labels':
+            'proj-404-gmail',
+          'calendar-to-sheets\nPetry-Projects – Calendar to Sheets':
+            'proj-ok-cal',
+        })
+      )
+    }, 'gas_copilot_deployed')
+
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (
+        method === 'GET' &&
+        url.includes('/projects/proj-404-gmail/content')
+      ) {
+        // Project content returns 404 "Requested entity was not found."
+        await route.fulfill({
+          status: 404,
+          body: JSON.stringify({
+            error: { message: 'Requested entity was not found.' },
+          }),
+        })
+      } else if (
+        method === 'GET' &&
+        url.includes('/projects/proj-ok-cal/content')
+      ) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({
+            files: [
+              {
+                name: 'config',
+                type: 'SERVER_JS',
+                source: 'var SYNC_CONFIGS = [];',
+              },
+            ],
+          }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+    await page.route(
+      'https://www.googleapis.com/calendar/**',
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({
+            items: [{ id: 'primary', summary: 'Primary Calendar' }],
+          }),
+        })
+      }
+    )
+
+    await signIn(page)
+    await page.waitForSelector('#step4-card')
+
+    // The bad gmail project panel should show the friendly error, NOT the raw API message.
+    const gmailPanel = page.locator('#config-panel-proj-404-gmail')
+    await expect(gmailPanel).toContainText(
+      'This script project could not be found.'
+    )
+    await expect(gmailPanel).not.toContainText('Requested entity was not found')
+
+    // The good calendar project should still load correctly.
+    await expect(page.locator('#config-panel-proj-ok-cal')).toBeVisible()
+    await expect(page.locator('#config-panel-proj-ok-cal')).toContainText(
+      'Primary Calendar'
+    )
+  })
+
   test('buildGmailConfigSource generates correct config.gs source', async ({
     page,
   }) => {
