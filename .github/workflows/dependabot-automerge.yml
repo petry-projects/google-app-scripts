@@ -22,7 +22,14 @@ jobs:
 
       - name: Enable auto-merge for patch, minor, and indirect updates
         if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor' || steps.metadata.outputs.dependency-type == 'indirect'
-        run: gh pr merge --auto --squash "$PR_URL"
+        run: |
+          # Enable auto-merge to handle future check completions
+          gh pr merge --auto --squash "$PR_URL"
+          # If all required checks are already passing, merge immediately since
+          # auto-merge only triggers on subsequent check completions, not existing ones
+          if [ "$(gh pr view "$PR_URL" --json mergeStateStatus --jq '.mergeStateStatus')" = "MERGEABLE" ]; then
+            gh pr merge --squash "$PR_URL"
+          fi
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
