@@ -1334,6 +1334,7 @@
                 callback({
                   id: doc[google.picker.Document.ID],
                   name: doc[google.picker.Document.NAME],
+                  parentId: doc.parentId || null,
                 })
               }
             })
@@ -1372,12 +1373,40 @@
 
       function handlePickDoc(rowId) {
         getToken((token) => {
-          openPicker(PICKER_VIEW_ID.DOCUMENTS, token, ({ id, name }) => {
-            const idEl = document.getElementById('doc-id-' + rowId)
-            if (!idEl) return // row was removed before picker resolved
-            idEl.value = id
-            document.getElementById('doc-name-' + rowId).textContent = name
-          })
+          openPicker(
+            PICKER_VIEW_ID.DOCUMENTS,
+            token,
+            ({ id, name, parentId }) => {
+              const idEl = document.getElementById('doc-id-' + rowId)
+              if (!idEl) return // row was removed before picker resolved
+              idEl.value = id
+              document.getElementById('doc-name-' + rowId).textContent = name
+
+              // Auto-fill the folder field if it is empty
+              const folderIdEl = document.getElementById('folder-id-' + rowId)
+              if (folderIdEl && !folderIdEl.value && parentId) {
+                folderIdEl.value = parentId
+                // Fetch the folder name from the Drive API
+                gapi.client.drive.files
+                  .get({ fileId: parentId, fields: 'name' })
+                  .then((resp) => {
+                    const folderName =
+                      resp.result && resp.result.name
+                        ? resp.result.name
+                        : parentId
+                    document.getElementById(
+                      'folder-name-' + rowId
+                    ).textContent = folderName
+                  })
+                  .catch(() => {
+                    // If we can't fetch the name, show the ID as fallback
+                    document.getElementById(
+                      'folder-name-' + rowId
+                    ).textContent = parentId
+                  })
+              }
+            }
+          )
         })
       }
       window.handlePickDoc = handlePickDoc

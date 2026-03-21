@@ -68,6 +68,17 @@ function injectGapiMock() {
     load(module, callback) {
       if (typeof callback === 'function') callback()
     },
+    client: {
+      drive: {
+        files: {
+          get({ fileId }) {
+            return Promise.resolve({
+              result: { name: 'Folder for ' + fileId },
+            })
+          },
+        },
+      },
+    },
   }
 
   // Use || {} so this is safe to call before or after injectGisMock.
@@ -3297,5 +3308,60 @@ test.describe('deploy index.html', () => {
     await expect(page.locator('#step3-card')).not.toBeAttached()
     // Deploy section must be visible so the user can re-deploy.
     await expect(page.locator('#deploy-section')).toBeVisible()
+  })
+
+  // ── Picker auto-fill ──────────────────────────────────────────────────────
+
+  test('picking a doc auto-fills empty folder field with parent folder', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await page.route('https://gmail.googleapis.com/**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        body: JSON.stringify({ labels: [{ id: 'L1', name: 'mylabel' }] }),
+      })
+    })
+
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.config-row')
+
+    // Verify folder field is initially empty
+    const folderId = await page.evaluate(
+      () => document.querySelector('[name="folderId"]').value
+    )
+    expect(folderId).toBe('')
+
+    // Click "Pick Doc" to open the picker (sets __pickerCallback)
+    await page.locator('button:has-text("Pick Doc")').click()
+
+    // Simulate picker returning a doc with a parentId
+    await page.evaluate(() => {
+      window.__pickerCallback({
+        action: 'picked',
+        docs: [{ id: 'doc-123', name: 'My Doc', parentId: 'parent-folder-1' }],
+      })
+    })
+
+    // Doc field should be set
+    const docId = await page.evaluate(
+      () => document.querySelector('[name="docId"]').value
+    )
+    expect(docId).toBe('doc-123')
+
+    // Folder field should be auto-filled with the parent folder ID
+    const autoFolderId = await page.evaluate(
+      () => document.querySelector('[name="folderId"]').value
+    )
+    expect(autoFolderId).toBe('parent-folder-1')
+
+    // Folder name should be fetched from Drive API mock
+    await expect(
+      page.locator('[id^="folder-name-"]').first()
+    ).toHaveText('Folder for parent-folder-1')
   })
 })
