@@ -99,6 +99,9 @@ function injectGapiMock() {
       setIncludeFolders() {
         return this
       }
+      setParent() {
+        return this
+      }
     },
     PickerBuilder: class {
       addView() {
@@ -1377,9 +1380,9 @@ test.describe('deploy index.html', () => {
     expect(capturedTitle).toBe('Petry-Projects – Gmail to Drive By Labels')
   })
 
-  // ── Step 4: Configure ───────────────────────────────────────────────────────
+  // ── Step 3: Configure ───────────────────────────────────────────────────────
 
-  test('Step 4 card appears after successful deployment', async ({ page }) => {
+  test('Step 3 card appears after successful deployment', async ({ page }) => {
     await mockSuccessfulDeploy(page)
     await signIn(page)
     await page
@@ -1387,23 +1390,23 @@ test.describe('deploy index.html', () => {
       .click()
     await page.locator('#btn-deploy').click()
     await page.waitForSelector('.status-ok')
-    // Step 4 card should be in the DOM
-    await expect(page.locator('#step4-card')).toBeVisible()
-    await expect(page.locator('#step4-card')).toContainText('Configure scripts')
+    // Step 3 card should be in the DOM
+    await expect(page.locator('#step3-card')).toBeVisible()
+    await expect(page.locator('#step3-card')).toContainText('Configure scripts')
   })
 
-  test('Step 4 card shows step badge with number 4', async ({ page }) => {
+  test('Step 3 card shows step badge with number 3', async ({ page }) => {
     await mockSuccessfulDeploy(page)
     await signIn(page)
     await page
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
-    await expect(page.locator('#step4-card .step-badge')).toHaveText('4')
+    await page.waitForSelector('#step3-card')
+    await expect(page.locator('#step3-card .step-badge')).toHaveText('3')
   })
 
-  test('Step 4 shows a config panel for gmail-to-drive-by-labels', async ({
+  test('Step 3 shows a config panel for gmail-to-drive-by-labels', async ({
     page,
   }) => {
     await mockSuccessfulDeploy(page)
@@ -1412,28 +1415,28 @@ test.describe('deploy index.html', () => {
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
-    await expect(page.locator('#step4-card')).toContainText(
+    await page.waitForSelector('#step3-card')
+    await expect(page.locator('#step3-card')).toContainText(
       'Gmail to Drive By Labels'
     )
     await expect(page.locator('[id^="config-panel-"]')).toHaveCount(1)
   })
 
-  test('Step 4 shows a config panel for calendar-to-sheets', async ({
+  test('Step 3 shows a config panel for calendar-to-sheets', async ({
     page,
   }) => {
     await mockSuccessfulDeploy(page)
     await signIn(page)
     await page.locator('#script-list input[value="calendar-to-sheets"]').click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
-    await expect(page.locator('#step4-card')).toContainText(
+    await page.waitForSelector('#step3-card')
+    await expect(page.locator('#step3-card')).toContainText(
       'Calendar to Sheets'
     )
     await expect(page.locator('[id^="config-panel-"]')).toHaveCount(1)
   })
 
-  test('Step 4 shows two config panels when both scripts are deployed', async ({
+  test('Step 3 shows two config panels when both scripts are deployed', async ({
     page,
   }) => {
     let counter = 0
@@ -1477,7 +1480,7 @@ test.describe('deploy index.html', () => {
       .click()
     await page.locator('#script-list input[value="calendar-to-sheets"]').click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
 
     await expect(page.locator('[id^="config-panel-"]')).toHaveCount(2)
   })
@@ -1491,7 +1494,7 @@ test.describe('deploy index.html', () => {
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
 
     // Wait for a config row to appear (labels loaded)
     await page.waitForSelector('.config-row')
@@ -1516,7 +1519,7 @@ test.describe('deploy index.html', () => {
     await signIn(page)
     await page.locator('#script-list input[value="calendar-to-sheets"]').click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
 
     await page.waitForSelector('.config-row')
 
@@ -1534,7 +1537,7 @@ test.describe('deploy index.html', () => {
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
     await page.waitForSelector('.config-row')
 
     await expect(page.locator('.config-row')).toHaveCount(1)
@@ -1549,7 +1552,7 @@ test.describe('deploy index.html', () => {
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
     await page.waitForSelector('.config-row')
 
     await page.locator('[id^="add-btn-"]').first().click()
@@ -1563,7 +1566,7 @@ test.describe('deploy index.html', () => {
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
     await page.waitForSelector('.config-row')
 
     // Add a second row so there is one left after removal
@@ -1575,14 +1578,14 @@ test.describe('deploy index.html', () => {
     await expect(page.locator('.config-row')).toHaveCount(1)
   })
 
-  test('Step 4 shows Save Configuration button', async ({ page }) => {
+  test('Step 3 shows Save Configuration button', async ({ page }) => {
     await mockSuccessfulDeploy(page)
     await signIn(page)
     await page
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
 
     await expect(
       page.locator('button:has-text("Save Configuration")')
@@ -1634,7 +1637,7 @@ test.describe('deploy index.html', () => {
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
     await page.waitForSelector('.config-row')
 
     // Fill all required fields before saving.
@@ -1709,7 +1712,7 @@ test.describe('deploy index.html', () => {
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
     await page.waitForSelector('.config-row')
 
     // Select a label value and fill all required fields, then click Save
@@ -1785,7 +1788,7 @@ test.describe('deploy index.html', () => {
     await signIn(page)
     await page.locator('#script-list input[value="calendar-to-sheets"]').click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
     await page.waitForSelector('.config-row')
 
     await page
@@ -1814,7 +1817,7 @@ test.describe('deploy index.html', () => {
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
     await page.waitForSelector('.config-row')
 
     // Fill all required fields before saving.
@@ -1848,7 +1851,7 @@ test.describe('deploy index.html', () => {
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
     await page.waitForSelector('.config-row')
 
     await page
@@ -1882,7 +1885,7 @@ test.describe('deploy index.html', () => {
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
     await page.waitForSelector('.config-row')
 
     await page
@@ -1993,7 +1996,7 @@ test.describe('deploy index.html', () => {
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
     await page.waitForSelector('.config-row')
 
     await page
@@ -2028,7 +2031,7 @@ test.describe('deploy index.html', () => {
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
     await page.waitForSelector('.config-row')
 
     await page
@@ -2097,7 +2100,7 @@ test.describe('deploy index.html', () => {
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
     await page.waitForSelector('.config-row')
 
     // Fill all required fields so validation passes and the API call is made.
@@ -2156,7 +2159,7 @@ test.describe('deploy index.html', () => {
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
     await page.waitForSelector('.config-row')
 
     // Attempt to save without filling any required fields.
@@ -2202,7 +2205,7 @@ test.describe('deploy index.html', () => {
     await signIn(page)
     await page.locator('#script-list input[value="calendar-to-sheets"]').click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
     await page.waitForSelector('.config-row')
 
     // Select a calendar but leave spreadsheet empty.
@@ -2251,7 +2254,7 @@ test.describe('deploy index.html', () => {
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
     await page.waitForSelector('.config-row')
 
     // Remove the only config row so there are 0 entries.
@@ -2301,7 +2304,7 @@ test.describe('deploy index.html', () => {
     await signIn(page)
     await page.locator('#script-list input[value="calendar-to-sheets"]').click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
     await page.waitForSelector('.config-row')
 
     // Remove the only config row so there are 0 entries.
@@ -2325,7 +2328,7 @@ test.describe('deploy index.html', () => {
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
     await page.waitForSelector('.config-row')
 
     // Fill all required fields so the save proceeds past validation.
@@ -2439,7 +2442,7 @@ test.describe('deploy index.html', () => {
     )
 
     await signIn(page)
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
 
     // The bad gmail project panel should show the friendly error, NOT the raw API message.
     const gmailPanel = page.locator('#config-panel-proj-404-gmail')
@@ -2578,28 +2581,28 @@ test.describe('deploy index.html', () => {
     expect(source).not.toMatch(/^\s*[^/\s].*calendarId:/m)
   })
 
-  test('Step 4 is not shown before deployment', async ({ page }) => {
-    await expect(page.locator('#step4-card')).toHaveCount(0)
+  test('Step 3 is not shown before deployment', async ({ page }) => {
+    await expect(page.locator('#step3-card')).toHaveCount(0)
     await expect(page.locator('#config-area')).toBeAttached()
     await expect(page.locator('#config-area')).toBeEmpty()
   })
 
-  test('re-deploying replaces previous Step 4 card', async ({ page }) => {
+  test('re-deploying replaces previous Step 3 card', async ({ page }) => {
     await mockSuccessfulDeploy(page)
     await signIn(page)
     await page
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
 
     // After first deploy the section collapses; re-expand to deploy again.
     await page.locator('#btn-show-deploy').click()
     await page.locator('#btn-deploy').click()
     await page.waitForSelector('.status-ok')
 
-    // Should still be exactly one Step 4 card
-    await expect(page.locator('#step4-card')).toHaveCount(1)
+    // Should still be exactly one Step 3 card
+    await expect(page.locator('#step3-card')).toHaveCount(1)
   })
 
   // ── Select all ──────────────────────────────────────────────────────────────
@@ -2667,7 +2670,7 @@ test.describe('deploy index.html', () => {
     await signIn(page)
     await page.locator('#script-list input[value="calendar-to-sheets"]').click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
     await page.waitForSelector('.config-row')
 
     const calSelect = page.locator('.config-row [name="calendarId"]').first()
@@ -2684,7 +2687,7 @@ test.describe('deploy index.html', () => {
     await signIn(page)
     await page.locator('#script-list input[value="calendar-to-sheets"]').click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
     await page.waitForSelector('.config-row')
 
     // Selecting "— select —" (empty value) should not change the sheet name
@@ -2698,9 +2701,9 @@ test.describe('deploy index.html', () => {
     await expect(sheetName).toHaveValue('Primary Calendar')
   })
 
-  // ── Step 4 appears on sign-in if previously deployed ───────────────────────
+  // ── Step 3 appears on sign-in if previously deployed ───────────────────────
 
-  test('Step 4 appears automatically on sign-in when projects were already deployed', async ({
+  test('Step 3 appears automatically on sign-in when projects were already deployed', async ({
     page,
   }) => {
     // Pre-seed localStorage with a previously deployed project
@@ -2717,12 +2720,12 @@ test.describe('deploy index.html', () => {
     await mockSuccessfulDeploy(page)
     await signIn(page)
 
-    // Step 4 should appear without clicking Deploy
-    await page.waitForSelector('#step4-card')
-    await expect(page.locator('#step4-card')).toBeVisible()
+    // Step 3 should appear without clicking Deploy
+    await page.waitForSelector('#step3-card')
+    await expect(page.locator('#step3-card')).toBeVisible()
   })
 
-  test('Step 4 deduplicates multiple localStorage entries for the same script', async ({
+  test('Step 3 deduplicates multiple localStorage entries for the same script', async ({
     page,
   }) => {
     // Pre-seed localStorage with duplicate entries for the same catalogId
@@ -2740,14 +2743,14 @@ test.describe('deploy index.html', () => {
 
     await mockSuccessfulDeploy(page)
     await signIn(page)
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
 
     // Should show exactly 2 config panels (one per catalogId), not 3
     const panels = page.locator('.config-panel')
     await expect(panels).toHaveCount(2)
   })
 
-  test('Step 4 pre-populates calendar rows from existing config.gs', async ({
+  test('Step 3 pre-populates calendar rows from existing config.gs', async ({
     page,
   }) => {
     // Pre-seed localStorage
@@ -2802,7 +2805,7 @@ test.describe('deploy index.html', () => {
     )
 
     await signIn(page)
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
     await page.waitForSelector('.config-row')
 
     // The existing entry should be pre-populated
@@ -2916,7 +2919,7 @@ test.describe('deploy index.html', () => {
     await signIn(page)
     await page.locator('#script-list input[value="calendar-to-sheets"]').click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
 
     // Fresh deploy (loadExisting: false) → one blank row for first-time setup
     await page.waitForSelector('.config-row')
@@ -2975,7 +2978,7 @@ test.describe('deploy index.html', () => {
     )
 
     await signIn(page)
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
     await page.waitForSelector('.config-row')
 
     // Empty SYNC_CONFIGS → no existing entries → one blank row is shown for first-time setup
@@ -3034,7 +3037,7 @@ test.describe('deploy index.html', () => {
     )
 
     await signIn(page)
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
     await page.waitForSelector('.config-row')
 
     // Exactly the 1 real row — no additional blank row
@@ -3058,7 +3061,7 @@ test.describe('deploy index.html', () => {
     await expect(page.locator('#deploy-section')).toBeVisible()
     await expect(page.locator('#btn-show-deploy')).not.toBeVisible()
     // Configure section should not appear until after a deploy
-    await expect(page.locator('#step4-card')).not.toBeAttached()
+    await expect(page.locator('#step3-card')).not.toBeAttached()
   })
 
   test('deploy section collapses after any scripts are deployed', async ({
@@ -3071,7 +3074,7 @@ test.describe('deploy index.html', () => {
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
 
     // Deploy section collapses as soon as configure section is rendered
     await expect(page.locator('#deploy-section')).not.toBeVisible()
@@ -3086,7 +3089,7 @@ test.describe('deploy index.html', () => {
     // Select all scripts and deploy
     await page.locator('#btn-select-all').click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
 
     // Deploy section should now be hidden
     await expect(page.locator('#deploy-section')).not.toBeVisible()
@@ -3100,7 +3103,7 @@ test.describe('deploy index.html', () => {
     await signIn(page)
     await page.locator('#btn-select-all').click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
     await expect(page.locator('#deploy-section')).not.toBeVisible()
 
     // Re-expand
@@ -3126,7 +3129,7 @@ test.describe('deploy index.html', () => {
 
     await mockSuccessfulDeploy(page)
     await signIn(page)
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
 
     await expect(page.locator('#deploy-section')).not.toBeVisible()
     await expect(page.locator('#btn-show-deploy')).toBeVisible()
@@ -3148,16 +3151,16 @@ test.describe('deploy index.html', () => {
 
     await mockSuccessfulDeploy(page)
     await signIn(page)
-    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('#step3-card')
 
     // Any prior deployment → deploy section collapsed
     await expect(page.locator('#deploy-section')).not.toBeVisible()
     await expect(page.locator('#btn-show-deploy')).toBeVisible()
   })
 
-  // ── Step 2 gating: Step 4 must not appear without a valid deployment ──────────
+  // ── Step 2 gating: Step 3 must not appear without a valid deployment ──────────
 
-  test('returning user with no config.gs in their project sees deploy section, not Step 4', async ({
+  test('returning user with no config.gs in their project sees deploy section, not Step 3', async ({
     page,
   }) => {
     // Simulate a returning user whose project was only partially deployed
@@ -3196,13 +3199,13 @@ test.describe('deploy index.html', () => {
 
     await signIn(page)
 
-    // Step 4 must NOT appear — config.gs was never deployed.
-    await expect(page.locator('#step4-card')).not.toBeAttached()
+    // Step 3 must NOT appear — config.gs was never deployed.
+    await expect(page.locator('#step3-card')).not.toBeAttached()
     // Deploy section must be visible so the user can re-deploy.
     await expect(page.locator('#deploy-section')).toBeVisible()
   })
 
-  test('returning user whose project API returns 404 sees deploy section, not Step 4', async ({
+  test('returning user whose project API returns 404 sees deploy section, not Step 3', async ({
     page,
   }) => {
     // Simulate a returning user whose project was deleted from Apps Script
@@ -3236,8 +3239,8 @@ test.describe('deploy index.html', () => {
 
     await signIn(page)
 
-    // Step 4 must NOT appear — the project is gone.
-    await expect(page.locator('#step4-card')).not.toBeAttached()
+    // Step 3 must NOT appear — the project is gone.
+    await expect(page.locator('#step3-card')).not.toBeAttached()
     // Deploy section must be visible so the user can re-deploy.
     await expect(page.locator('#deploy-section')).toBeVisible()
   })

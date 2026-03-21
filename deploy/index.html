@@ -270,7 +270,7 @@
         background: #eee;
       }
 
-      /* ── Config panel (Step 4) ───────────────────────────────────────────── */
+      /* ── Config panel (Step 3) ───────────────────────────────────────────── */
       /* Deploy section — hidden before sign-in; shown/collapsed by JS. */
       #deploy-section {
         display: none;
@@ -505,7 +505,26 @@
       <div id="deploy-section">
         <!-- Step 2 – Choose script -->
         <div class="card">
-          <h2><span class="step-badge">2</span>Choose scripts to deploy</h2>
+          <h2
+            style="
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+            "
+          >
+            <span
+              ><span class="step-badge">2</span>Choose scripts to deploy</span
+            >
+            <button
+              type="button"
+              class="btn btn-outline btn-sm"
+              id="btn-collapse-deploy"
+              onclick="window.collapseDeploySection()"
+              style="font-size: 12px"
+            >
+              ▴ Collapse
+            </button>
+          </h2>
           <div class="script-list" id="script-list">
             <!-- populated by JS -->
           </div>
@@ -529,7 +548,7 @@
         <div id="status-msg" class="status-msg"></div>
       </div>
 
-      <!-- Step 4 – Configure (rendered after successful deploy) -->
+      <!-- Step 3 – Configure (rendered after successful deploy) -->
       <div
         id="config-area"
         role="region"
@@ -989,7 +1008,7 @@
               collapseDeploySection()
               renderConfigSection(prior, { loadExisting: true }).catch(
                 (err) => {
-                  // If Step 4 fails to render, fall back to showing the deploy section
+                  // If Step 3 fails to render, fall back to showing the deploy section
                   // so the user is never left with a blank page.
                   console.warn('gas-deploy: renderConfigSection failed:', err)
                   showDeploySection()
@@ -1189,13 +1208,13 @@
             `
           ✅ <strong>${deployedProjects.length === 1 ? 'Script deployed!' : `${deployedProjects.length} scripts deployed!`}</strong>
           <span style="font-size:13px;color:#137333;display:block;margin-top:4px;">
-            Scroll down to <strong>Step 4</strong> to configure each script.
+            Scroll down to <strong>Step 3</strong> to configure each script.
           </span>
           ${projectSectionsHtml}
         `
           )
 
-          // Render Step 4 configuration panels (errors are non-fatal).
+          // Render Step 3 configuration panels (errors are non-fatal).
           renderConfigSection(deployedProjects).catch(() => {})
         } catch (err) {
           const isApiDisabled =
@@ -1229,7 +1248,7 @@
         }
       }
 
-      // ── Step 4: Configure ─────────────────────────────────────────────────────────
+      // ── Step 3: Configure ─────────────────────────────────────────────────────────
 
       /**
        * Loads Gmail labels from the Gmail API.
@@ -1279,9 +1298,10 @@
             return
           }
           const view = new google.picker.DocsView(viewId)
-          // Enable folder navigation for all views so users can browse the
-          // folder hierarchy rather than seeing a flat list of files.
+          // Start at the root of Drive and enable folder navigation so
+          // users browse the full folder hierarchy, not a flat/search view.
           view.setIncludeFolders(true)
+          view.setParent('root')
           if (viewId === PICKER_VIEW_ID.FOLDERS) {
             // For the folder-selection view also allow the user to select
             // a folder (not just navigate into it).
@@ -1681,7 +1701,7 @@
        * Generates the empty config.gs source for gmail-to-drive-by-labels with a
        * commented-out example. Used on first deploy so the project always starts
        * with an empty config; real entries are only written when the user
-       * completes Step 4.
+       * completes Step 3.
        * Exposed as window.buildEmptyGmailConfigSource for testing.
        */
       function buildEmptyGmailConfigSource() {
@@ -1714,7 +1734,7 @@
        * Generates the empty config.gs source for calendar-to-sheets with a
        * commented-out example. Used on first deploy so the project always starts
        * with an empty config; real entries are only written when the user
-       * completes Step 4.
+       * completes Step 3.
        * Exposed as window.buildEmptyCalendarConfigSource for testing.
        */
       function buildEmptyCalendarConfigSource() {
@@ -1737,7 +1757,7 @@
       /**
        * Returns the empty config.gs source for the given script catalog ID.
        * Always generates an inline empty config with a commented-out example —
-       * real entries are only written once the user completes Step 4 configuration.
+       * real entries are only written once the user completes Step 3 configuration.
        */
       function buildEmptyConfigSource(catalogId) {
         if (catalogId === 'gmail-to-drive-by-labels') {
@@ -1976,10 +1996,10 @@
       }
       window.renderVerificationChecks = renderVerificationChecks
 
-      // ── Step 4 rendering ──────────────────────────────────────────────────────────
+      // ── Step 3 rendering ──────────────────────────────────────────────────────────
 
       /**
-       * Renders the Step 4 "Configure scripts" card and one config panel per
+       * Renders the Step 3 "Configure scripts" card and one config panel per
        * deployed project.  Async because it loads Gmail labels / calendars.
        *
        * @param {Array<{scriptId, catalogId}>} deployedProjects
@@ -2006,9 +2026,9 @@
 
         const card = document.createElement('div')
         card.className = 'card'
-        card.id = 'step4-card'
+        card.id = 'step3-card'
         card.innerHTML =
-          `<h2><span class="step-badge">4</span>Configure scripts</h2>` +
+          `<h2><span class="step-badge">3</span>Configure scripts</h2>` +
           `<p style="font-size:13px;color:#5f6368;margin-bottom:16px;">` +
           `Set up each deployed script. Changes are saved directly to your Apps Script project.` +
           `</p>` +
@@ -2018,7 +2038,7 @@
         const panelsContainer = card.querySelector('#config-panels')
 
         // Count how many projects have a verified config.gs. When loadExisting
-        // is true (returning users), this guards against showing Step 4 for
+        // is true (returning users), this guards against showing Step 3 for
         // projects that were never fully deployed or have since been deleted.
         let verifiedCount = 0
 
@@ -2213,7 +2233,7 @@
 
         // If we were loading existing configs but none of the stored projects
         // have a valid config.gs, the scripts were never fully deployed.
-        // Remove the Step 4 card and return the user to the deploy step.
+        // Remove the Step 3 card and return the user to the deploy step.
         if (loadExisting && verifiedCount === 0) {
           area.innerHTML = ''
           showDeploySection()
