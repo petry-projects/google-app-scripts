@@ -3360,8 +3360,8 @@ test.describe('deploy index.html', () => {
     expect(autoFolderId).toBe('parent-folder-1')
 
     // Folder name should be fetched from Drive API mock
-    await expect(
-      page.locator('[id^="folder-name-"]').first()
-    ).toHaveText('Folder for parent-folder-1')
+    await expect(page.locator('[id^="folder-name-"]').first()).toHaveText(
+      'Folder for parent-folder-1'
+    )
   })
 })
