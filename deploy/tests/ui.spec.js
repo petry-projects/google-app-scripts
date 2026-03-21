@@ -92,6 +92,10 @@ function injectGapiMock() {
     Feature: {
       SUPPORT_DRIVES: 'supportDrives',
     },
+    DocsViewMode: {
+      LIST: 'list',
+      GRID: 'grid',
+    },
     DocsView: class {
       constructor(viewId) {
         window.__pickerViewId = viewId
@@ -106,6 +110,9 @@ function injectGapiMock() {
         return this
       }
       setEnableDrives() {
+        return this
+      }
+      setMode() {
         return this
       }
     },

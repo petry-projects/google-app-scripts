@@ -1301,6 +1301,7 @@
           // users browse the full folder hierarchy, not a flat/search view.
           view.setIncludeFolders(true)
           view.setParent('root')
+          view.setMode(google.picker.DocsViewMode.LIST)
           if (viewId === PICKER_VIEW_ID.FOLDERS) {
             // For the folder-selection view also allow the user to select
             // a folder (not just navigate into it).
@@ -1312,6 +1313,7 @@
           const sharedView = new google.picker.DocsView(viewId)
           sharedView.setIncludeFolders(true)
           sharedView.setEnableDrives(true)
+          sharedView.setMode(google.picker.DocsViewMode.LIST)
           if (viewId === PICKER_VIEW_ID.FOLDERS) {
             sharedView.setSelectFolderEnabled(true)
           }
