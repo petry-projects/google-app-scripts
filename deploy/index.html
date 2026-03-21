@@ -828,10 +828,15 @@
         try {
           if (typeof source !== 'string') return null
           if (!/var\s+SYNC_CONFIGS\s*=/.test(source)) return null
+          // Strip comment lines so example blocks in the header don't confuse the parser.
+          const stripped = source
+            .split('\n')
+            .filter((l) => !l.trimStart().startsWith('//'))
+            .join('\n')
           const entries = []
           const blockRe = /\{([^{}]*)\}/g
           let match
-          while ((match = blockRe.exec(source)) !== null) {
+          while ((match = blockRe.exec(stripped)) !== null) {
             const block = match[1]
             const entry = {}
             for (const field of ['spreadsheetId', 'sheetName', 'calendarId']) {
@@ -860,10 +865,15 @@
         try {
           if (typeof source !== 'string') return null
           if (!/function\s+getProcessConfig\s*\(\s*\)/.test(source)) return null
+          // Strip comment lines so example blocks in the header don't confuse the parser.
+          const stripped = source
+            .split('\n')
+            .filter((l) => !l.trimStart().startsWith('//'))
+            .join('\n')
           const entries = []
           const blockRe = /\{([^{}]*)\}/g
           let match
-          while ((match = blockRe.exec(source)) !== null) {
+          while ((match = blockRe.exec(stripped)) !== null) {
             const block = match[1]
             const entry = {}
             for (const field of [
@@ -1776,46 +1786,8 @@
             body: JSON.stringify({ files }),
           })
 
-          // ── Step 3: Verify config was persisted ─────────────────────────────
-          const verified = await apiFetch(
-            `${APPS_SCRIPT_API}/projects/${projectId}/content`
-          )
-          const configPersisted = (verified.files || []).some(
-            (f) => f.name === 'config'
-          )
-
-          // ── Step 4: Verify script project is accessible ─────────────────────
-          const projectMeta = await apiFetch(
-            `${APPS_SCRIPT_API}/projects/${projectId}`
-          )
-          const scriptAccessible = !!projectMeta.scriptId
-
-          // ── Step 5: Check trigger status via localStorage ───────────────────
-          const setupDone = isSetupDone(projectId)
-
-          // ── Build confirmation UI ───────────────────────────────────────────
-          const checks = [
-            configPersisted
-              ? '✅ Configuration saved'
-              : '⚠️ Configuration may not have saved — please try again',
-            scriptAccessible
-              ? '✅ Script project accessible'
-              : '⚠️ Script project status unclear',
-            setupDone
-              ? '✅ Hourly trigger active'
-              : '⚠️ Trigger pending — run <strong>setup()</strong> in the Apps Script editor to activate',
-          ]
-
-          const allGood = configPersisted && scriptAccessible
-          const celebratory = allGood && setupDone
-
           saveStatus.innerHTML =
-            `<div style="font-size:12px;line-height:1.8;">${checks.join('<br>')}</div>` +
-            (celebratory
-              ? `<div style="font-weight:600;color:#137333;margin-top:6px;">🎉 Your automation is live!</div>`
-              : allGood
-                ? `<div style="color:#137333;margin-top:6px;">✅ Configuration saved — activate the trigger to go live.</div>`
-                : `<div style="color:#c5221f;margin-top:6px;">❌ Save completed with warnings — see above.</div>`)
+            `<span style="color:#137333;">✅ Configuration saved</span>`
         } catch (err) {
           const isScopeError =
             err.httpStatus === 403 ||
@@ -1964,7 +1936,7 @@
                 configError =
                   err.httpStatus === 404
                     ? new Error(
-                        'This script project could not be found — it may have been deleted or moved.'
+                        "This script project could not be found. Use 'Show deployment options' above to re-deploy."
                       )
                     : err.httpStatus === 403
                       ? new Error(
