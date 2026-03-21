@@ -1786,8 +1786,7 @@
             body: JSON.stringify({ files }),
           })
 
-          saveStatus.innerHTML =
-            `<span style="color:#137333;">✅ Configuration saved</span>`
+          saveStatus.innerHTML = `<span style="color:#137333;">✅ Configuration saved</span>`
         } catch (err) {
           const isScopeError =
             err.httpStatus === 403 ||
