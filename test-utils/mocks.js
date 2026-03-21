@@ -244,11 +244,14 @@ function createCalendarEvent({
   }
 }
 
-function createCalendar(id = 'primary') {
+function createCalendar(id = 'primary', name) {
+  const calName = name || id
   const events = []
   return {
     id,
     __events: events,
+    getId: () => id,
+    getName: () => calName,
     getEvents: (start, end) =>
       events.filter(
         (e) => e.getStartTime() >= start && e.getStartTime() <= end
@@ -413,13 +416,20 @@ function installGlobals(globals) {
   const calendar = createCalendar()
   const spreadsheet = createSpreadsheet()
   const properties = createPropertiesService()
+  const calendars = [calendar]
 
   globals.GmailApp = gmail
   globals.DriveApp = drive
   globals.DocumentApp = docs
   globals.CalendarApp = {
     getDefaultCalendar: () => calendar,
-    getCalendarById: (id) => calendar,
+    getCalendarById: (id) => calendars.find((c) => c.id === id) || calendar,
+    getAllCalendars: () => calendars.slice(),
+    __addCalendar: (cal) => calendars.push(cal),
+    __resetCalendars: () => {
+      calendars.length = 0
+      calendars.push(calendar)
+    },
   }
   globals.SpreadsheetApp = {
     openById: (id) => spreadsheet,
@@ -448,6 +458,9 @@ function resetAll(globals) {
     globals.__mocks.calendar.__reset()
     globals.__mocks.spreadsheet.__reset()
     globals.__mocks.properties.__reset()
+    if (globals.CalendarApp && globals.CalendarApp.__resetCalendars) {
+      globals.CalendarApp.__resetCalendars()
+    }
   }
 }
 
@@ -457,4 +470,5 @@ module.exports = {
   createMessage,
   createBlob,
   createCalendarEvent,
+  createCalendar,
 }

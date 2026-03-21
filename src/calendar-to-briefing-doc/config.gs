@@ -1,12 +1,17 @@
 /**
  * Calendar to Briefing Doc configuration.
- * Supports multiple calendar-to-doc mappings.
+ * Supports multiple briefing configurations.
  * Update values when deploying in Google Apps Script.
+ *
+ * When useAllCalendars is true (default), events from every accessible
+ * calendar are included and labelled by source. Set calendarId instead
+ * to pull from a single calendar only.
  *
  * Example:
  * var BRIEFING_CONFIGS = [
  *   {
- *     calendarId: 'primary',
+ *     useAllCalendars: true,
+ *     excludeCalendars: [],
  *     docId: 'YOUR_GOOGLE_DOC_ID',
  *     lookaheadDays: 7,
  *     emailRecipients: ['you@example.com'],
@@ -17,7 +22,8 @@
 
 var BRIEFING_CONFIGS = [
   {
-    calendarId: '',
+    useAllCalendars: true,
+    excludeCalendars: [],
     docId: '',
     lookaheadDays: 7,
     emailRecipients: [],

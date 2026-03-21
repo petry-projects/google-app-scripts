@@ -56,7 +56,7 @@ function _formatDayLabelGAS_(dateKey) {
   )
 }
 
-function _formatEventEntryGAS_(event, timezone) {
+function _formatEventEntryGAS_(event, timezone, calendarName) {
   var title = event.getTitle() || '(No Title)'
   var location = event.getLocation() || ''
   var description = event.getDescription() || ''
@@ -70,6 +70,7 @@ function _formatEventEntryGAS_(event, timezone) {
     typeof event.isAllDayEvent === 'function' && event.isAllDayEvent()
 
   var lines = [title]
+  if (calendarName) lines.push('\uD83D\uDCC5 ' + calendarName)
   if (isAllDay) {
     lines.push('All day')
   } else {
@@ -88,6 +89,61 @@ function _formatEventEntryGAS_(event, timezone) {
   return lines.join('\n')
 }
 
+function _detectConflictsGAS_(eventTuples, timezone) {
+  var timed = eventTuples.filter(function (t) {
+    return !(
+      typeof t.event.isAllDayEvent === 'function' && t.event.isAllDayEvent()
+    )
+  })
+  timed.sort(function (a, b) {
+    return a.event.getStartTime().getTime() - b.event.getStartTime().getTime()
+  })
+  var conflicts = []
+  for (var i = 0; i < timed.length; i++) {
+    for (var j = i + 1; j < timed.length; j++) {
+      var aStart = timed[i].event.getStartTime().getTime()
+      var aEnd = timed[i].event.getEndTime().getTime()
+      var bStart = timed[j].event.getStartTime().getTime()
+      var bEnd = timed[j].event.getEndTime().getTime()
+      if (aStart < bEnd && bStart < aEnd) {
+        conflicts.push({ a: timed[i], b: timed[j] })
+      }
+    }
+  }
+  return conflicts
+}
+
+function _formatConflictWarningGAS_(conflicts, timezone) {
+  if (!conflicts || !conflicts.length) return ''
+  return conflicts
+    .map(function (c) {
+      var aTitle = c.a.event.getTitle() || '(No Title)'
+      var bTitle = c.b.event.getTitle() || '(No Title)'
+      var aLabel = c.a.calendarName ? aTitle + ' (' + c.a.calendarName + ')' : aTitle
+      var bLabel = c.b.calendarName ? bTitle + ' (' + c.b.calendarName + ')' : bTitle
+      var aTime =
+        Utilities.formatDate(c.a.event.getStartTime(), timezone, 'h:mm a') +
+        '\u2013' +
+        Utilities.formatDate(c.a.event.getEndTime(), timezone, 'h:mm a')
+      var bTime =
+        Utilities.formatDate(c.b.event.getStartTime(), timezone, 'h:mm a') +
+        '\u2013' +
+        Utilities.formatDate(c.b.event.getEndTime(), timezone, 'h:mm a')
+      return (
+        '\u26A0\uFE0F "' +
+        aLabel +
+        '" (' +
+        aTime +
+        ') overlaps with "' +
+        bLabel +
+        '" (' +
+        bTime +
+        ')'
+      )
+    })
+    .join('\n')
+}
+
 function _writeBriefingDocGAS_(doc, title, groupedEvents, timezone) {
   var body = doc.getBody()
   body.clear()
@@ -99,16 +155,34 @@ function _writeBriefingDocGAS_(doc, title, groupedEvents, timezone) {
 
   for (var entry of groupedEvents.entries()) {
     var dateKey = entry[0]
-    var events = entry[1]
+    var items = entry[1]
     var dayLabel = _formatDayLabelGAS_(dateKey)
     var heading = body.appendParagraph(dayLabel)
     heading.setHeading(DocumentApp.ParagraphHeading.HEADING_3)
 
-    var sorted = events.slice().sort(function (a, b) {
-      return a.getStartTime().getTime() - b.getStartTime().getTime()
+    // Detect if items are tuples or plain events
+    var isTuple = items.length > 0 && items[0] && items[0].event
+    var tuples = isTuple
+      ? items
+      : items.map(function (e) {
+          return { event: e, calendarName: null }
+        })
+
+    var conflicts = _detectConflictsGAS_(tuples, timezone)
+    var warning = _formatConflictWarningGAS_(conflicts, timezone)
+    if (warning) {
+      body.appendParagraph(warning)
+    }
+
+    var sorted = tuples.slice().sort(function (a, b) {
+      return (
+        a.event.getStartTime().getTime() - b.event.getStartTime().getTime()
+      )
     })
     for (var i = 0; i < sorted.length; i++) {
-      body.appendParagraph(_formatEventEntryGAS_(sorted[i], timezone))
+      body.appendParagraph(
+        _formatEventEntryGAS_(sorted[i].event, timezone, sorted[i].calendarName)
+      )
     }
   }
 }
@@ -125,36 +199,61 @@ function generateWeeklyBriefing() {
   for (var i = 0; i < configs.length; i++) {
     try {
       var cfg = configs[i]
-      if (!cfg.calendarId || !cfg.docId) {
+      if (!cfg.docId) {
+        Logger.log(
+          '[generateWeeklyBriefing] Skipping config #' + i + ': missing docId'
+        )
+        continue
+      }
+      if (!cfg.useAllCalendars && !cfg.calendarId) {
         Logger.log(
           '[generateWeeklyBriefing] Skipping config #' +
             i +
-            ': missing calendarId or docId'
+            ': missing calendarId (useAllCalendars is off)'
         )
         continue
       }
 
-      var calendar = CalendarApp.getCalendarById(cfg.calendarId)
       var doc = DocumentApp.openById(cfg.docId)
       var now = new Date()
-      // Round start down to the beginning of today so events before the trigger
-      // time are not silently excluded from Day 1 of the briefing.
       now.setHours(0, 0, 0, 0)
-      // Advance by calendar days (not raw ms) to handle DST transitions correctly.
       var end = new Date(now)
       end.setDate(end.getDate() + (cfg.lookaheadDays || 7))
-      var events = calendar.getEvents(now, end)
 
-      // Group events by day
+      var eventTuples = []
+      if (cfg.useAllCalendars) {
+        var allCalendars = CalendarApp.getAllCalendars()
+        var defaultCalId = CalendarApp.getDefaultCalendar().getId()
+        var excluded = new Set(cfg.excludeCalendars || [])
+        for (var c = 0; c < allCalendars.length; c++) {
+          var cal = allCalendars[c]
+          var calId =
+            typeof cal.getId === 'function' ? cal.getId() : cal.id || ''
+          if (excluded.has(calId)) continue
+          var calEvents = cal.getEvents(now, end)
+          var calName = calId === defaultCalId ? null : cal.getName()
+          for (var e = 0; e < calEvents.length; e++) {
+            eventTuples.push({ event: calEvents[e], calendarName: calName })
+          }
+        }
+      } else {
+        var calendar = CalendarApp.getCalendarById(cfg.calendarId)
+        var events = calendar.getEvents(now, end)
+        for (var j = 0; j < events.length; j++) {
+          eventTuples.push({ event: events[j], calendarName: null })
+        }
+      }
+
+      // Group event tuples by day
       var map = new Map()
-      for (var j = 0; j < events.length; j++) {
+      for (var t = 0; t < eventTuples.length; t++) {
         var key = Utilities.formatDate(
-          events[j].getStartTime(),
+          eventTuples[t].event.getStartTime(),
           timezone,
           'yyyy-MM-dd'
         )
         if (!map.has(key)) map.set(key, [])
-        map.get(key).push(events[j])
+        map.get(key).push(eventTuples[t])
       }
       var grouped = new Map(
         Array.from(map.entries()).sort(function (a, b) {
@@ -163,8 +262,6 @@ function generateWeeklyBriefing() {
       )
 
       var startKey = Utilities.formatDate(now, timezone, 'yyyy-MM-dd')
-      // end is exclusive (start of the day after the last included day), so
-      // subtract 1ms to get a timestamp within the last included day for labeling.
       var lastIncludedDay = new Date(end.getTime() - 1)
       var endKey = Utilities.formatDate(lastIncludedDay, timezone, 'yyyy-MM-dd')
       var briefingTitle =
@@ -174,10 +271,7 @@ function generateWeeklyBriefing() {
         _formatDayLabelGAS_(endKey)
 
       _writeBriefingDocGAS_(doc, briefingTitle, grouped, timezone)
-      Logger.log(
-        '[generateWeeklyBriefing] Briefing written for calendar: ' +
-          cfg.calendarId
-      )
+      Logger.log('[generateWeeklyBriefing] Briefing written for config #' + i)
 
       if (cfg.emailRecipients && cfg.emailRecipients.length) {
         var docId = typeof doc.getId === 'function' ? doc.getId() : doc.id || ''
@@ -203,6 +297,8 @@ if (typeof module !== 'undefined' && module.exports) {
     getBriefingConfigs_,
     _formatDayLabelGAS_,
     _formatEventEntryGAS_,
+    _detectConflictsGAS_,
+    _formatConflictWarningGAS_,
     _writeBriefingDocGAS_,
     generateWeeklyBriefing,
   }

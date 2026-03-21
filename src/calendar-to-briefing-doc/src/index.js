@@ -15,6 +15,104 @@ function fetchEvents(calendar, start, end) {
 }
 
 /**
+ * Fetches events from multiple calendars, tagging each with its source calendar name.
+ * Events from the default calendar get calendarName = null.
+ * @param {Array} calendars - Array of GAS Calendar objects
+ * @param {string} defaultCalendarId - ID of the user's primary calendar
+ * @param {Date} start
+ * @param {Date} end
+ * @param {string[]} [excludeCalendars] - Calendar IDs to skip
+ * @returns {Array<{event: Object, calendarName: string|null}>}
+ */
+function fetchAllCalendarEvents(
+  calendars,
+  defaultCalendarId,
+  start,
+  end,
+  excludeCalendars
+) {
+  const excluded = new Set(excludeCalendars || [])
+  const tuples = []
+  for (const cal of calendars) {
+    const calId =
+      typeof cal.getId === 'function' ? cal.getId() : cal.id || ''
+    if (excluded.has(calId)) continue
+    const events = fetchEvents(cal, start, end)
+    const calName = calId === defaultCalendarId ? null : cal.getName()
+    for (const event of events) {
+      tuples.push({ event, calendarName: calName })
+    }
+  }
+  return tuples
+}
+
+/**
+ * Detects time conflicts among events for a single day.
+ * All-day events are excluded from conflict detection.
+ * @param {Array<{event: Object, calendarName: string|null}>} eventTuples
+ * @returns {Array<{a: Object, b: Object}>} conflict pairs with title, calendarName, start, end
+ */
+function detectConflicts(eventTuples) {
+  const timed = eventTuples.filter(
+    (t) =>
+      !(typeof t.event.isAllDayEvent === 'function' && t.event.isAllDayEvent())
+  )
+  timed.sort(
+    (a, b) =>
+      a.event.getStartTime().getTime() - b.event.getStartTime().getTime()
+  )
+  const conflicts = []
+  for (let i = 0; i < timed.length; i++) {
+    for (let j = i + 1; j < timed.length; j++) {
+      const aStart = timed[i].event.getStartTime().getTime()
+      const aEnd = timed[i].event.getEndTime().getTime()
+      const bStart = timed[j].event.getStartTime().getTime()
+      const bEnd = timed[j].event.getEndTime().getTime()
+      if (aStart < bEnd && bStart < aEnd) {
+        conflicts.push({
+          a: {
+            title: timed[i].event.getTitle() || '(No Title)',
+            calendarName: timed[i].calendarName,
+            start: timed[i].event.getStartTime(),
+            end: timed[i].event.getEndTime(),
+          },
+          b: {
+            title: timed[j].event.getTitle() || '(No Title)',
+            calendarName: timed[j].calendarName,
+            start: timed[j].event.getStartTime(),
+            end: timed[j].event.getEndTime(),
+          },
+        })
+      }
+    }
+  }
+  return conflicts
+}
+
+/**
+ * Formats conflict warnings as a human-readable string.
+ * @param {Array<{a: Object, b: Object}>} conflicts
+ * @param {function(Date): string} formatTime
+ * @returns {string}
+ */
+function formatConflictWarning(conflicts, formatTime) {
+  if (!conflicts || !conflicts.length) return ''
+  return conflicts
+    .map((c) => {
+      const aLabel = c.a.calendarName
+        ? `${c.a.title} (${c.a.calendarName})`
+        : c.a.title
+      const bLabel = c.b.calendarName
+        ? `${c.b.title} (${c.b.calendarName})`
+        : c.b.title
+      const aTime = `${formatTime(c.a.start)}\u2013${formatTime(c.a.end)}`
+      const bTime = `${formatTime(c.b.start)}\u2013${formatTime(c.b.end)}`
+      return `\u26A0\uFE0F "${aLabel}" (${aTime}) overlaps with "${bLabel}" (${bTime})`
+    })
+    .join('\n')
+}
+
+/**
  * Groups events by day using a caller-supplied date-key function.
  * Returns a Map<dateKey, events[]> sorted by date key ascending (oldest first).
  * Days with no events are omitted.
@@ -24,10 +122,11 @@ function fetchEvents(calendar, start, end) {
  */
 function groupEventsByDay(events, getDateKey) {
   const map = new Map()
-  for (const event of events) {
-    const key = getDateKey(event.getStartTime())
+  for (const item of events) {
+    const evt = item && item.event ? item.event : item
+    const key = getDateKey(evt.getStartTime())
     if (!map.has(key)) map.set(key, [])
-    map.get(key).push(event)
+    map.get(key).push(item)
   }
   return new Map([...map.entries()].sort((a, b) => a[0].localeCompare(b[0])))
 }
@@ -73,7 +172,7 @@ function formatDayLabel(dateKey) {
  * @param {function(Date): string} formatTime - formats a Date to a time string
  * @returns {string}
  */
-function formatEventEntry(event, formatTime) {
+function formatEventEntry(event, formatTime, calendarName) {
   const title = event.getTitle() || '(No Title)'
   const location = event.getLocation() || ''
   const description = event.getDescription() || ''
@@ -84,6 +183,7 @@ function formatEventEntry(event, formatTime) {
     typeof event.isAllDayEvent === 'function' && event.isAllDayEvent()
 
   const lines = [title]
+  if (calendarName) lines.push(`\uD83D\uDCC5 ${calendarName}`)
   if (isAllDay) {
     lines.push('All day')
   } else {
@@ -118,16 +218,31 @@ function writeBriefingDoc(doc, title, groupedEvents, formatTime, DocumentApp) {
   const titlePara = body.appendParagraph(title)
   titlePara.setAttributes({ [DocumentApp.Attribute.BOLD]: true })
 
-  for (const [dateKey, events] of groupedEvents.entries()) {
+  for (const [dateKey, items] of groupedEvents.entries()) {
     const dayLabel = formatDayLabel(dateKey)
     const heading = body.appendParagraph(dayLabel)
     heading.setHeading(DocumentApp.ParagraphHeading.HEADING_3)
 
-    const sorted = [...events].sort(
-      (a, b) => a.getStartTime().getTime() - b.getStartTime().getTime()
+    // Detect if items are tuples or plain events
+    const isTuple = items.length > 0 && items[0] && items[0].event
+    const tuples = isTuple
+      ? items
+      : items.map((e) => ({ event: e, calendarName: null }))
+
+    const conflicts = detectConflicts(tuples)
+    const warning = formatConflictWarning(conflicts, formatTime)
+    if (warning) {
+      body.appendParagraph(warning)
+    }
+
+    const sorted = [...tuples].sort(
+      (a, b) =>
+        a.event.getStartTime().getTime() - b.event.getStartTime().getTime()
     )
-    for (const event of sorted) {
-      body.appendParagraph(formatEventEntry(event, formatTime))
+    for (const tuple of sorted) {
+      body.appendParagraph(
+        formatEventEntry(tuple.event, formatTime, tuple.calendarName)
+      )
     }
   }
 }
@@ -150,7 +265,7 @@ function emailBriefing(gmailApp, recipients, subject, docUrl) {
 
 /**
  * Generates a briefing for a single config entry.
- * @param {Object} calendar - GAS Calendar
+ * @param {Object} calendarApp - GAS CalendarApp global (or single calendar for legacy mode)
  * @param {Object} doc - GAS Document
  * @param {Object} gmailApp - GAS GmailApp global
  * @param {Object} config - single BRIEFING_CONFIGS entry
@@ -159,7 +274,7 @@ function emailBriefing(gmailApp, recipients, subject, docUrl) {
  * @param {Object} DocumentApp - GAS DocumentApp global (for enum access)
  */
 function generateBriefingForConfig(
-  calendar,
+  calendarApp,
   doc,
   gmailApp,
   config,
@@ -175,8 +290,29 @@ function generateBriefingForConfig(
   const end = new Date(now)
   end.setDate(end.getDate() + (config.lookaheadDays || 7))
 
-  const events = fetchEvents(calendar, now, end)
-  const grouped = groupEventsByDay(events, getDateKey)
+  let eventTuples
+  if (config.useAllCalendars) {
+    const calendars = calendarApp.getAllCalendars()
+    const defaultId = calendarApp.getDefaultCalendar().getId()
+    eventTuples = fetchAllCalendarEvents(
+      calendars,
+      defaultId,
+      now,
+      end,
+      config.excludeCalendars
+    )
+  } else {
+    // Legacy single-calendar mode: calendarApp may be a CalendarApp or a
+    // single calendar object. Support both for backward compatibility.
+    const calendar =
+      typeof calendarApp.getCalendarById === 'function'
+        ? calendarApp.getCalendarById(config.calendarId)
+        : calendarApp
+    const events = fetchEvents(calendar, now, end)
+    eventTuples = events.map((e) => ({ event: e, calendarName: null }))
+  }
+
+  const grouped = groupEventsByDay(eventTuples, getDateKey)
 
   // end is exclusive (start of the day after the last included day), so
   // subtract 1ms to get a timestamp within the last included day for labeling.
@@ -198,6 +334,9 @@ function generateBriefingForConfig(
 
 module.exports = {
   fetchEvents,
+  fetchAllCalendarEvents,
+  detectConflicts,
+  formatConflictWarning,
   groupEventsByDay,
   formatDayLabel,
   formatEventEntry,

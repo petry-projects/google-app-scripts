@@ -2,9 +2,13 @@ const {
   installGlobals,
   resetAll,
   createCalendarEvent,
+  createCalendar,
 } = require('../../../test-utils/mocks')
 const {
   fetchEvents,
+  fetchAllCalendarEvents,
+  detectConflicts,
+  formatConflictWarning,
   groupEventsByDay,
   formatDayLabel,
   formatEventEntry,
@@ -373,7 +377,7 @@ describe('generateBriefingForConfig', () => {
     }
 
     generateBriefingForConfig(
-      calendar,
+      CalendarApp,
       doc,
       GmailApp,
       config,
@@ -411,7 +415,7 @@ describe('generateBriefingForConfig', () => {
     }
 
     generateBriefingForConfig(
-      calendar,
+      CalendarApp,
       doc,
       GmailApp,
       config,
@@ -426,12 +430,11 @@ describe('generateBriefingForConfig', () => {
   })
 
   it('uses default lookaheadDays of 7 when not specified', () => {
-    const calendar = CalendarApp.getCalendarById('primary')
     const doc = DocumentApp.openById('docC')
     const config = { calendarId: 'primary', docId: 'docC' }
 
     generateBriefingForConfig(
-      calendar,
+      CalendarApp,
       doc,
       GmailApp,
       config,
@@ -446,7 +449,6 @@ describe('generateBriefingForConfig', () => {
   })
 
   it('uses default email subject when emailSubject is not set', () => {
-    const calendar = CalendarApp.getCalendarById('primary')
     const doc = DocumentApp.openById('docD')
     doc.id = 'myDocId'
     const config = {
@@ -456,7 +458,7 @@ describe('generateBriefingForConfig', () => {
     }
 
     generateBriefingForConfig(
-      calendar,
+      CalendarApp,
       doc,
       GmailApp,
       config,
@@ -465,6 +467,573 @@ describe('generateBriefingForConfig', () => {
       DocumentApp
     )
     expect(GmailApp.__sentEmails[0].subject).toBe('Weekly Briefing')
+  })
+})
+
+// ── fetchAllCalendarEvents ───────────────────────────────────────────────────
+
+describe('fetchAllCalendarEvents', () => {
+  it('returns tuples with null calendarName for default calendar', () => {
+    const cal = createCalendar('primary', 'Primary')
+    const evt = createCalendarEvent({
+      id: 'e1',
+      title: 'Test',
+      start: new Date('2025-01-13T09:00:00Z'),
+      end: new Date('2025-01-13T10:00:00Z'),
+    })
+    cal.__addEvent(evt)
+
+    const tuples = fetchAllCalendarEvents(
+      [cal],
+      'primary',
+      new Date('2025-01-13T00:00:00Z'),
+      new Date('2025-01-20T00:00:00Z')
+    )
+    expect(tuples).toHaveLength(1)
+    expect(tuples[0].calendarName).toBeNull()
+    expect(tuples[0].event.getTitle()).toBe('Test')
+  })
+
+  it('tags non-default calendar events with calendar name', () => {
+    const primary = createCalendar('primary', 'Primary')
+    const work = createCalendar('work@group.calendar', 'Work')
+    work.__addEvent(
+      createCalendarEvent({
+        id: 'e1',
+        title: 'Work Meeting',
+        start: new Date('2025-01-13T09:00:00Z'),
+        end: new Date('2025-01-13T10:00:00Z'),
+      })
+    )
+
+    const tuples = fetchAllCalendarEvents(
+      [primary, work],
+      'primary',
+      new Date('2025-01-13T00:00:00Z'),
+      new Date('2025-01-20T00:00:00Z')
+    )
+    expect(tuples).toHaveLength(1)
+    expect(tuples[0].calendarName).toBe('Work')
+  })
+
+  it('merges events from multiple calendars', () => {
+    const primary = createCalendar('primary', 'Primary')
+    const work = createCalendar('work@group.calendar', 'Work')
+    const family = createCalendar('family@group.calendar', 'Family')
+    primary.__addEvent(
+      createCalendarEvent({
+        id: 'e1',
+        title: 'Personal',
+        start: new Date('2025-01-13T09:00:00Z'),
+        end: new Date('2025-01-13T10:00:00Z'),
+      })
+    )
+    work.__addEvent(
+      createCalendarEvent({
+        id: 'e2',
+        title: 'Standup',
+        start: new Date('2025-01-13T10:00:00Z'),
+        end: new Date('2025-01-13T10:30:00Z'),
+      })
+    )
+    family.__addEvent(
+      createCalendarEvent({
+        id: 'e3',
+        title: 'Dinner',
+        start: new Date('2025-01-13T18:00:00Z'),
+        end: new Date('2025-01-13T19:00:00Z'),
+      })
+    )
+
+    const tuples = fetchAllCalendarEvents(
+      [primary, work, family],
+      'primary',
+      new Date('2025-01-13T00:00:00Z'),
+      new Date('2025-01-20T00:00:00Z')
+    )
+    expect(tuples).toHaveLength(3)
+    expect(tuples[0].calendarName).toBeNull()
+    expect(tuples[1].calendarName).toBe('Work')
+    expect(tuples[2].calendarName).toBe('Family')
+  })
+
+  it('excludes calendars in excludeCalendars list', () => {
+    const primary = createCalendar('primary', 'Primary')
+    const holidays = createCalendar('holidays@group.calendar', 'Holidays')
+    holidays.__addEvent(
+      createCalendarEvent({
+        id: 'e1',
+        title: 'Holiday',
+        start: new Date('2025-01-13T00:00:00Z'),
+        end: new Date('2025-01-13T00:00:00Z'),
+        allDay: true,
+      })
+    )
+
+    const tuples = fetchAllCalendarEvents(
+      [primary, holidays],
+      'primary',
+      new Date('2025-01-13T00:00:00Z'),
+      new Date('2025-01-20T00:00:00Z'),
+      ['holidays@group.calendar']
+    )
+    expect(tuples).toHaveLength(0)
+  })
+})
+
+// ── detectConflicts ─────────────────────────────────────────────────────────
+
+describe('detectConflicts', () => {
+  it('returns empty array when no conflicts', () => {
+    const tuples = [
+      {
+        event: createCalendarEvent({
+          id: 'e1',
+          title: 'A',
+          start: new Date('2025-01-13T09:00:00Z'),
+          end: new Date('2025-01-13T10:00:00Z'),
+        }),
+        calendarName: null,
+      },
+      {
+        event: createCalendarEvent({
+          id: 'e2',
+          title: 'B',
+          start: new Date('2025-01-13T10:00:00Z'),
+          end: new Date('2025-01-13T11:00:00Z'),
+        }),
+        calendarName: null,
+      },
+    ]
+    expect(detectConflicts(tuples)).toHaveLength(0)
+  })
+
+  it('detects two overlapping events', () => {
+    const tuples = [
+      {
+        event: createCalendarEvent({
+          id: 'e1',
+          title: 'Meeting A',
+          start: new Date('2025-01-13T09:00:00Z'),
+          end: new Date('2025-01-13T10:00:00Z'),
+        }),
+        calendarName: null,
+      },
+      {
+        event: createCalendarEvent({
+          id: 'e2',
+          title: 'Meeting B',
+          start: new Date('2025-01-13T09:30:00Z'),
+          end: new Date('2025-01-13T10:30:00Z'),
+        }),
+        calendarName: 'Work',
+      },
+    ]
+    const conflicts = detectConflicts(tuples)
+    expect(conflicts).toHaveLength(1)
+    expect(conflicts[0].a.title).toBe('Meeting A')
+    expect(conflicts[0].b.title).toBe('Meeting B')
+    expect(conflicts[0].b.calendarName).toBe('Work')
+  })
+
+  it('excludes all-day events from conflict detection', () => {
+    const tuples = [
+      {
+        event: createCalendarEvent({
+          id: 'e1',
+          title: 'Holiday',
+          start: new Date('2025-01-13T00:00:00Z'),
+          end: new Date('2025-01-13T00:00:00Z'),
+          allDay: true,
+        }),
+        calendarName: null,
+      },
+      {
+        event: createCalendarEvent({
+          id: 'e2',
+          title: 'Standup',
+          start: new Date('2025-01-13T09:00:00Z'),
+          end: new Date('2025-01-13T09:30:00Z'),
+        }),
+        calendarName: null,
+      },
+    ]
+    expect(detectConflicts(tuples)).toHaveLength(0)
+  })
+
+  it('detects three-way overlap', () => {
+    const tuples = [
+      {
+        event: createCalendarEvent({
+          id: 'e1',
+          title: 'A',
+          start: new Date('2025-01-13T09:00:00Z'),
+          end: new Date('2025-01-13T10:00:00Z'),
+        }),
+        calendarName: null,
+      },
+      {
+        event: createCalendarEvent({
+          id: 'e2',
+          title: 'B',
+          start: new Date('2025-01-13T09:15:00Z'),
+          end: new Date('2025-01-13T09:45:00Z'),
+        }),
+        calendarName: null,
+      },
+      {
+        event: createCalendarEvent({
+          id: 'e3',
+          title: 'C',
+          start: new Date('2025-01-13T09:30:00Z'),
+          end: new Date('2025-01-13T10:30:00Z'),
+        }),
+        calendarName: null,
+      },
+    ]
+    const conflicts = detectConflicts(tuples)
+    // A-B, A-C, B-C
+    expect(conflicts).toHaveLength(3)
+  })
+})
+
+// ── formatConflictWarning ───────────────────────────────────────────────────
+
+describe('formatConflictWarning', () => {
+  it('returns empty string for no conflicts', () => {
+    expect(formatConflictWarning([], testFormatTime)).toBe('')
+  })
+
+  it('returns empty string for null conflicts', () => {
+    expect(formatConflictWarning(null, testFormatTime)).toBe('')
+  })
+
+  it('formats a single conflict', () => {
+    const conflicts = [
+      {
+        a: {
+          title: 'Meeting A',
+          calendarName: null,
+          start: new Date('2025-01-13T09:00:00Z'),
+          end: new Date('2025-01-13T10:00:00Z'),
+        },
+        b: {
+          title: 'Meeting B',
+          calendarName: null,
+          start: new Date('2025-01-13T09:30:00Z'),
+          end: new Date('2025-01-13T10:30:00Z'),
+        },
+      },
+    ]
+    const warning = formatConflictWarning(conflicts, testFormatTime)
+    expect(warning).toContain('\u26A0\uFE0F')
+    expect(warning).toContain('Meeting A')
+    expect(warning).toContain('Meeting B')
+    expect(warning).toContain('overlaps with')
+  })
+
+  it('includes calendar name when present', () => {
+    const conflicts = [
+      {
+        a: {
+          title: 'Personal',
+          calendarName: null,
+          start: new Date('2025-01-13T09:00:00Z'),
+          end: new Date('2025-01-13T10:00:00Z'),
+        },
+        b: {
+          title: 'Work Standup',
+          calendarName: 'Work',
+          start: new Date('2025-01-13T09:30:00Z'),
+          end: new Date('2025-01-13T10:30:00Z'),
+        },
+      },
+    ]
+    const warning = formatConflictWarning(conflicts, testFormatTime)
+    expect(warning).toContain('Work Standup (Work)')
+    expect(warning).not.toContain('Personal (')
+  })
+
+  it('formats multiple conflicts with newlines', () => {
+    const conflicts = [
+      {
+        a: {
+          title: 'A',
+          calendarName: null,
+          start: new Date('2025-01-13T09:00:00Z'),
+          end: new Date('2025-01-13T10:00:00Z'),
+        },
+        b: {
+          title: 'B',
+          calendarName: null,
+          start: new Date('2025-01-13T09:30:00Z'),
+          end: new Date('2025-01-13T10:30:00Z'),
+        },
+      },
+      {
+        a: {
+          title: 'C',
+          calendarName: null,
+          start: new Date('2025-01-13T11:00:00Z'),
+          end: new Date('2025-01-13T12:00:00Z'),
+        },
+        b: {
+          title: 'D',
+          calendarName: null,
+          start: new Date('2025-01-13T11:30:00Z'),
+          end: new Date('2025-01-13T12:30:00Z'),
+        },
+      },
+    ]
+    const warning = formatConflictWarning(conflicts, testFormatTime)
+    expect(warning.split('\n')).toHaveLength(2)
+  })
+})
+
+// ── formatEventEntry with calendarName ──────────────────────────────────────
+
+describe('formatEventEntry with calendarName', () => {
+  it('includes calendar label when calendarName is provided', () => {
+    const evt = createCalendarEvent({
+      id: 'e1',
+      title: 'Work Meeting',
+      start: new Date('2025-01-13T09:00:00Z'),
+      end: new Date('2025-01-13T10:00:00Z'),
+    })
+    const text = formatEventEntry(evt, testFormatTime, 'Work')
+    expect(text).toContain('\uD83D\uDCC5 Work')
+  })
+
+  it('omits calendar label when calendarName is null', () => {
+    const evt = createCalendarEvent({
+      id: 'e1',
+      title: 'Personal',
+      start: new Date('2025-01-13T09:00:00Z'),
+      end: new Date('2025-01-13T10:00:00Z'),
+    })
+    const text = formatEventEntry(evt, testFormatTime, null)
+    expect(text).not.toContain('\uD83D\uDCC5')
+  })
+})
+
+// ── groupEventsByDay with tuples ────────────────────────────────────────────
+
+describe('groupEventsByDay with tuples', () => {
+  it('groups tuples by date using event.getStartTime()', () => {
+    const tuples = [
+      {
+        event: createCalendarEvent({
+          id: 'e1',
+          start: new Date('2025-01-13T09:00:00Z'),
+          end: new Date('2025-01-13T10:00:00Z'),
+        }),
+        calendarName: null,
+      },
+      {
+        event: createCalendarEvent({
+          id: 'e2',
+          start: new Date('2025-01-13T14:00:00Z'),
+          end: new Date('2025-01-13T15:00:00Z'),
+        }),
+        calendarName: 'Work',
+      },
+    ]
+    const grouped = groupEventsByDay(tuples, (d) =>
+      new Date(d).toISOString().slice(0, 10)
+    )
+    expect(grouped.size).toBe(1)
+    expect(grouped.get('2025-01-13')).toHaveLength(2)
+    expect(grouped.get('2025-01-13')[0].calendarName).toBeNull()
+    expect(grouped.get('2025-01-13')[1].calendarName).toBe('Work')
+  })
+})
+
+// ── writeBriefingDoc with conflicts ─────────────────────────────────────────
+
+describe('writeBriefingDoc with conflicts and calendar names', () => {
+  it('writes conflict warning when events overlap', () => {
+    const doc = DocumentApp.openById('conflictDoc')
+    const tuples = [
+      {
+        event: createCalendarEvent({
+          id: 'e1',
+          title: 'Meeting A',
+          start: new Date('2025-01-13T09:00:00Z'),
+          end: new Date('2025-01-13T10:00:00Z'),
+        }),
+        calendarName: null,
+      },
+      {
+        event: createCalendarEvent({
+          id: 'e2',
+          title: 'Meeting B',
+          start: new Date('2025-01-13T09:30:00Z'),
+          end: new Date('2025-01-13T10:30:00Z'),
+        }),
+        calendarName: 'Work',
+      },
+    ]
+    const grouped = new Map([['2025-01-13', tuples]])
+
+    writeBriefingDoc(doc, 'Briefing', grouped, testFormatTime, DocumentApp)
+
+    const paras = doc.getBody().getParagraphs()
+    const texts = paras.map((p) => p.getText())
+    // title, day heading, conflict warning, event A, event B
+    expect(texts.some((t) => t.includes('\u26A0\uFE0F'))).toBe(true)
+    expect(texts.some((t) => t.includes('\uD83D\uDCC5 Work'))).toBe(true)
+  })
+
+  it('writes no conflict warning when no overlaps', () => {
+    const doc = DocumentApp.openById('noConflictDoc')
+    const tuples = [
+      {
+        event: createCalendarEvent({
+          id: 'e1',
+          title: 'A',
+          start: new Date('2025-01-13T09:00:00Z'),
+          end: new Date('2025-01-13T10:00:00Z'),
+        }),
+        calendarName: null,
+      },
+      {
+        event: createCalendarEvent({
+          id: 'e2',
+          title: 'B',
+          start: new Date('2025-01-13T10:00:00Z'),
+          end: new Date('2025-01-13T11:00:00Z'),
+        }),
+        calendarName: null,
+      },
+    ]
+    const grouped = new Map([['2025-01-13', tuples]])
+
+    writeBriefingDoc(doc, 'Briefing', grouped, testFormatTime, DocumentApp)
+
+    const paras = doc.getBody().getParagraphs()
+    const texts = paras.map((p) => p.getText())
+    expect(texts.some((t) => t.includes('\u26A0\uFE0F'))).toBe(false)
+  })
+})
+
+// ── generateBriefingForConfig with multi-calendar ───────────────────────────
+
+describe('generateBriefingForConfig with multi-calendar', () => {
+  it('uses all calendars when useAllCalendars is true', () => {
+    const work = createCalendar('work@group.calendar', 'Work')
+    const futureStart = new Date(Date.now() + 60 * 60 * 1000)
+    const futureEnd = new Date(Date.now() + 2 * 60 * 60 * 1000)
+    work.__addEvent(
+      createCalendarEvent({
+        id: 'e1',
+        title: 'Work Standup',
+        start: futureStart,
+        end: futureEnd,
+      })
+    )
+    CalendarApp.__addCalendar(work)
+
+    const doc = DocumentApp.openById('multiCalDoc')
+    const config = {
+      useAllCalendars: true,
+      docId: 'multiCalDoc',
+      lookaheadDays: 7,
+    }
+
+    generateBriefingForConfig(
+      CalendarApp,
+      doc,
+      GmailApp,
+      config,
+      testDateKey,
+      testFormatTime,
+      DocumentApp
+    )
+
+    const paras = doc.getBody().getParagraphs()
+    expect(paras.length).toBeGreaterThan(0)
+    expect(paras[0].getText()).toContain('Weekly Briefing')
+    // Work calendar events should have calendar name label
+    const texts = paras.map((p) => p.getText())
+    expect(texts.some((t) => t.includes('\uD83D\uDCC5 Work'))).toBe(true)
+  })
+
+  it('excludes calendars in excludeCalendars', () => {
+    const excluded = createCalendar('excluded@group.calendar', 'Excluded')
+    const futureStart = new Date(Date.now() + 60 * 60 * 1000)
+    const futureEnd = new Date(Date.now() + 2 * 60 * 60 * 1000)
+    excluded.__addEvent(
+      createCalendarEvent({
+        id: 'e1',
+        title: 'Should Not Appear',
+        start: futureStart,
+        end: futureEnd,
+      })
+    )
+    CalendarApp.__addCalendar(excluded)
+
+    const doc = DocumentApp.openById('excludeDoc')
+    const config = {
+      useAllCalendars: true,
+      excludeCalendars: ['excluded@group.calendar'],
+      docId: 'excludeDoc',
+      lookaheadDays: 7,
+    }
+
+    generateBriefingForConfig(
+      CalendarApp,
+      doc,
+      GmailApp,
+      config,
+      testDateKey,
+      testFormatTime,
+      DocumentApp
+    )
+
+    const texts = doc
+      .getBody()
+      .getParagraphs()
+      .map((p) => p.getText())
+    expect(texts.some((t) => t.includes('Should Not Appear'))).toBe(false)
+  })
+
+  it('falls back to legacy single-calendar mode when useAllCalendars is falsy', () => {
+    const calendar = CalendarApp.getCalendarById('primary')
+    const futureStart = new Date(Date.now() + 60 * 60 * 1000)
+    const futureEnd = new Date(Date.now() + 2 * 60 * 60 * 1000)
+    calendar.__addEvent(
+      createCalendarEvent({
+        id: 'e1',
+        title: 'Legacy Event',
+        start: futureStart,
+        end: futureEnd,
+      })
+    )
+
+    const doc = DocumentApp.openById('legacyDoc')
+    const config = {
+      calendarId: 'primary',
+      docId: 'legacyDoc',
+      lookaheadDays: 7,
+    }
+
+    generateBriefingForConfig(
+      CalendarApp,
+      doc,
+      GmailApp,
+      config,
+      testDateKey,
+      testFormatTime,
+      DocumentApp
+    )
+
+    const texts = doc
+      .getBody()
+      .getParagraphs()
+      .map((p) => p.getText())
+    expect(texts.some((t) => t.includes('Legacy Event'))).toBe(true)
+    // No calendar name labels in legacy mode
+    expect(texts.some((t) => t.includes('\uD83D\uDCC5'))).toBe(false)
   })
 })
 
@@ -549,6 +1118,114 @@ describe('code.gs', () => {
       expect(text).toContain('alice@example.com')
       expect(text).toContain('Year-end review.')
     })
+
+    it('includes calendar name when provided', () => {
+      const evt = createCalendarEvent({
+        id: 'e4',
+        title: 'Work Event',
+        start: new Date('2025-01-13T10:00:00Z'),
+        end: new Date('2025-01-13T11:00:00Z'),
+      })
+      const text = code._formatEventEntryGAS_(evt, 'UTC', 'Work')
+      expect(text).toContain('\uD83D\uDCC5 Work')
+    })
+
+    it('omits calendar name when not provided', () => {
+      const evt = createCalendarEvent({
+        id: 'e5',
+        title: 'Primary Event',
+        start: new Date('2025-01-13T10:00:00Z'),
+        end: new Date('2025-01-13T11:00:00Z'),
+      })
+      const text = code._formatEventEntryGAS_(evt, 'UTC')
+      expect(text).not.toContain('\uD83D\uDCC5')
+    })
+  })
+
+  describe('_detectConflictsGAS_', () => {
+    it('detects overlapping events', () => {
+      const tuples = [
+        {
+          event: createCalendarEvent({
+            id: 'e1',
+            title: 'A',
+            start: new Date('2025-01-13T09:00:00Z'),
+            end: new Date('2025-01-13T10:00:00Z'),
+          }),
+          calendarName: null,
+        },
+        {
+          event: createCalendarEvent({
+            id: 'e2',
+            title: 'B',
+            start: new Date('2025-01-13T09:30:00Z'),
+            end: new Date('2025-01-13T10:30:00Z'),
+          }),
+          calendarName: 'Work',
+        },
+      ]
+      const conflicts = code._detectConflictsGAS_(tuples, 'UTC')
+      expect(conflicts).toHaveLength(1)
+    })
+
+    it('returns empty for non-overlapping events', () => {
+      const tuples = [
+        {
+          event: createCalendarEvent({
+            id: 'e1',
+            title: 'A',
+            start: new Date('2025-01-13T09:00:00Z'),
+            end: new Date('2025-01-13T10:00:00Z'),
+          }),
+          calendarName: null,
+        },
+        {
+          event: createCalendarEvent({
+            id: 'e2',
+            title: 'B',
+            start: new Date('2025-01-13T10:00:00Z'),
+            end: new Date('2025-01-13T11:00:00Z'),
+          }),
+          calendarName: null,
+        },
+      ]
+      expect(code._detectConflictsGAS_(tuples, 'UTC')).toHaveLength(0)
+    })
+  })
+
+  describe('_formatConflictWarningGAS_', () => {
+    it('formats conflict warning text', () => {
+      const conflicts = [
+        {
+          a: {
+            event: createCalendarEvent({
+              id: 'e1',
+              title: 'A',
+              start: new Date('2025-01-13T09:00:00Z'),
+              end: new Date('2025-01-13T10:00:00Z'),
+            }),
+            calendarName: null,
+          },
+          b: {
+            event: createCalendarEvent({
+              id: 'e2',
+              title: 'B',
+              start: new Date('2025-01-13T09:30:00Z'),
+              end: new Date('2025-01-13T10:30:00Z'),
+            }),
+            calendarName: 'Work',
+          },
+        },
+      ]
+      const warning = code._formatConflictWarningGAS_(conflicts, 'UTC')
+      expect(warning).toContain('\u26A0\uFE0F')
+      expect(warning).toContain('overlaps with')
+      expect(warning).toContain('B (Work)')
+    })
+
+    it('returns empty for no conflicts', () => {
+      expect(code._formatConflictWarningGAS_([], 'UTC')).toBe('')
+    })
   })
 
   describe('_writeBriefingDocGAS_', () => {
@@ -575,15 +1252,6 @@ describe('code.gs', () => {
   })
 
   describe('generateWeeklyBriefing', () => {
-    it('skips configs missing calendarId', () => {
-      global.BRIEFING_CONFIGS = [{ docId: 'doc1', lookaheadDays: 7 }]
-      delete require.cache[require.resolve('../code.gs')]
-      const freshCode = require('../code.gs')
-
-      expect(() => freshCode.generateWeeklyBriefing()).not.toThrow()
-      delete global.BRIEFING_CONFIGS
-    })
-
     it('skips configs missing docId', () => {
       global.BRIEFING_CONFIGS = [{ calendarId: 'primary', lookaheadDays: 7 }]
       delete require.cache[require.resolve('../code.gs')]
@@ -593,7 +1261,16 @@ describe('code.gs', () => {
       delete global.BRIEFING_CONFIGS
     })
 
-    it('writes briefing doc for a valid config', () => {
+    it('skips configs missing calendarId when useAllCalendars is off', () => {
+      global.BRIEFING_CONFIGS = [{ docId: 'doc1', lookaheadDays: 7 }]
+      delete require.cache[require.resolve('../code.gs')]
+      const freshCode = require('../code.gs')
+
+      expect(() => freshCode.generateWeeklyBriefing()).not.toThrow()
+      delete global.BRIEFING_CONFIGS
+    })
+
+    it('writes briefing doc for a valid legacy config', () => {
       const futureStart = new Date(Date.now() + 60 * 60 * 1000)
       const futureEnd = new Date(Date.now() + 2 * 60 * 60 * 1000)
       CalendarApp.getDefaultCalendar().__addEvent(
@@ -616,6 +1293,41 @@ describe('code.gs', () => {
       const paras = doc.getBody().getParagraphs()
       expect(paras.length).toBeGreaterThan(0)
       expect(paras[0].getText()).toContain('Weekly Briefing')
+      delete global.BRIEFING_CONFIGS
+    })
+
+    it('writes briefing with useAllCalendars and labels non-primary events', () => {
+      const futureStart = new Date(Date.now() + 60 * 60 * 1000)
+      const futureEnd = new Date(Date.now() + 2 * 60 * 60 * 1000)
+      const work = createCalendar('work@group.calendar', 'Work')
+      work.__addEvent(
+        createCalendarEvent({
+          id: 'e1',
+          title: 'Work Standup',
+          start: futureStart,
+          end: futureEnd,
+        })
+      )
+      CalendarApp.__addCalendar(work)
+      global.BRIEFING_CONFIGS = [
+        {
+          useAllCalendars: true,
+          docId: 'multiDoc',
+          lookaheadDays: 7,
+        },
+      ]
+      delete require.cache[require.resolve('../code.gs')]
+      const freshCode = require('../code.gs')
+
+      freshCode.generateWeeklyBriefing()
+
+      const doc = DocumentApp.openById('multiDoc')
+      const texts = doc
+        .getBody()
+        .getParagraphs()
+        .map((p) => p.getText())
+      expect(texts[0]).toContain('Weekly Briefing')
+      expect(texts.some((t) => t.includes('\uD83D\uDCC5 Work'))).toBe(true)
       delete global.BRIEFING_CONFIGS
     })
 
@@ -651,8 +1363,6 @@ describe('code.gs', () => {
     })
 
     it('logs and continues on error (does not throw)', () => {
-      // CalendarApp.getCalendarById will return the mock which works fine;
-      // force an error by making DocumentApp throw on open
       const origOpen = DocumentApp.openById
       DocumentApp.openById = () => {
         throw new Error('Permission denied')
