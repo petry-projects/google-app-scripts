@@ -3194,7 +3194,9 @@ test.describe('deploy index.html', () => {
     await page.locator('#btn-toggle-deploy').click()
 
     // Gmail script should show "Deployed" badge
-    const gmailLabel = page.locator('label[for="script-gmail-to-drive-by-labels"]')
+    const gmailLabel = page.locator(
+      'label[for="script-gmail-to-drive-by-labels"]'
+    )
     await expect(gmailLabel.locator('.deployed-badge')).toBeVisible()
     await expect(gmailLabel.locator('.deployed-badge')).toHaveText('Deployed')
 
