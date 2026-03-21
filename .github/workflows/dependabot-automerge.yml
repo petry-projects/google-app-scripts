@@ -27,7 +27,7 @@ jobs:
           gh pr merge --auto --squash "$PR_URL"
           # If all required checks are already passing, merge immediately since
           # auto-merge only triggers on subsequent check completions, not existing ones
-          if [ "$(gh pr view "$PR_URL" --json mergeStateStatus --jq '.mergeStateStatus')" = "MERGEABLE" ]; then
+          if [ "$(gh pr view "$PR_URL" --json mergeable --jq '.mergeable')" = "true" ]; then
             gh pr merge --squash "$PR_URL"
           fi
         env:
