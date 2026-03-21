@@ -1923,7 +1923,8 @@
                         'gas-deploy: gmail config parse returned null for project',
                         scriptId
                       )
-                      configWarning = 'Could not read the existing configuration — starting with a blank form.'
+                      configWarning =
+                        'Could not read the existing configuration — starting with a blank form.'
                     }
                   } else if (catalogId === 'calendar-to-sheets') {
                     existingEntries = parseCalendarConfig(configFile.source)
@@ -1932,7 +1933,8 @@
                         'gas-deploy: calendar config parse returned null for project',
                         scriptId
                       )
-                      configWarning = 'Could not read the existing configuration — starting with a blank form.'
+                      configWarning =
+                        'Could not read the existing configuration — starting with a blank form.'
                     }
                   }
                   configVerified = true
@@ -2018,10 +2020,7 @@
                   'color:#7a5c00;background:#fef9c3;border:1px solid #f6d860;border-radius:4px;padding:8px 12px;font-size:13px;margin-bottom:8px;'
                 )
                 warningEl.textContent = configWarning
-                rowsContainer.insertBefore(
-                  warningEl,
-                  rowsContainer.firstChild
-                )
+                rowsContainer.insertBefore(warningEl, rowsContainer.firstChild)
               }
             }
           } catch (err) {
