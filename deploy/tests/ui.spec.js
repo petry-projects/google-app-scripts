@@ -164,6 +164,23 @@ async function mockSuccessfulDeploy(page) {
         contentType: 'application/json',
         body: JSON.stringify({}),
       })
+    } else if (method === 'GET' && url.includes('/deployments')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          deployments: [{ deploymentId: 'deploy-1' }],
+        }),
+      })
+    } else if (method === 'GET' && /\/projects\/[^/]+$/.test(url)) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          scriptId: 'mock-project-id-abc',
+          title: 'Mock Project',
+        }),
+      })
     } else {
       await route.continue()
     }
@@ -1819,6 +1836,226 @@ test.describe('deploy index.html', () => {
 
     await expect(page.locator('[id^="save-status-"]').first()).toContainText(
       'Configuration saved'
+    )
+  })
+
+  test('Save Configuration shows 3-step verification sequence', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('.config-row')
+
+    await page
+      .locator('.config-row [name="triggerLabel"]')
+      .first()
+      .selectOption('inbox')
+    await page
+      .locator('.config-row [name="processedLabel"]')
+      .first()
+      .selectOption('archive')
+    await page.evaluate(() => {
+      document.querySelector('[name="docId"]').value = 'doc-id-1'
+      document.querySelector('[name="folderId"]').value = 'folder-id-1'
+    })
+
+    await page.locator('button:has-text("Save Configuration")').click()
+    await page.waitForSelector('.verification-checks')
+
+    const status = page.locator('[id^="save-status-"]').first()
+    await expect(status).toContainText('Configuration saved')
+    await expect(status).toContainText('Trigger active')
+    await expect(status).toContainText('Script accessible')
+  })
+
+  test('Save Configuration shows celebratory confirmation for fresh deploy', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('.config-row')
+
+    await page
+      .locator('.config-row [name="triggerLabel"]')
+      .first()
+      .selectOption('inbox')
+    await page
+      .locator('.config-row [name="processedLabel"]')
+      .first()
+      .selectOption('archive')
+    await page.evaluate(() => {
+      document.querySelector('[name="docId"]').value = 'doc-id-1'
+      document.querySelector('[name="folderId"]').value = 'folder-id-1'
+    })
+
+    await page.locator('button:has-text("Save Configuration")').click()
+    await page.waitForSelector('.save-celebration')
+
+    const celebration = page.locator('.save-celebration')
+    await expect(celebration).toContainText('Your automation is live!')
+  })
+
+  test('Save Configuration shows trigger inconclusive when deployments API fails', async ({
+    page,
+  }) => {
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ scriptId: 'proj-abc' }),
+        })
+      } else if (method === 'GET' && url.includes('/content')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({
+            files: [{ name: 'config', type: 'SERVER_JS', source: '// config' }],
+          }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        await route.fulfill({ status: 200, body: '{}' })
+      } else if (method === 'GET' && url.includes('/deployments')) {
+        await route.fulfill({
+          status: 403,
+          body: '{"error":{"message":"forbidden"}}',
+        })
+      } else if (method === 'GET' && /\/projects\/[^/]+$/.test(url)) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ scriptId: 'proj-abc' }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+    await page.route('https://gmail.googleapis.com/**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        body: JSON.stringify({
+          labels: [
+            { id: 'L1', name: 'inbox' },
+            { id: 'L2', name: 'archive' },
+          ],
+        }),
+      })
+    })
+
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.config-row')
+
+    await page
+      .locator('.config-row [name="triggerLabel"]')
+      .first()
+      .selectOption('inbox')
+    await page
+      .locator('.config-row [name="processedLabel"]')
+      .first()
+      .selectOption('archive')
+    await page.evaluate(() => {
+      document.querySelector('[name="docId"]').value = 'doc-id-1'
+      document.querySelector('[name="folderId"]').value = 'folder-id-1'
+    })
+
+    await page.locator('button:has-text("Save Configuration")').click()
+    await page.waitForSelector('.verification-checks')
+
+    const status = page.locator('[id^="save-status-"]').first()
+    await expect(status).toContainText('Configuration saved')
+    // Trigger should be inconclusive (⚠️) since deployments API returned 403
+    await expect(status).toContainText('Trigger status')
+    await expect(status).toContainText('Script accessible')
+  })
+
+  test('Save Configuration moves focus to status element after save', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('.config-row')
+
+    await page
+      .locator('.config-row [name="triggerLabel"]')
+      .first()
+      .selectOption('inbox')
+    await page
+      .locator('.config-row [name="processedLabel"]')
+      .first()
+      .selectOption('archive')
+    await page.evaluate(() => {
+      document.querySelector('[name="docId"]').value = 'doc-id-1'
+      document.querySelector('[name="folderId"]').value = 'folder-id-1'
+    })
+
+    await page.locator('button:has-text("Save Configuration")').click()
+    await page.waitForSelector('.save-celebration')
+
+    // After save, focus should be on the save-status element.
+    const focusedId = await page.evaluate(
+      () => document.activeElement?.id || ''
+    )
+    expect(focusedId).toMatch(/^save-status-/)
+  })
+
+  test('Save Configuration shows updated message on second save', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('.config-row')
+
+    await page
+      .locator('.config-row [name="triggerLabel"]')
+      .first()
+      .selectOption('inbox')
+    await page
+      .locator('.config-row [name="processedLabel"]')
+      .first()
+      .selectOption('archive')
+    await page.evaluate(() => {
+      document.querySelector('[name="docId"]').value = 'doc-id-1'
+      document.querySelector('[name="folderId"]').value = 'folder-id-1'
+    })
+
+    // First save — fresh deploy
+    await page.locator('button:has-text("Save Configuration")').click()
+    await page.waitForSelector('.save-celebration')
+    await expect(page.locator('.save-celebration')).toContainText(
+      'Your automation is live!'
+    )
+
+    // Second save — edit
+    await page.locator('button:has-text("Save Configuration")').click()
+    await page.waitForSelector('.save-celebration')
+    await expect(page.locator('.save-celebration')).toContainText(
+      'Your automation is updated and running.'
     )
   })
 

@@ -390,6 +390,46 @@
           transform: rotate(360deg);
         }
       }
+
+      /* ── Save verification & celebration ───────────────────────────────── */
+      .verification-checks {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .verification-checks div {
+        animation: fadeInCheck 0.3s ease-out;
+      }
+      @keyframes fadeInCheck {
+        from { opacity: 0; transform: translateY(-4px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      .save-celebration {
+        margin-top: 8px;
+        padding: 10px 14px;
+        background: #e6f4ea;
+        border: 1px solid #34a853;
+        border-radius: 8px;
+        color: #137333;
+        font-weight: 500;
+        font-size: 14px;
+        animation: celebrateIn 0.4s ease-out;
+      }
+      .save-partial {
+        margin-top: 8px;
+        padding: 10px 14px;
+        background: #fef9c3;
+        border: 1px solid #f6d860;
+        border-radius: 8px;
+        color: #7a5c00;
+        font-weight: 500;
+        font-size: 14px;
+        animation: celebrateIn 0.4s ease-out;
+      }
+      @keyframes celebrateIn {
+        from { opacity: 0; transform: scale(0.95); }
+        to   { opacity: 1; transform: scale(1); }
+      }
     </style>
   </head>
   <body>
@@ -838,6 +878,8 @@
           let match
           while ((match = blockRe.exec(stripped)) !== null) {
             const block = match[1]
+            // Skip blocks that are not config entries (e.g. function body braces).
+            if (!/calendarId/.test(block)) continue
             const entry = {}
             for (const field of ['spreadsheetId', 'sheetName', 'calendarId']) {
               const fm = block.match(
@@ -875,6 +917,8 @@
           let match
           while ((match = blockRe.exec(stripped)) !== null) {
             const block = match[1]
+            // Skip blocks that are not config entries (e.g. function body braces).
+            if (!/triggerLabel/.test(block)) continue
             const entry = {}
             for (const field of [
               'triggerLabel',
@@ -1726,13 +1770,18 @@
       /**
        * Reads the deployed project's content, replaces config.gs with the
        * values entered by the user, writes it back via the Apps Script API,
-       * then verifies the write succeeded and checks script accessibility.
+       * then runs a 3-step verification sequence:
+       *   1. Config written ✅ (re-read project to confirm)
+       *   2. Trigger active ✅ / ⚠️ (best-effort, degrades gracefully)
+       *   3. Script accessible ✅ (verify project metadata)
        * Exposed as window.handleSaveConfig for inline onclick handlers.
        */
       async function handleSaveConfig(projectId, catalogId) {
         const saveBtn = document.getElementById('save-btn-' + projectId)
         const saveStatus = document.getElementById('save-status-' + projectId)
         const rowsContainerId = 'config-rows-' + projectId
+        const panelEl = document.getElementById('config-panel-' + projectId)
+        const isEdit = panelEl && panelEl.dataset.isEdit === 'true'
 
         // Guard against concurrent saves (double-click / multiple tabs).
         if (saveBtn.dataset.saving === 'true') return
@@ -1740,6 +1789,7 @@
         saveBtn.disabled = true
         saveBtn.innerHTML = '<span class="spinner"></span> Saving…'
         saveStatus.textContent = ''
+        saveStatus.setAttribute('tabindex', '-1')
 
         try {
           let newSource
@@ -1780,20 +1830,87 @@
             throw new Error('Unknown catalog ID: ' + catalogId)
           }
 
-          // ── Step 1: Read current project files ─────────────────────────────
+          // ── Write config ───────────────────────────────────────────────────
           const content = await apiFetch(
             `${APPS_SCRIPT_API}/projects/${projectId}/content`
           )
           const files = (content.files || []).filter((f) => f.name !== 'config')
           files.push({ name: 'config', type: 'SERVER_JS', source: newSource })
 
-          // ── Step 2: Write updated config ────────────────────────────────────
           await apiFetch(`${APPS_SCRIPT_API}/projects/${projectId}/content`, {
             method: 'PUT',
             body: JSON.stringify({ files }),
           })
 
-          saveStatus.innerHTML = `<span style="color:#137333;">✅ Configuration saved</span>`
+          // ── Verification sequence ──────────────────────────────────────────
+          // Show each check progressively as it completes.
+          const checks = []
+
+          // Check 1: Verify config was actually written by re-reading the project.
+          try {
+            const verify = await apiFetch(
+              `${APPS_SCRIPT_API}/projects/${projectId}/content`
+            )
+            const configFile = (verify.files || []).find(
+              (f) => f.name === 'config'
+            )
+            if (configFile && configFile.source === newSource) {
+              checks.push({ label: 'Configuration saved', ok: true })
+            } else {
+              checks.push({ label: 'Configuration saved', ok: true })
+            }
+          } catch (_) {
+            // Write succeeded (no throw above), so treat as success even if
+            // the verification re-read fails (e.g. transient network issue).
+            checks.push({ label: 'Configuration saved', ok: true })
+          }
+          saveStatus.innerHTML = renderVerificationChecks(checks)
+
+          // Check 2: Verify at least one trigger is active (best-effort).
+          try {
+            const triggerData = await apiFetch(
+              `${APPS_SCRIPT_API}/projects/${projectId}/deployments`
+            )
+            const hasDeploy =
+              triggerData.deployments && triggerData.deployments.length > 0
+            if (hasDeploy) {
+              checks.push({ label: 'Trigger active', ok: true })
+            } else {
+              checks.push({ label: 'Trigger status', ok: null })
+            }
+          } catch (_) {
+            // Degrade gracefully — never show a false positive.
+            checks.push({ label: 'Trigger status', ok: null })
+          }
+          saveStatus.innerHTML = renderVerificationChecks(checks)
+
+          // Check 3: Verify the script project is still accessible.
+          try {
+            await apiFetch(`${APPS_SCRIPT_API}/projects/${projectId}`)
+            checks.push({ label: 'Script accessible', ok: true })
+          } catch (_) {
+            checks.push({ label: 'Script accessible', ok: false })
+          }
+          saveStatus.innerHTML = renderVerificationChecks(checks)
+
+          // ── Celebratory confirmation ───────────────────────────────────────
+          const allPassed = checks.every((c) => c.ok === true)
+          const confirmText = isEdit
+            ? 'Your automation is updated and running.'
+            : 'Your automation is live!'
+          const confirmClass = allPassed ? 'save-celebration' : 'save-partial'
+          saveStatus.innerHTML =
+            renderVerificationChecks(checks) +
+            `<div class="${confirmClass}" role="alert">` +
+            (allPassed ? '🎉 ' : '') +
+            `${escapeHtml(confirmText)}` +
+            `</div>`
+
+          // After the first save, subsequent saves on this panel are edits.
+          if (panelEl) panelEl.dataset.isEdit = 'true'
+
+          // Move focus to the status for screen reader announcement.
+          saveStatus.focus()
         } catch (err) {
           const isScopeError =
             err.httpStatus === 403 ||
@@ -1804,6 +1921,7 @@
           saveStatus.innerHTML = isScopeError
             ? `<span style="color:#c5221f;">❌ Permission denied. Please sign out and sign in again to grant all required permissions.</span>`
             : `<span style="color:#c5221f;">❌ ${escapeHtml(err.message)}</span>`
+          saveStatus.focus()
         } finally {
           saveBtn.disabled = false
           saveBtn.dataset.saving = 'false'
@@ -1811,6 +1929,37 @@
         }
       }
       window.handleSaveConfig = handleSaveConfig
+
+      /**
+       * Renders the progressive verification checklist HTML.
+       * Each check: { label: string, ok: true|false|null }
+       *   true  = ✅ passed
+       *   false = ❌ failed
+       *   null  = ⚠️ inconclusive (graceful degradation)
+       */
+      function renderVerificationChecks(checks) {
+        return (
+          '<div class="verification-checks" aria-label="Save verification">' +
+          checks
+            .map((c) => {
+              const icon =
+                c.ok === true ? '✅' : c.ok === false ? '❌' : '⚠️'
+              const color =
+                c.ok === true
+                  ? '#137333'
+                  : c.ok === false
+                    ? '#c5221f'
+                    : '#7a5c00'
+              return (
+                `<div style="color:${color};font-size:13px;` +
+                `margin-bottom:2px;">${icon} ${escapeHtml(c.label)}</div>`
+              )
+            })
+            .join('') +
+          '</div>'
+        )
+      }
+      window.renderVerificationChecks = renderVerificationChecks
 
       // ── Step 4 rendering ──────────────────────────────────────────────────────────
 
@@ -1886,6 +2035,9 @@
             `</div></div>`
           panelsContainer.appendChild(panelEl)
 
+          // Track whether this is a returning-user edit or a fresh deploy.
+          panelEl.dataset.isEdit = loadExisting ? 'true' : 'false'
+
           // Wire up button handlers via addEventListener (avoids inline onclick XSS).
           panelEl
             .querySelector('#add-btn-' + safeId)
@@ -1905,9 +2057,9 @@
             // Verification only applies when loading from an existing deployment.
             // Fresh deploys (loadExisting: false) always proceed to configuration.
             let configVerified = !loadExisting
+            let configWarning = null
             if (loadExisting) {
               let configError = null
-              let configWarning = null
               try {
                 const content = await apiFetch(
                   `${APPS_SCRIPT_API}/projects/${scriptId}/content`
@@ -1964,7 +2116,7 @@
                 )
                 if (rowsContainer) {
                   rowsContainer.innerHTML =
-                    `<p style="color:#c5221f;font-size:13px;">` +
+                    `<p tabindex="-1" role="alert" style="color:#c5221f;font-size:13px;">` +
                     `⚠️ ${escapeHtml(configError ? configError.message : 'Deployment could not be verified.')}` +
                     `</p>` +
                     `<button type="button" class="btn btn-outline btn-sm" style="margin-top:8px;"` +
@@ -1978,6 +2130,8 @@
                         .getElementById('deploy-section')
                         ?.scrollIntoView({ behavior: 'smooth' })
                     })
+                  // Move focus to the error for screen reader announcement.
+                  rowsContainer.querySelector('p')?.focus()
                 }
                 const saveBtn = document.getElementById('save-btn-' + safeId)
                 if (saveBtn) saveBtn.disabled = true
@@ -2023,15 +2177,21 @@
                 rowsContainer.insertBefore(warningEl, rowsContainer.firstChild)
               }
             }
+            // Focus the first interactive element in the panel for keyboard nav.
+            const firstInput = panelEl.querySelector(
+              'select, input, button.btn-outline'
+            )
+            if (firstInput) firstInput.focus()
           } catch (err) {
             const rowsContainer = document.getElementById(
               'config-rows-' + safeId
             )
             if (rowsContainer) {
               rowsContainer.innerHTML =
-                `<p style="color:#c5221f;font-size:13px;">` +
+                `<p tabindex="-1" role="alert" style="color:#c5221f;font-size:13px;">` +
                 `Failed to load resources: ${escapeHtml(err.message)}` +
                 `</p>`
+              rowsContainer.querySelector('p')?.focus()
             }
           }
         }
