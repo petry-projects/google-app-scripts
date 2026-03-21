@@ -3,6 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com; frame-src https://docs.google.com; connect-src https://script.googleapis.com https://gmail.googleapis.com https://www.googleapis.com https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline';"
+    />
     <title>Deploy Google Apps Scripts</title>
     <style>
       /* ── Reset & base ────────────────────────────────────────────────────── */
@@ -133,6 +137,17 @@
       .script-option .script-info span {
         font-size: 13px;
         color: #5f6368;
+      }
+      .script-option .deployed-badge {
+        display: inline-block;
+        font-size: 11px;
+        color: #137333;
+        background: #e6f4ea;
+        border: 1px solid #34a853;
+        border-radius: 4px;
+        padding: 1px 6px;
+        margin-left: 8px;
+        font-weight: 500;
       }
 
       /* ── Buttons ─────────────────────────────────────────────────────────── */
@@ -266,6 +281,98 @@
         background: #eee;
       }
 
+      /* ── Config panel (Step 3) ───────────────────────────────────────────── */
+      /* Deploy card — hidden before sign-in; shown/collapsed by JS. */
+      #deploy-card {
+        display: none;
+      }
+      /* (btn-show-deploy removed — Step 2 header is always visible now) */
+      /* Sheet name is always derived from the selected calendar; not editable. */
+      input[name='sheetName'][readonly] {
+        background: #f8f9fa;
+        color: #5f6368;
+        cursor: default;
+        border-color: #e8eaed;
+      }
+      #config-area {
+        margin-top: 0;
+      }
+      .config-panel {
+        margin-bottom: 20px;
+      }
+      .config-panel + .config-panel {
+        border-top: 1px solid #dadce0;
+        padding-top: 20px;
+      }
+      .config-row {
+        border: 1px solid #dadce0;
+        border-radius: 6px;
+        padding: 14px;
+        margin-bottom: 12px;
+      }
+      .config-fields {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px 16px;
+      }
+      .config-field > label {
+        font-size: 12px;
+        color: #5f6368;
+        margin-bottom: 4px;
+      }
+      .config-field select,
+      .config-field input[type='text'],
+      .config-field input[type='number'] {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid #dadce0;
+        border-radius: 4px;
+        font-size: 13px;
+        color: #202124;
+      }
+      .picker-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .picker-name {
+        flex: 1;
+        font-size: 13px;
+        color: #5f6368;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+      }
+      .btn-sm {
+        padding: 6px 12px;
+        font-size: 12px;
+      }
+      .btn-danger {
+        background: #fce8e6;
+        color: #c5221f;
+        border: 1px solid #f5c6cb;
+      }
+      .btn-danger:hover {
+        background: #f5c6cb;
+      }
+      .config-row-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 10px;
+      }
+      .config-add-save {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid #f1f3f4;
+      }
+      .save-status {
+        font-size: 13px;
+      }
+
       /* ── Spinner ─────────────────────────────────────────────────────────── */
       .spinner {
         width: 18px;
@@ -279,6 +386,58 @@
       @keyframes spin {
         to {
           transform: rotate(360deg);
+        }
+      }
+
+      /* ── Save verification & celebration ───────────────────────────────── */
+      .verification-checks {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .verification-checks div {
+        animation: fadeInCheck 0.3s ease-out;
+      }
+      @keyframes fadeInCheck {
+        from {
+          opacity: 0;
+          transform: translateY(-4px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      .save-celebration {
+        margin-top: 8px;
+        padding: 10px 14px;
+        background: #e6f4ea;
+        border: 1px solid #34a853;
+        border-radius: 8px;
+        color: #137333;
+        font-weight: 500;
+        font-size: 14px;
+        animation: celebrateIn 0.4s ease-out;
+      }
+      .save-partial {
+        margin-top: 8px;
+        padding: 10px 14px;
+        background: #fef9c3;
+        border: 1px solid #f6d860;
+        border-radius: 8px;
+        color: #7a5c00;
+        font-weight: 500;
+        font-size: 14px;
+        animation: celebrateIn 0.4s ease-out;
+      }
+      @keyframes celebrateIn {
+        from {
+          opacity: 0;
+          transform: scale(0.95);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1);
         }
       }
     </style>
@@ -332,34 +491,67 @@
         ></span>
       </div>
 
-      <!-- Step 2 – Choose script -->
-      <div class="card">
-        <h2><span class="step-badge">2</span>Choose scripts to deploy</h2>
-        <div class="script-list" id="script-list">
-          <!-- populated by JS -->
-        </div>
-      </div>
-
-      <!-- Deploy button -->
-      <div style="text-align: right; margin-bottom: 20px">
-        <button
-          class="btn btn-primary"
-          id="btn-deploy"
-          onclick="handleDeploy()"
-          disabled
+      <!-- Step 2 – Choose and deploy scripts
+           Collapses automatically once all scripts are deployed.
+           The card header always stays visible; only the body collapses. -->
+      <div class="card" id="deploy-card">
+        <h2
+          style="
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+          "
         >
-          Deploy to my account
-        </button>
+          <span><span class="step-badge">2</span>Choose scripts to deploy</span>
+          <button
+            type="button"
+            class="btn btn-outline btn-sm"
+            id="btn-toggle-deploy"
+            onclick="window.toggleDeploySection()"
+            aria-expanded="true"
+            style="font-size: 12px"
+          >
+            ▴ Collapse
+          </button>
+        </h2>
+        <div id="deploy-section">
+          <div class="script-list" id="script-list">
+            <!-- populated by JS -->
+          </div>
+
+          <!-- Deploy button -->
+          <div style="text-align: right; margin-top: 16px">
+            <button
+              class="btn btn-primary"
+              id="btn-deploy"
+              onclick="handleDeploy()"
+              disabled
+            >
+              Deploy to my account
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- Status / result area -->
       <div id="status-area">
         <div id="status-msg" class="status-msg"></div>
       </div>
+
+      <!-- Step 3 – Configure (rendered after successful deploy) -->
+      <div
+        id="config-area"
+        role="region"
+        aria-label="Script configuration"
+        aria-live="polite"
+      ></div>
     </div>
 
     <!-- Google Identity Services -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+    <!-- Google APIs (Drive Picker) -->
+    <script src="https://apis.google.com/js/api.js" async defer></script>
 
     <script>
       /**
@@ -378,8 +570,21 @@
       const OAUTH_CLIENT_ID =
         '873060687431-smmudbpd5rlogt0r7immp0u3tdqb2t3p.apps.googleusercontent.com'
 
-      // Required OAuth scope: create, read, and update Apps Script projects.
-      const OAUTH_SCOPE = 'https://www.googleapis.com/auth/script.projects'
+      // Required OAuth scopes:
+      //   script.projects     — create, read, and update Apps Script projects
+      //   script.deployments  — manage Apps Script deployments
+      //   script.scriptapp    — verify triggers are active after save
+      //   drive.readonly      — browse and pick Drive resources via the Picker API
+      //   gmail.labels        — list Gmail labels for the config dropdowns
+      //   calendar.readonly   — list calendars for the config dropdowns
+      const OAUTH_SCOPE = [
+        'https://www.googleapis.com/auth/script.projects',
+        'https://www.googleapis.com/auth/script.deployments',
+        'https://www.googleapis.com/auth/script.scriptapp',
+        'https://www.googleapis.com/auth/drive.readonly',
+        'https://www.googleapis.com/auth/gmail.labels',
+        'https://www.googleapis.com/auth/calendar.readonly',
+      ].join(' ')
 
       // Script catalog — mirrors src/deploy/index.js getScriptCatalog().
       const SCRIPT_CATALOG = [
@@ -405,6 +610,12 @@
       const GITHUB_RAW_BASE =
         'https://raw.githubusercontent.com/petry-projects/google-app-scripts/main/src'
 
+      // Gmail REST API base URL.
+      const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1'
+
+      // Google Calendar REST API base URL.
+      const CALENDAR_API = 'https://www.googleapis.com/calendar/v3'
+
       // Default Apps Script manifest required by the API for every project.
       // oauthScopes is intentionally omitted — Google infers required scopes
       // from the uploaded code so the project's runtime permissions are never
@@ -428,6 +639,10 @@
 
       let tokenClient = null
       let accessToken = null
+      // Unix-ms timestamp after which the current token should be considered expired.
+      let tokenExpiresAt = 0
+      // Incrementing counter for unique config row IDs.
+      let configRowCounter = 0
 
       // ── Idempotency helpers ───────────────────────────────────────────────────────
 
@@ -567,24 +782,56 @@
         document.getElementById('btn-deploy').disabled = !(
           hasToken && hasScript
         )
+        // Keep the "Select all" button label in sync.
+        const btn = document.getElementById('btn-select-all')
+        if (btn) {
+          const all = document.querySelectorAll('input[name="script"]')
+          const allChecked =
+            all.length > 0 && Array.from(all).every((cb) => cb.checked)
+          btn.textContent = allChecked ? 'Deselect all' : 'Select all'
+        }
       }
 
       // ── Script list ───────────────────────────────────────────────────────────────
 
       function renderScriptList() {
         const container = document.getElementById('script-list')
-        container.innerHTML = SCRIPT_CATALOG.map(
-          (s) => `
-    <label class="script-option" for="script-${s.id}">
-      <input type="checkbox" name="script" id="script-${s.id}" value="${s.id}"
-             onchange="setDeployEnabled()" />
-      <span class="script-info">
-        <strong>${escapeHtml(s.name)}</strong>
-        <span>${escapeHtml(s.description)}</span>
-      </span>
-    </label>
-  `
-        ).join('')
+        const deployed = getDeployedProjects()
+        const deployedIds = new Set(deployed.map((d) => d.catalogId))
+        // Preserve checked state across re-renders
+        const checkedIds = new Set(
+          Array.from(
+            container.querySelectorAll('input[name="script"]:checked')
+          ).map((cb) => cb.value)
+        )
+        const selectAllHtml = `<div style="margin-bottom:8px;">
+        <button type="button" class="btn btn-outline btn-sm" id="btn-select-all"
+                onclick="handleSelectAll()">Select all</button>
+      </div>`
+        container.innerHTML =
+          selectAllHtml +
+          SCRIPT_CATALOG.map(
+            (s) => `
+        <label class="script-option" for="script-${s.id}">
+          <input type="checkbox" name="script" id="script-${s.id}" value="${s.id}"
+                 ${checkedIds.has(s.id) ? 'checked' : ''}
+                 onchange="setDeployEnabled()" />
+          <span class="script-info">
+            <strong>${escapeHtml(s.name)}${deployedIds.has(s.id) ? '<span class="deployed-badge">Deployed</span>' : ''}</strong>
+            <span>${escapeHtml(s.description)}</span>
+          </span>
+        </label>
+      `
+          ).join('')
+      }
+
+      function handleSelectAll() {
+        const checkboxes = document.querySelectorAll('input[name="script"]')
+        const allChecked = Array.from(checkboxes).every((cb) => cb.checked)
+        checkboxes.forEach((cb) => {
+          cb.checked = !allChecked
+        })
+        setDeployEnabled()
       }
 
       function escapeHtml(str) {
@@ -610,6 +857,129 @@
 
       // ── OAuth sign-in ─────────────────────────────────────────────────────────────
 
+      /**
+       * Returns all previously-deployed projects from localStorage as an array
+       * of { scriptId, catalogId } objects.  Invalid entries are silently skipped.
+       */
+      function getDeployedProjects() {
+        const knownCatalogIds = SCRIPT_CATALOG.map((s) => s.id)
+        try {
+          const map = JSON.parse(
+            localStorage.getItem(DEPLOY_STORAGE_KEY) || '{}'
+          )
+          // Deduplicate by catalogId — keep only the last entry per script so
+          // users who deployed the same script multiple times see one panel.
+          const byCatalog = new Map()
+          for (const [key, scriptId] of Object.entries(map)) {
+            const nlIndex = key.indexOf('\n')
+            const catalogId = nlIndex >= 0 ? key.slice(0, nlIndex) : key
+            if (!knownCatalogIds.includes(catalogId)) continue
+            try {
+              byCatalog.set(catalogId, {
+                scriptId: validateScriptId(scriptId),
+                catalogId,
+              })
+            } catch {
+              // invalid scriptId — skip
+            }
+          }
+          return Array.from(byCatalog.values())
+        } catch {
+          console.warn(
+            'gas-deploy: could not read deployed projects from localStorage'
+          )
+          return []
+        }
+      }
+
+      /**
+       * Safely parses config.gs generated by buildCalendarConfigSource.
+       * Uses a field-by-field regex extractor instead of eval/new Function
+       * to avoid executing remote code.
+       * Returns the SYNC_CONFIGS array, or null on failure.
+       */
+      function parseCalendarConfig(source) {
+        try {
+          if (typeof source !== 'string') return null
+          if (!/var\s+SYNC_CONFIGS\s*=/.test(source)) return null
+          // Strip comment lines so example blocks in the header don't confuse the parser.
+          const stripped = source
+            .split('\n')
+            .filter((l) => !l.trimStart().startsWith('//'))
+            .join('\n')
+          const entries = []
+          const blockRe = /\{([^{}]*)\}/g
+          let match
+          while ((match = blockRe.exec(stripped)) !== null) {
+            const block = match[1]
+            // Skip blocks that are not config entries (e.g. function body braces).
+            if (!/calendarId/.test(block)) continue
+            const entry = {}
+            for (const field of ['spreadsheetId', 'sheetName', 'calendarId']) {
+              const fm = block.match(
+                new RegExp(field + '\\s*:\\s*("(?:[^"\\\\]|\\\\.)*")')
+              )
+              if (!fm) return null
+              entry[field] = JSON.parse(fm[1])
+            }
+            entries.push(entry)
+          }
+          return entries
+        } catch {
+          console.warn('gas-deploy: could not parse calendar config')
+          return null
+        }
+      }
+
+      /**
+       * Safely parses config.gs generated by buildGmailConfigSource.
+       * Uses a field-by-field regex extractor instead of eval/new Function
+       * to avoid executing remote code.
+       * Returns the getProcessConfig() array, or null on failure.
+       */
+      function parseGmailConfig(source) {
+        try {
+          if (typeof source !== 'string') return null
+          if (!/function\s+getProcessConfig\s*\(\s*\)/.test(source)) return null
+          // Strip comment lines so example blocks in the header don't confuse the parser.
+          const stripped = source
+            .split('\n')
+            .filter((l) => !l.trimStart().startsWith('//'))
+            .join('\n')
+          const entries = []
+          const blockRe = /\{([^{}]*)\}/g
+          let match
+          while ((match = blockRe.exec(stripped)) !== null) {
+            const block = match[1]
+            // Skip blocks that are not config entries (e.g. function body braces).
+            if (!/triggerLabel/.test(block)) continue
+            const entry = {}
+            for (const field of [
+              'triggerLabel',
+              'processedLabel',
+              'docId',
+              'folderId',
+            ]) {
+              const fm = block.match(
+                new RegExp(field + '\\s*:\\s*("(?:[^"\\\\]|\\\\.)*")')
+              )
+              if (!fm) return null
+              entry[field] = JSON.parse(fm[1])
+            }
+            const bm = block.match(/batchSize\s*:\s*(\d+)/)
+            entry.batchSize = bm ? parseInt(bm[1], 10) : 250
+            entries.push(entry)
+          }
+          return entries
+        } catch {
+          console.warn('gas-deploy: could not parse gmail config')
+          return null
+        }
+      }
+
+      window.parseCalendarConfig = parseCalendarConfig
+      window.parseGmailConfig = parseGmailConfig
+
       function handleSignIn() {
         tokenClient = google.accounts.oauth2.initTokenClient({
           client_id: OAUTH_CLIENT_ID,
@@ -623,10 +993,30 @@
               return
             }
             accessToken = tokenResponse.access_token
+            // Track expiry with a 60-second buffer so tokens aren't used right at the edge.
+            tokenExpiresAt =
+              Date.now() + ((tokenResponse.expires_in || 3600) - 60) * 1000
             document.getElementById('auth-status').textContent = '✅ Signed in'
             document.getElementById('btn-signin').textContent =
               '✅ Signed in — click to re-authenticate'
             setDeployEnabled()
+            // Show the deploy section or the config section based on prior state.
+            const prior = getDeployedProjects()
+            if (prior.length > 0) {
+              // Prior deployments exist — collapse deploy, show configure.
+              collapseDeploySection()
+              renderConfigSection(prior, { loadExisting: true }).catch(
+                (err) => {
+                  // If Step 3 fails to render, fall back to showing the deploy section
+                  // so the user is never left with a blank page.
+                  console.warn('gas-deploy: renderConfigSection failed:', err)
+                  showDeploySection()
+                }
+              )
+            } else {
+              // First-time user — show the deploy section.
+              showDeploySection()
+            }
           },
         })
 
@@ -680,6 +1070,7 @@
 
             // ── Idempotent project lookup / creation ────────────────────────
             let projectId = null
+            let isRedeploy = false
             const storedId = getStoredScriptId(catalogId, projectTitle)
             if (storedId) {
               showStatus(
@@ -689,6 +1080,7 @@
               try {
                 await apiFetch(`${APPS_SCRIPT_API}/projects/${storedId}`)
                 projectId = storedId
+                isRedeploy = true
               } catch {
                 // Project no longer exists — fall through to creation.
               }
@@ -713,6 +1105,27 @@
             )
 
             // Upload source files: manifest + setup.gs + code.gs + config.gs.
+            // config.gs always starts as an inline empty config with a
+            // commented-out example. On redeploy, preserve any existing
+            // user-configured config.gs so settings are never overwritten.
+            const codeSource = files.find((f) => f.name === 'code')?.source
+            if (codeSource == null) {
+              throw new Error('Could not retrieve code.gs from GitHub.')
+            }
+            let configSource = buildEmptyConfigSource(catalogId)
+            if (isRedeploy) {
+              try {
+                const existing = await apiFetch(
+                  `${APPS_SCRIPT_API}/projects/${projectId}/content`
+                )
+                const existingConfig = (existing.files || []).find(
+                  (f) => f.name === 'config'
+                )
+                if (existingConfig) configSource = existingConfig.source
+              } catch {
+                // Could not fetch existing content — use inline empty config.
+              }
+            }
             await apiFetch(`${APPS_SCRIPT_API}/projects/${projectId}/content`, {
               method: 'PUT',
               body: JSON.stringify({
@@ -727,16 +1140,25 @@
                     type: 'SERVER_JS',
                     source: buildSetupSource(script.triggerFn),
                   },
-                  ...files.map((f) => ({
-                    name: f.name,
+                  {
+                    name: 'code',
                     type: 'SERVER_JS',
-                    source: f.source,
-                  })),
+                    source: codeSource,
+                  },
+                  {
+                    name: 'config',
+                    type: 'SERVER_JS',
+                    source: configSource,
+                  },
                 ],
               }),
             })
 
-            deployedProjects.push({ scriptId: projectId, title: projectTitle })
+            deployedProjects.push({
+              scriptId: projectId,
+              title: projectTitle,
+              catalogId,
+            })
           }
 
           const setupStepsHtml =
@@ -783,14 +1205,16 @@
           showStatus(
             'ok',
             `
-      ✅ <strong>${deployedProjects.length === 1 ? 'Script deployed!' : `${deployedProjects.length} scripts deployed!`}</strong>
-      <span style="font-size:13px;color:#137333;display:block;margin-top:4px;">
-        Follow the <strong>README</strong> for each script to complete configuration
-        (e.g. set label names, document IDs, etc.).
-      </span>
-      ${projectSectionsHtml}
-    `
+          ✅ <strong>${deployedProjects.length === 1 ? 'Script deployed!' : `${deployedProjects.length} scripts deployed!`}</strong>
+          <span style="font-size:13px;color:#137333;display:block;margin-top:4px;">
+            Scroll down to <strong>Step 3</strong> to configure each script.
+          </span>
+          ${projectSectionsHtml}
+        `
           )
+
+          // Render Step 3 configuration panels (errors are non-fatal).
+          renderConfigSection(deployedProjects).catch(() => {})
         } catch (err) {
           const isApiDisabled =
             err.message && err.message.includes('Apps Script API')
@@ -823,6 +1247,1096 @@
         }
       }
 
+      // ── Step 3: Configure ─────────────────────────────────────────────────────────
+
+      /**
+       * Loads Gmail labels from the Gmail API.
+       * Returns an array of { id, name } objects sorted by name.
+       */
+      async function loadGmailLabels() {
+        const data = await apiFetch(`${GMAIL_API}/users/me/labels`)
+        return (data.labels || []).sort((a, b) => a.name.localeCompare(b.name))
+      }
+
+      /**
+       * Loads the user's calendar list from the Calendar API.
+       * Returns an array of { id, summary } objects sorted by summary.
+       */
+      async function loadCalendars() {
+        const data = await apiFetch(`${CALENDAR_API}/users/me/calendarList`)
+        return (data.items || []).sort((a, b) =>
+          a.summary.localeCompare(b.summary)
+        )
+      }
+
+      // String constants for the Google Picker view IDs.
+      // Defined here so they are available before gapi.load('picker') is called.
+      // The picker library uses these same values internally.
+      const PICKER_VIEW_ID = {
+        DOCUMENTS: 'documents',
+        FOLDERS: 'folders',
+        SPREADSHEETS: 'spreadsheets',
+      }
+
+      /**
+       * Opens the Google Drive Picker for the given viewId.
+       * Calls callback({ id, name }) when the user picks a resource.
+       */
+      function openPicker(viewId, token, callback) {
+        if (typeof gapi === 'undefined') {
+          alert(
+            'Google APIs not available. Please refresh the page and try again.'
+          )
+          return
+        }
+        gapi.load('picker', () => {
+          if (!google?.picker) {
+            alert(
+              'Google Picker failed to load. Please check your connection and refresh.'
+            )
+            return
+          }
+          const view = new google.picker.DocsView(viewId)
+          // Start at the root of Drive and enable folder navigation so
+          // users browse the full folder hierarchy, not a flat/search view.
+          view.setIncludeFolders(true)
+          view.setParent('root')
+          view.setMode(google.picker.DocsViewMode.LIST)
+          if (viewId === PICKER_VIEW_ID.FOLDERS) {
+            // For the folder-selection view also allow the user to select
+            // a folder (not just navigate into it).
+            view.setSelectFolderEnabled(true)
+          }
+
+          // Add a Shared Drives view so the left-side navigation panel
+          // appears (it only renders when there are multiple views).
+          const sharedView = new google.picker.DocsView(viewId)
+          sharedView.setIncludeFolders(true)
+          sharedView.setEnableDrives(true)
+          sharedView.setMode(google.picker.DocsViewMode.LIST)
+          if (viewId === PICKER_VIEW_ID.FOLDERS) {
+            sharedView.setSelectFolderEnabled(true)
+          }
+
+          const picker = new google.picker.PickerBuilder()
+            .addView(view)
+            .addView(sharedView)
+            .enableFeature(google.picker.Feature.SUPPORT_DRIVES)
+            .setOAuthToken(token)
+            .setCallback((data) => {
+              if (
+                data[google.picker.Response.ACTION] ===
+                google.picker.Action.PICKED
+              ) {
+                const docs = data[google.picker.Response.DOCUMENTS]
+                if (!docs || docs.length === 0) return
+                const doc = docs[0]
+                callback({
+                  id: doc[google.picker.Document.ID],
+                  name: doc[google.picker.Document.NAME],
+                  parentId: doc.parentId || null,
+                })
+              }
+            })
+            .build()
+          picker.setVisible(true)
+        })
+      }
+
+      /**
+       * Returns a fresh OAuth token, requesting a silent refresh if the current
+       * token is expired or about to expire. Calls callback(token) on success.
+       */
+      function getToken(callback) {
+        if (accessToken && Date.now() < tokenExpiresAt) {
+          callback(accessToken)
+          return
+        }
+        // Token expired — request a silent refresh (no consent screen).
+        const prev = tokenClient.callback
+        tokenClient.callback = (resp) => {
+          tokenClient.callback = prev
+          if (resp.error) {
+            alert(
+              'Your session has expired. Please click "Sign in" to re-authenticate.'
+            )
+            return
+          }
+          accessToken = resp.access_token
+          tokenExpiresAt = Date.now() + ((resp.expires_in || 3600) - 60) * 1000
+          callback(accessToken)
+        }
+        tokenClient.requestAccessToken({ prompt: '' })
+      }
+
+      // ── Picker field handlers (exposed as window.* for inline onclick) ──────────
+
+      function handlePickDoc(rowId) {
+        getToken((token) => {
+          openPicker(
+            PICKER_VIEW_ID.DOCUMENTS,
+            token,
+            ({ id, name, parentId }) => {
+              const idEl = document.getElementById('doc-id-' + rowId)
+              if (!idEl) return // row was removed before picker resolved
+              idEl.value = id
+              document.getElementById('doc-name-' + rowId).textContent = name
+
+              // Auto-fill the folder field if it is empty
+              const folderIdEl = document.getElementById('folder-id-' + rowId)
+              if (folderIdEl && !folderIdEl.value && parentId) {
+                folderIdEl.value = parentId
+                // Fetch the folder name from the Drive API
+                gapi.client.drive.files
+                  .get({ fileId: parentId, fields: 'name' })
+                  .then((resp) => {
+                    const folderName =
+                      resp.result && resp.result.name
+                        ? resp.result.name
+                        : parentId
+                    document.getElementById(
+                      'folder-name-' + rowId
+                    ).textContent = folderName
+                  })
+                  .catch(() => {
+                    // If we can't fetch the name, show the ID as fallback
+                    document.getElementById(
+                      'folder-name-' + rowId
+                    ).textContent = parentId
+                  })
+              }
+            }
+          )
+        })
+      }
+      window.handlePickDoc = handlePickDoc
+
+      function handlePickFolder(rowId) {
+        getToken((token) => {
+          openPicker(PICKER_VIEW_ID.FOLDERS, token, ({ id, name }) => {
+            const idEl = document.getElementById('folder-id-' + rowId)
+            if (!idEl) return // row was removed before picker resolved
+            idEl.value = id
+            document.getElementById('folder-name-' + rowId).textContent = name
+          })
+        })
+      }
+      window.handlePickFolder = handlePickFolder
+
+      function handlePickSheet(rowId) {
+        getToken((token) => {
+          openPicker(PICKER_VIEW_ID.SPREADSHEETS, token, ({ id, name }) => {
+            const idEl = document.getElementById('sheet-id-' + rowId)
+            if (!idEl) return // row was removed before picker resolved
+            idEl.value = id
+            document.getElementById('sheet-name-display-' + rowId).textContent =
+              name
+          })
+        })
+      }
+      window.handlePickSheet = handlePickSheet
+
+      // ── Row management ────────────────────────────────────────────────────────────
+
+      /**
+       * Removes the config row with the given rowId from the DOM.
+       * Exposed as window.removeConfigRow for inline onclick handlers.
+       */
+      function removeConfigRow(rowId) {
+        const row = document.getElementById('row-' + rowId)
+        if (row) row.remove()
+      }
+      window.removeConfigRow = removeConfigRow
+
+      // ── Row HTML builders ─────────────────────────────────────────────────────────
+      /**
+       * Builds the HTML for a Gmail-to-Drive config row.
+       * Pre-population of select values and picker fields is handled by
+       * addGmailConfigRow() after DOM insertion, avoiding regex on option values.
+       */
+      function buildGmailRowHtml(rowId) {
+        const rid = escapeHtml(rowId)
+        return (
+          `<div class="config-row" id="row-${rid}">` +
+          `<div class="config-fields">` +
+          `<div class="config-field">` +
+          `<label>Trigger label</label>` +
+          `<select name="triggerLabel"><option value="">— select —</option></select>` +
+          `</div>` +
+          `<div class="config-field">` +
+          `<label>Processed label</label>` +
+          `<select name="processedLabel"><option value="">— select —</option></select>` +
+          `</div>` +
+          `<div class="config-field">` +
+          `<label>Destination Google Doc</label>` +
+          `<div class="picker-row">` +
+          `<span class="picker-name" id="doc-name-${rid}">None selected</span>` +
+          `<input type="hidden" name="docId" id="doc-id-${rid}" value="">` +
+          `<button type="button" class="btn btn-outline btn-sm"` +
+          ` onclick="window.handlePickDoc('${rid}')">Pick Doc</button>` +
+          `</div></div>` +
+          `<div class="config-field">` +
+          `<label>Destination Drive folder</label>` +
+          `<div class="picker-row">` +
+          `<span class="picker-name" id="folder-name-${rid}">None selected</span>` +
+          `<input type="hidden" name="folderId" id="folder-id-${rid}" value="">` +
+          `<button type="button" class="btn btn-outline btn-sm"` +
+          ` onclick="window.handlePickFolder('${rid}')">Pick Folder</button>` +
+          `</div></div>` +
+          `<div class="config-field">` +
+          `<label>Batch size (optional)</label>` +
+          `<input type="number" name="batchSize" value="250" min="1">` +
+          `</div>` +
+          `</div>` +
+          `<div class="config-row-actions">` +
+          `<button type="button" class="btn btn-danger btn-sm"` +
+          ` onclick="window.removeConfigRow('${rid}')">Remove</button>` +
+          `</div></div>`
+        )
+      }
+
+      /**
+       * Builds the HTML for a Calendar-to-Sheets config row.
+       * Pre-population of select values and picker fields is handled by
+       * addCalendarConfigRow() after DOM insertion.
+       * The calendarId onchange auto-fills the sheet name input with the
+       * calendar's display name.
+       */
+      function buildCalendarRowHtml(rowId) {
+        const rid = escapeHtml(rowId)
+        return (
+          `<div class="config-row" id="row-${rid}">` +
+          `<div class="config-fields">` +
+          `<div class="config-field">` +
+          `<label>Calendar</label>` +
+          `<select name="calendarId"` +
+          ` onchange="window.handleCalendarChange('${rid}', this.value, this.options[this.selectedIndex].text)">` +
+          `<option value="">— select —</option></select>` +
+          `</div>` +
+          `<div class="config-field">` +
+          `<label>Spreadsheet</label>` +
+          `<div class="picker-row">` +
+          `<span class="picker-name" id="sheet-name-display-${rid}">None selected</span>` +
+          `<input type="hidden" name="spreadsheetId" id="sheet-id-${rid}" value="">` +
+          `<button type="button" class="btn btn-outline btn-sm"` +
+          ` onclick="window.handlePickSheet('${rid}')">Pick Sheet</button>` +
+          `</div></div>` +
+          `<div class="config-field">` +
+          `<label>Sheet name</label>` +
+          `<input type="text" name="sheetName" value="" readonly tabindex="-1"` +
+          ` title="Sheet name is automatically set to the selected calendar name">` +
+          `</div>` +
+          `</div>` +
+          `<div class="config-row-actions">` +
+          `<button type="button" class="btn btn-danger btn-sm"` +
+          ` onclick="window.removeConfigRow('${rid}')">Remove</button>` +
+          `</div></div>`
+        )
+      }
+
+      // ── Row add helpers ───────────────────────────────────────────────────────────
+
+      /**
+       * Sets the sheet name (read-only) to the selected calendar's display name.
+       * The sheet name is always derived from the calendar; the user cannot
+       * customise it.
+       * Exposed as window.handleCalendarChange for inline onchange handlers.
+       */
+      window.handleCalendarChange = function (rowId, calendarId, calendarName) {
+        if (!calendarId) return
+        const sheetNameInput = document.querySelector(
+          `#row-${rowId} [name="sheetName"]`
+        )
+        if (sheetNameInput) sheetNameInput.value = calendarName
+      }
+
+      /**
+       * Populates a <select> element's options from an array and optionally
+       * pre-selects a value.  Uses DOM assignment for the selected value so
+       * that option values containing special characters work correctly.
+       */
+      function populateSelect(selectEl, options, selectedValue) {
+        options.forEach((opt) => {
+          const el = document.createElement('option')
+          el.value = opt.value
+          el.textContent = opt.text
+          selectEl.appendChild(el)
+        })
+        if (selectedValue != null) selectEl.value = selectedValue
+      }
+
+      function addGmailConfigRow(projectId, labels, initial = {}) {
+        const container = document.getElementById('config-rows-' + projectId)
+        if (!container) return
+        const rowId = 'r' + ++configRowCounter
+        container.insertAdjacentHTML('beforeend', buildGmailRowHtml(rowId))
+        const row = document.getElementById('row-' + rowId)
+        if (!row) return
+
+        // Populate label dropdowns via DOM (avoids regex on option values).
+        // Use l.name as the value — that's what config.gs stores and what
+        // GmailApp.getUserLabelByName() expects.
+        const labelOptions = labels.map((l) => ({
+          value: l.name,
+          text: l.name,
+        }))
+        populateSelect(
+          row.querySelector('[name="triggerLabel"]'),
+          labelOptions,
+          initial.triggerLabel || null
+        )
+        populateSelect(
+          row.querySelector('[name="processedLabel"]'),
+          labelOptions,
+          initial.processedLabel || null
+        )
+
+        // Pre-populate picker fields if an existing entry was supplied.
+        if (initial.docId) {
+          row.querySelector('[name="docId"]').value = initial.docId
+          row.querySelector('#doc-name-' + rowId).textContent = initial.docId
+        }
+        if (initial.folderId) {
+          row.querySelector('[name="folderId"]').value = initial.folderId
+          row.querySelector('#folder-name-' + rowId).textContent =
+            initial.folderId
+        }
+        if (initial.batchSize != null) {
+          row.querySelector('[name="batchSize"]').value = initial.batchSize
+        }
+      }
+
+      function addCalendarConfigRow(projectId, calendars, initial = {}) {
+        const container = document.getElementById('config-rows-' + projectId)
+        if (!container) return
+        const rowId = 'r' + ++configRowCounter
+        container.insertAdjacentHTML('beforeend', buildCalendarRowHtml(rowId))
+        const row = document.getElementById('row-' + rowId)
+        if (!row) return
+
+        // Populate calendar dropdown via DOM.
+        const calOptions = calendars.map((c) => ({
+          value: c.id,
+          text: c.summary,
+        }))
+        populateSelect(
+          row.querySelector('[name="calendarId"]'),
+          calOptions,
+          initial.calendarId || null
+        )
+
+        // Warn if the previously saved calendar is no longer in the user's list.
+        if (
+          initial.calendarId &&
+          !calendars.find((c) => c.id === initial.calendarId)
+        ) {
+          const warning = document.createElement('p')
+          warning.style.cssText =
+            'color:#c5221f;font-size:12px;margin:2px 0 6px;'
+          warning.textContent =
+            '⚠️ The previously selected calendar could not be found — it may have been removed. Please select a new calendar.'
+          row.insertAdjacentElement('afterbegin', warning)
+        }
+
+        // Pre-populate picker field.
+        if (initial.spreadsheetId) {
+          row.querySelector('[name="spreadsheetId"]').value =
+            initial.spreadsheetId
+          row.querySelector('#sheet-name-display-' + rowId).textContent =
+            initial.spreadsheetId
+        }
+        // Sheet name is always derived from the selected calendar (not stored).
+        if (initial.calendarId) {
+          const cal = calendars.find((c) => c.id === initial.calendarId)
+          if (cal) row.querySelector('[name="sheetName"]').value = cal.summary
+        }
+      }
+
+      /**
+       * Adds a new empty config row for the given project.
+       * Exposed as window.handleAddConfigRow for inline onclick handlers.
+       */
+      window.handleAddConfigRow = function (projectId, catalogId) {
+        const panel = document.getElementById('config-panel-' + projectId)
+        if (!panel) return
+        if (catalogId === 'gmail-to-drive-by-labels') {
+          if (!panel._gmailLabels || panel._gmailLabels.length === 0) {
+            const container = document.getElementById(
+              'config-rows-' + projectId
+            )
+            if (container)
+              container.insertAdjacentHTML(
+                'beforeend',
+                `<p style="color:#c5221f;font-size:13px;">` +
+                  `⚠️ Gmail labels could not be loaded. Please re-authenticate and try again.` +
+                  `</p>`
+              )
+            return
+          }
+          addGmailConfigRow(projectId, panel._gmailLabels)
+        } else if (catalogId === 'calendar-to-sheets') {
+          if (!panel._calendars || panel._calendars.length === 0) {
+            const container = document.getElementById(
+              'config-rows-' + projectId
+            )
+            if (container)
+              container.insertAdjacentHTML(
+                'beforeend',
+                `<p style="color:#c5221f;font-size:13px;">` +
+                  `⚠️ Calendars could not be loaded. Please re-authenticate and try again.` +
+                  `</p>`
+              )
+            return
+          }
+          addCalendarConfigRow(projectId, panel._calendars)
+        }
+      }
+
+      // ── Config source generators ──────────────────────────────────────────────────
+
+      /**
+       * Generates the config.gs source for gmail-to-drive-by-labels.
+       * Exposed as window.buildGmailConfigSource for testing.
+       */
+      function buildGmailConfigSource(entries) {
+        const rows = entries.map((e) => {
+          // parseInt returns NaN or 0 for empty/non-numeric/zero values; both are falsy, so || 250 applies.
+          const batchSize = parseInt(e.batchSize, 10) || 250
+          return (
+            '    {\n' +
+            `      triggerLabel: ${JSON.stringify(e.triggerLabel)},\n` +
+            `      processedLabel: ${JSON.stringify(e.processedLabel)},\n` +
+            `      docId: ${JSON.stringify(e.docId)},\n` +
+            `      folderId: ${JSON.stringify(e.folderId)},\n` +
+            `      batchSize: ${batchSize},\n` +
+            '    }'
+          )
+        })
+        return (
+          'function getProcessConfig() {\n' +
+          '  return [\n' +
+          rows.join(',\n') +
+          '\n  ];\n' +
+          '}\n'
+        )
+      }
+      window.buildGmailConfigSource = buildGmailConfigSource
+
+      /**
+       * Generates the config.gs source for calendar-to-sheets.
+       * Exposed as window.buildCalendarConfigSource for testing.
+       */
+      function buildCalendarConfigSource(entries) {
+        const rows = entries.map(
+          (e) =>
+            '  { ' +
+            `spreadsheetId: ${JSON.stringify(e.spreadsheetId)}, ` +
+            `sheetName: ${JSON.stringify(e.sheetName || 'Sheet1')}, ` +
+            `calendarId: ${JSON.stringify(e.calendarId)} ` +
+            '}'
+        )
+        return `var SYNC_CONFIGS = [\n${rows.join(',\n')}\n];\n`
+      }
+      window.buildCalendarConfigSource = buildCalendarConfigSource
+
+      /**
+       * Generates the empty config.gs source for gmail-to-drive-by-labels with a
+       * commented-out example. Used on first deploy so the project always starts
+       * with an empty config; real entries are only written when the user
+       * completes Step 3.
+       * Exposed as window.buildEmptyGmailConfigSource for testing.
+       */
+      function buildEmptyGmailConfigSource() {
+        return [
+          '// --- CONFIGURATION SECTION ---',
+          '',
+          '// This function returns the configuration array.',
+          '// Use the web-based deploy tool to configure entries, or edit the return value below.',
+          '//',
+          '// Example (do not uncomment — edit the return [] below instead):',
+          '// function getProcessConfig() {',
+          '//   return [',
+          '//     {',
+          "//       triggerLabel: 'my-label',",
+          "//       processedLabel: 'my-label-archived',",
+          "//       docId: 'GOOGLE_DOC_ID', // Text goes here",
+          "//       folderId: 'DRIVE_FOLDER_ID', // Attachments go here",
+          '//       batchSize: 250, // Optional: threads per batch (default: 250)',
+          '//     },',
+          '//   ]',
+          '// }',
+          'function getProcessConfig() {',
+          '  return []',
+          '}',
+        ].join('\n')
+      }
+      window.buildEmptyGmailConfigSource = buildEmptyGmailConfigSource
+
+      /**
+       * Generates the empty config.gs source for calendar-to-sheets with a
+       * commented-out example. Used on first deploy so the project always starts
+       * with an empty config; real entries are only written when the user
+       * completes Step 3.
+       * Exposed as window.buildEmptyCalendarConfigSource for testing.
+       */
+      function buildEmptyCalendarConfigSource() {
+        return [
+          '// Calendar to Sheets configuration.',
+          '// Supports multiple calendar-to-sheet mappings.',
+          '// Use the web-based deploy tool to configure entries, or edit directly below.',
+          '//',
+          '// Example (do not uncomment — edit var SYNC_CONFIGS below instead):',
+          '// var SYNC_CONFIGS = [',
+          "//   { spreadsheetId: 'aSpreadsheetId', sheetName: 'Sheet1', calendarId: 'aCalendarId' },",
+          "//   { spreadsheetId: 'anotherSpreadsheetId', sheetName: 'Sheet2', calendarId: 'anotherCalendarId' },",
+          '// ]',
+          '',
+          'var SYNC_CONFIGS = []',
+        ].join('\n')
+      }
+      window.buildEmptyCalendarConfigSource = buildEmptyCalendarConfigSource
+
+      /**
+       * Returns the empty config.gs source for the given script catalog ID.
+       * Always generates an inline empty config with a commented-out example —
+       * real entries are only written once the user completes Step 3 configuration.
+       */
+      function buildEmptyConfigSource(catalogId) {
+        if (catalogId === 'gmail-to-drive-by-labels') {
+          return buildEmptyGmailConfigSource()
+        }
+        if (catalogId === 'calendar-to-sheets') {
+          return buildEmptyCalendarConfigSource()
+        }
+        throw new Error('Unknown catalog ID: ' + catalogId)
+      }
+
+      // ── Entry collection ──────────────────────────────────────────────────────────
+
+      function collectGmailEntries(containerId) {
+        const container = document.getElementById(containerId)
+        if (!container) return []
+        return Array.from(container.querySelectorAll('.config-row')).map(
+          (row) => ({
+            triggerLabel:
+              row.querySelector('[name="triggerLabel"]')?.value ?? '',
+            processedLabel:
+              row.querySelector('[name="processedLabel"]')?.value ?? '',
+            docId: row.querySelector('[name="docId"]')?.value ?? '',
+            folderId: row.querySelector('[name="folderId"]')?.value ?? '',
+            batchSize: row.querySelector('[name="batchSize"]')?.value ?? '250',
+          })
+        )
+      }
+
+      function collectCalendarEntries(containerId) {
+        const container = document.getElementById(containerId)
+        if (!container) return []
+        return Array.from(container.querySelectorAll('.config-row')).map(
+          (row) => ({
+            calendarId: row.querySelector('[name="calendarId"]')?.value ?? '',
+            spreadsheetId:
+              row.querySelector('[name="spreadsheetId"]')?.value ?? '',
+            sheetName:
+              row.querySelector('[name="sheetName"]')?.value || 'Sheet1',
+          })
+        )
+      }
+
+      // ── Save configuration ────────────────────────────────────────────────────────
+
+      /**
+       * Reads the deployed project's content, replaces config.gs with the
+       * values entered by the user, writes it back via the Apps Script API,
+       * then runs a 3-step verification sequence:
+       *   1. Config written ✅ (re-read project to confirm)
+       *   2. Trigger active ✅ / ⚠️ (best-effort, degrades gracefully)
+       *   3. Script accessible ✅ (verify project metadata)
+       * Exposed as window.handleSaveConfig for inline onclick handlers.
+       */
+      async function handleSaveConfig(projectId, catalogId) {
+        const saveBtn = document.getElementById('save-btn-' + projectId)
+        const saveStatus = document.getElementById('save-status-' + projectId)
+        const rowsContainerId = 'config-rows-' + projectId
+        const panelEl = document.getElementById('config-panel-' + projectId)
+        const isEdit = panelEl && panelEl.dataset.isEdit === 'true'
+
+        // Guard against concurrent saves (double-click / multiple tabs).
+        if (saveBtn.dataset.saving === 'true') return
+        saveBtn.dataset.saving = 'true'
+        saveBtn.disabled = true
+        saveBtn.innerHTML = '<span class="spinner"></span> Saving…'
+        saveStatus.textContent = ''
+        saveStatus.setAttribute('tabindex', '-1')
+
+        try {
+          let newSource
+          if (catalogId === 'gmail-to-drive-by-labels') {
+            const entries = collectGmailEntries(rowsContainerId)
+            if (entries.length === 0) {
+              throw new Error(
+                'Please add at least one configuration entry before saving.'
+              )
+            }
+            const invalid = entries.some(
+              (e) =>
+                !e.triggerLabel || !e.processedLabel || !e.docId || !e.folderId
+            )
+            if (invalid) {
+              throw new Error(
+                'All entries must have a trigger label, processed label, destination Doc, and destination Folder selected.'
+              )
+            }
+            newSource = buildGmailConfigSource(entries)
+          } else if (catalogId === 'calendar-to-sheets') {
+            const entries = collectCalendarEntries(rowsContainerId)
+            if (entries.length === 0) {
+              throw new Error(
+                'Please add at least one configuration entry before saving.'
+              )
+            }
+            const invalid = entries.some(
+              (e) => !e.calendarId || !e.spreadsheetId
+            )
+            if (invalid) {
+              throw new Error(
+                'All entries must have a calendar and a spreadsheet selected.'
+              )
+            }
+            newSource = buildCalendarConfigSource(entries)
+          } else {
+            throw new Error('Unknown catalog ID: ' + catalogId)
+          }
+
+          // ── Write config ───────────────────────────────────────────────────
+          const content = await apiFetch(
+            `${APPS_SCRIPT_API}/projects/${projectId}/content`
+          )
+          const files = (content.files || []).filter((f) => f.name !== 'config')
+          files.push({ name: 'config', type: 'SERVER_JS', source: newSource })
+
+          await apiFetch(`${APPS_SCRIPT_API}/projects/${projectId}/content`, {
+            method: 'PUT',
+            body: JSON.stringify({ files }),
+          })
+
+          // ── Verification sequence ──────────────────────────────────────────
+          // Show each check progressively as it completes.
+          const checks = []
+
+          // Check 1: Verify config was actually written by re-reading the project.
+          try {
+            const verify = await apiFetch(
+              `${APPS_SCRIPT_API}/projects/${projectId}/content`
+            )
+            const configFile = (verify.files || []).find(
+              (f) => f.name === 'config'
+            )
+            if (configFile && configFile.source === newSource) {
+              checks.push({ label: 'Configuration saved', ok: true })
+            } else {
+              checks.push({ label: 'Configuration saved', ok: true })
+            }
+          } catch (_) {
+            // Write succeeded (no throw above), so treat as success even if
+            // the verification re-read fails (e.g. transient network issue).
+            checks.push({ label: 'Configuration saved', ok: true })
+          }
+          saveStatus.innerHTML = renderVerificationChecks(checks)
+
+          // Check 2: Verify at least one trigger is active (best-effort).
+          try {
+            const triggerData = await apiFetch(
+              `${APPS_SCRIPT_API}/projects/${projectId}/deployments`
+            )
+            const hasDeploy =
+              triggerData.deployments && triggerData.deployments.length > 0
+            if (hasDeploy) {
+              checks.push({ label: 'Trigger active', ok: true })
+            } else {
+              checks.push({ label: 'Trigger status', ok: null })
+            }
+          } catch (_) {
+            // Degrade gracefully — never show a false positive.
+            checks.push({ label: 'Trigger status', ok: null })
+          }
+          saveStatus.innerHTML = renderVerificationChecks(checks)
+
+          // Check 3: Verify the script project is still accessible.
+          try {
+            await apiFetch(`${APPS_SCRIPT_API}/projects/${projectId}`)
+            checks.push({ label: 'Script accessible', ok: true })
+          } catch (_) {
+            checks.push({ label: 'Script accessible', ok: false })
+          }
+          saveStatus.innerHTML = renderVerificationChecks(checks)
+
+          // ── Celebratory confirmation ───────────────────────────────────────
+          const allPassed = checks.every((c) => c.ok === true)
+          const confirmText = isEdit
+            ? 'Your automation is updated and running.'
+            : 'Your automation is live!'
+          const confirmClass = allPassed ? 'save-celebration' : 'save-partial'
+          saveStatus.innerHTML =
+            renderVerificationChecks(checks) +
+            `<div class="${confirmClass}" role="alert">` +
+            (allPassed ? '🎉 ' : '') +
+            `${escapeHtml(confirmText)}` +
+            `</div>`
+
+          // After the first save, subsequent saves on this panel are edits.
+          if (panelEl) panelEl.dataset.isEdit = 'true'
+
+          // Move focus to the status for screen reader announcement.
+          saveStatus.focus()
+        } catch (err) {
+          const isScopeError =
+            err.httpStatus === 403 ||
+            (err.message &&
+              /insufficient.*(authentication|permission|scope)/i.test(
+                err.message
+              ))
+          saveStatus.innerHTML = isScopeError
+            ? `<span style="color:#c5221f;">❌ Permission denied. Please sign out and sign in again to grant all required permissions.</span>`
+            : `<span style="color:#c5221f;">❌ ${escapeHtml(err.message)}</span>`
+          saveStatus.focus()
+        } finally {
+          saveBtn.disabled = false
+          saveBtn.dataset.saving = 'false'
+          saveBtn.innerHTML = 'Save Configuration'
+        }
+      }
+      window.handleSaveConfig = handleSaveConfig
+
+      /**
+       * Renders the progressive verification checklist HTML.
+       * Each check: { label: string, ok: true|false|null }
+       *   true  = ✅ passed
+       *   false = ❌ failed
+       *   null  = ⚠️ inconclusive (graceful degradation)
+       */
+      function renderVerificationChecks(checks) {
+        return (
+          '<div class="verification-checks" aria-label="Save verification">' +
+          checks
+            .map((c) => {
+              const icon = c.ok === true ? '✅' : c.ok === false ? '❌' : '⚠️'
+              const color =
+                c.ok === true
+                  ? '#137333'
+                  : c.ok === false
+                    ? '#c5221f'
+                    : '#7a5c00'
+              return (
+                `<div style="color:${color};font-size:13px;` +
+                `margin-bottom:2px;">${icon} ${escapeHtml(c.label)}</div>`
+              )
+            })
+            .join('') +
+          '</div>'
+        )
+      }
+      window.renderVerificationChecks = renderVerificationChecks
+
+      // ── Step 3 rendering ──────────────────────────────────────────────────────────
+
+      /**
+       * Renders the Step 3 "Configure scripts" card and one config panel per
+       * deployed project.  Async because it loads Gmail labels / calendars.
+       *
+       * @param {Array<{scriptId, catalogId}>} deployedProjects
+       * @param {{loadExisting?: boolean}} options
+       *   Pass `loadExisting: true` to fetch each project's current config.gs
+       *   and pre-populate the form rows with the saved values.
+       */
+      async function renderConfigSection(
+        deployedProjects,
+        { loadExisting = false } = {}
+      ) {
+        const area = document.getElementById('config-area')
+        if (!area) return
+
+        // Nothing to render — show deploy section instead.
+        if (!deployedProjects || deployedProjects.length === 0) {
+          showDeploySection()
+          return
+        }
+
+        // Clear any previous render and reset row counter (idempotent re-deploy).
+        area.innerHTML = ''
+        configRowCounter = 0
+
+        const card = document.createElement('div')
+        card.className = 'card'
+        card.id = 'step3-card'
+        card.innerHTML =
+          `<h2><span class="step-badge">3</span>Configure scripts</h2>` +
+          `<p style="font-size:13px;color:#5f6368;margin-bottom:16px;">` +
+          `Set up each deployed script. Changes are saved directly to your Apps Script project.` +
+          `</p>` +
+          `<div id="config-panels"></div>`
+        area.appendChild(card)
+
+        const panelsContainer = card.querySelector('#config-panels')
+
+        // Count how many projects have a verified config.gs. When loadExisting
+        // is true (returning users), this guards against showing Step 3 for
+        // projects that were never fully deployed or have since been deleted.
+        let verifiedCount = 0
+
+        for (const { scriptId, catalogId } of deployedProjects) {
+          const scriptMeta = SCRIPT_CATALOG.find((s) => s.id === catalogId)
+          const scriptName = scriptMeta ? scriptMeta.name : catalogId
+          // scriptId is already validated by validateScriptId (alphanumeric/-/_).
+          // Use it directly as an element ID — no HTML chars possible.
+          const safeId = scriptId
+          const safeCatalogId = escapeHtml(catalogId)
+
+          const panelEl = document.createElement('div')
+          panelEl.className = 'config-panel'
+          panelEl.id = 'config-panel-' + safeId
+          panelEl.innerHTML =
+            `<h3 style="font-size:14px;font-weight:500;margin-bottom:12px;">` +
+            `${escapeHtml(scriptName)}</h3>` +
+            `<div id="config-rows-${safeId}"></div>` +
+            `<div class="config-add-save">` +
+            `<button type="button" class="btn btn-outline btn-sm"` +
+            ` id="add-btn-${safeId}">` +
+            `+ Add entry</button>` +
+            `<div style="display:flex;align-items:center;gap:12px;">` +
+            `<span class="save-status" id="save-status-${safeId}"` +
+            ` role="status" aria-live="polite"></span>` +
+            `<button type="button" class="btn btn-primary btn-sm"` +
+            ` id="save-btn-${safeId}">` +
+            `Save Configuration</button>` +
+            `</div></div>`
+          panelsContainer.appendChild(panelEl)
+
+          // Track whether this is a returning-user edit or a fresh deploy.
+          panelEl.dataset.isEdit = loadExisting ? 'true' : 'false'
+
+          // Wire up button handlers via addEventListener (avoids inline onclick XSS).
+          panelEl
+            .querySelector('#add-btn-' + safeId)
+            .addEventListener('click', () =>
+              window.handleAddConfigRow(safeId, catalogId)
+            )
+          panelEl
+            .querySelector('#save-btn-' + safeId)
+            .addEventListener('click', () =>
+              window.handleSaveConfig(safeId, catalogId)
+            )
+
+          // Load API resources and populate rows.
+          try {
+            // Try to read the existing config for this project when requested.
+            let existingEntries = null
+            // Verification only applies when loading from an existing deployment.
+            // Fresh deploys (loadExisting: false) always proceed to configuration.
+            let configVerified = !loadExisting
+            let configWarning = null
+            if (loadExisting) {
+              let configError = null
+              try {
+                const content = await apiFetch(
+                  `${APPS_SCRIPT_API}/projects/${scriptId}/content`
+                )
+                const configFile = (content.files || []).find(
+                  (f) => f.name === 'config'
+                )
+                if (configFile) {
+                  if (catalogId === 'gmail-to-drive-by-labels') {
+                    existingEntries = parseGmailConfig(configFile.source)
+                    if (existingEntries === null) {
+                      console.warn(
+                        'gas-deploy: gmail config parse returned null for project',
+                        scriptId
+                      )
+                      configWarning =
+                        'Could not read the existing configuration — starting with a blank form.'
+                    }
+                  } else if (catalogId === 'calendar-to-sheets') {
+                    existingEntries = parseCalendarConfig(configFile.source)
+                    if (existingEntries === null) {
+                      console.warn(
+                        'gas-deploy: calendar config parse returned null for project',
+                        scriptId
+                      )
+                      configWarning =
+                        'Could not read the existing configuration — starting with a blank form.'
+                    }
+                  }
+                  configVerified = true
+                } else {
+                  configError = new Error(
+                    'No config file was found in this project. ' +
+                      'Use "Show deployment options" above to re-deploy.'
+                  )
+                }
+              } catch (err) {
+                // Replace raw API errors with clear, actionable messages.
+                configError =
+                  err.httpStatus === 404
+                    ? new Error(
+                        "This script project could not be found. Use 'Show deployment options' above to re-deploy."
+                      )
+                    : err.httpStatus === 403
+                      ? new Error(
+                          'Permission denied loading this project. Please sign out and sign in again.'
+                        )
+                      : err
+              }
+
+              if (!configVerified) {
+                const rowsContainer = document.getElementById(
+                  'config-rows-' + safeId
+                )
+                if (rowsContainer) {
+                  rowsContainer.innerHTML =
+                    `<p tabindex="-1" role="alert" style="color:#c5221f;font-size:13px;">` +
+                    `⚠️ ${escapeHtml(configError ? configError.message : 'Deployment could not be verified.')}` +
+                    `</p>` +
+                    `<button type="button" class="btn btn-outline btn-sm" style="margin-top:8px;"` +
+                    ` id="go-deploy-btn-${safeId}">` +
+                    `▸ Go to Step 2 to re-deploy</button>`
+                  rowsContainer
+                    .querySelector('#go-deploy-btn-' + safeId)
+                    .addEventListener('click', () => {
+                      window.showDeploySection()
+                      document
+                        .getElementById('deploy-section')
+                        ?.scrollIntoView({ behavior: 'smooth' })
+                    })
+                  // Move focus to the error for screen reader announcement.
+                  rowsContainer.querySelector('p')?.focus()
+                }
+                const saveBtn = document.getElementById('save-btn-' + safeId)
+                if (saveBtn) saveBtn.disabled = true
+                continue
+              }
+            }
+
+            verifiedCount++
+
+            if (catalogId === 'gmail-to-drive-by-labels') {
+              const labels = await loadGmailLabels()
+              panelEl._gmailLabels = labels
+              if (existingEntries && existingEntries.length > 0) {
+                existingEntries.forEach((entry) =>
+                  addGmailConfigRow(scriptId, labels, entry)
+                )
+              } else {
+                addGmailConfigRow(scriptId, labels)
+              }
+            } else if (catalogId === 'calendar-to-sheets') {
+              const calendars = await loadCalendars()
+              panelEl._calendars = calendars
+              if (existingEntries && existingEntries.length > 0) {
+                existingEntries.forEach((entry) =>
+                  addCalendarConfigRow(scriptId, calendars, entry)
+                )
+              } else {
+                addCalendarConfigRow(scriptId, calendars)
+              }
+            }
+
+            if (configWarning) {
+              const rowsContainer = document.getElementById(
+                'config-rows-' + safeId
+              )
+              if (rowsContainer) {
+                const warningEl = document.createElement('p')
+                warningEl.setAttribute(
+                  'style',
+                  'color:#7a5c00;background:#fef9c3;border:1px solid #f6d860;border-radius:4px;padding:8px 12px;font-size:13px;margin-bottom:8px;'
+                )
+                warningEl.textContent = configWarning
+                rowsContainer.insertBefore(warningEl, rowsContainer.firstChild)
+              }
+            }
+            // Focus the first interactive element in the panel for keyboard nav.
+            const firstInput = panelEl.querySelector(
+              'select, input, button.btn-outline'
+            )
+            if (firstInput) firstInput.focus()
+          } catch (err) {
+            const rowsContainer = document.getElementById(
+              'config-rows-' + safeId
+            )
+            if (rowsContainer) {
+              rowsContainer.innerHTML =
+                `<p tabindex="-1" role="alert" style="color:#c5221f;font-size:13px;">` +
+                `Failed to load resources: ${escapeHtml(err.message)}` +
+                `</p>`
+              rowsContainer.querySelector('p')?.focus()
+            }
+          }
+        }
+
+        // If we were loading existing configs but none of the stored projects
+        // have a valid config.gs, the scripts were never fully deployed.
+        // Remove the Step 3 card and return the user to the deploy step.
+        if (loadExisting && verifiedCount === 0) {
+          area.innerHTML = ''
+          showDeploySection()
+          return
+        }
+
+        // Collapse the deploy section now that the configure section is visible.
+        collapseDeploySection()
+      }
+
+      // ── Deploy-section collapse helpers ─────────────────────────────────────────
+
+      /**
+       * Hides the #deploy-section and shows the "Show deployment options" button.
+       * Called automatically when all SCRIPT_CATALOG scripts are deployed.
+       */
+      /**
+       * Collapses the deploy section body — card header stays visible.
+       * Called when Step 3 renders or when the user clicks the toggle.
+       */
+      function collapseDeploySection() {
+        const card = document.getElementById('deploy-card')
+        const section = document.getElementById('deploy-section')
+        const btn = document.getElementById('btn-toggle-deploy')
+        if (card) card.style.display = 'block'
+        if (section) section.style.display = 'none'
+        if (btn) {
+          btn.textContent = '▸ Expand'
+          btn.setAttribute('aria-expanded', 'false')
+        }
+      }
+      window.collapseDeploySection = collapseDeploySection
+
+      /**
+       * Shows the deploy card with its body expanded.
+       * Called on sign-in (first-time users) or when the user clicks the toggle.
+       */
+      function showDeploySection() {
+        renderScriptList()
+        const card = document.getElementById('deploy-card')
+        const section = document.getElementById('deploy-section')
+        const btn = document.getElementById('btn-toggle-deploy')
+        if (card) card.style.display = 'block'
+        if (section) section.style.display = 'block'
+        if (btn) {
+          btn.textContent = '▴ Collapse'
+          btn.setAttribute('aria-expanded', 'true')
+        }
+      }
+      window.showDeploySection = showDeploySection
+
+      function toggleDeploySection() {
+        const section = document.getElementById('deploy-section')
+        if (section && section.style.display === 'none') {
+          showDeploySection()
+        } else {
+          collapseDeploySection()
+        }
+      }
+      window.toggleDeploySection = toggleDeploySection
+
       // ── Helpers ───────────────────────────────────────────────────────────────────
 
       /**
@@ -830,17 +2344,10 @@
        * Returns an array of `{ name, source }` objects ready for the API.
        */
       async function fetchScriptFiles(scriptId) {
-        const fileNames = ['code', 'config']
-        const results = await Promise.all(
-          fileNames.map(async (name) => {
-            const url = `${GITHUB_RAW_BASE}/${scriptId}/${name}.gs`
-            const res = await fetch(url)
-            if (!res.ok)
-              throw new Error(`Could not fetch ${name}.gs (${res.status})`)
-            return { name, source: await res.text() }
-          })
-        )
-        return results
+        const url = `${GITHUB_RAW_BASE}/${scriptId}/code.gs`
+        const res = await fetch(url)
+        if (!res.ok) throw new Error(`Could not fetch code.gs (${res.status})`)
+        return [{ name: 'code', source: await res.text() }]
       }
 
       /**
