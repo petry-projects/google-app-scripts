@@ -849,19 +849,23 @@
           const map = JSON.parse(
             localStorage.getItem(DEPLOY_STORAGE_KEY) || '{}'
           )
-          return Object.entries(map)
-            .map(([key, scriptId]) => {
-              // Key format is "catalogId\ntitle" — split on first newline only.
-              const nlIndex = key.indexOf('\n')
-              const catalogId = nlIndex >= 0 ? key.slice(0, nlIndex) : key
-              if (!knownCatalogIds.includes(catalogId)) return null
-              try {
-                return { scriptId: validateScriptId(scriptId), catalogId }
-              } catch {
-                return null
-              }
-            })
-            .filter(Boolean)
+          // Deduplicate by catalogId — keep only the last entry per script so
+          // users who deployed the same script multiple times see one panel.
+          const byCatalog = new Map()
+          for (const [key, scriptId] of Object.entries(map)) {
+            const nlIndex = key.indexOf('\n')
+            const catalogId = nlIndex >= 0 ? key.slice(0, nlIndex) : key
+            if (!knownCatalogIds.includes(catalogId)) continue
+            try {
+              byCatalog.set(catalogId, {
+                scriptId: validateScriptId(scriptId),
+                catalogId,
+              })
+            } catch {
+              // invalid scriptId — skip
+            }
+          }
+          return Array.from(byCatalog.values())
         } catch {
           console.warn(
             'gas-deploy: could not read deployed projects from localStorage'

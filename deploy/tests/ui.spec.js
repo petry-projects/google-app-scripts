@@ -2722,6 +2722,31 @@ test.describe('deploy index.html', () => {
     await expect(page.locator('#step4-card')).toBeVisible()
   })
 
+  test('Step 4 deduplicates multiple localStorage entries for the same script', async ({
+    page,
+  }) => {
+    // Pre-seed localStorage with duplicate entries for the same catalogId
+    // (different titles from multiple deploys)
+    await page.evaluate((key) => {
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          'calendar-to-sheets\nFirst Deploy': 'stale-proj-id',
+          'calendar-to-sheets\nSecond Deploy': 'latest-proj-id',
+          'gmail-to-drive-by-labels\nFirst Gmail': 'gmail-proj-id',
+        })
+      )
+    }, 'gas_copilot_deployed')
+
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page.waitForSelector('#step4-card')
+
+    // Should show exactly 2 config panels (one per catalogId), not 3
+    const panels = page.locator('.config-panel')
+    await expect(panels).toHaveCount(2)
+  })
+
   test('Step 4 pre-populates calendar rows from existing config.gs', async ({
     page,
   }) => {
