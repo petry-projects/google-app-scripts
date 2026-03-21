@@ -138,6 +138,17 @@
         font-size: 13px;
         color: #5f6368;
       }
+      .script-option .deployed-badge {
+        display: inline-block;
+        font-size: 11px;
+        color: #137333;
+        background: #e6f4ea;
+        border: 1px solid #34a853;
+        border-radius: 4px;
+        padding: 1px 6px;
+        margin-left: 8px;
+        font-weight: 500;
+      }
 
       /* ── Buttons ─────────────────────────────────────────────────────────── */
       .btn {
@@ -271,24 +282,11 @@
       }
 
       /* ── Config panel (Step 3) ───────────────────────────────────────────── */
-      /* Deploy section — hidden before sign-in; shown/collapsed by JS. */
-      #deploy-section {
+      /* Deploy card — hidden before sign-in; shown/collapsed by JS. */
+      #deploy-card {
         display: none;
       }
-      #btn-show-deploy {
-        background: none;
-        border: none;
-        color: #1a73e8;
-        cursor: pointer;
-        font-size: 13px;
-        padding: 4px 0;
-        margin-bottom: 16px;
-        display: none;
-        text-align: left;
-      }
-      #btn-show-deploy:hover {
-        text-decoration: underline;
-      }
+      /* (btn-show-deploy removed — Step 2 header is always visible now) */
       /* Sheet name is always derived from the selected calendar; not editable. */
       input[name='sheetName'][readonly] {
         background: #f8f9fa;
@@ -494,52 +492,46 @@
       </div>
 
       <!-- Step 2 – Choose and deploy scripts
-           Collapses automatically once all scripts are deployed. -->
-      <button
-        id="btn-show-deploy"
-        onclick="window.showDeploySection()"
-        aria-expanded="false"
-      >
-        ▸ Show deployment options
-      </button>
-      <div id="deploy-section">
-        <!-- Step 2 – Choose script -->
-        <div class="card">
-          <h2
-            style="
-              display: flex;
-              align-items: center;
-              justify-content: space-between;
-            "
+           Collapses automatically once all scripts are deployed.
+           The card header always stays visible; only the body collapses. -->
+      <div class="card" id="deploy-card">
+        <h2
+          style="
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+          "
+        >
+          <span
+            ><span class="step-badge">2</span>Choose scripts to deploy</span
           >
-            <span
-              ><span class="step-badge">2</span>Choose scripts to deploy</span
-            >
-            <button
-              type="button"
-              class="btn btn-outline btn-sm"
-              id="btn-collapse-deploy"
-              onclick="window.collapseDeploySection()"
-              style="font-size: 12px"
-            >
-              ▴ Collapse
-            </button>
-          </h2>
+          <button
+            type="button"
+            class="btn btn-outline btn-sm"
+            id="btn-toggle-deploy"
+            onclick="window.toggleDeploySection()"
+            aria-expanded="true"
+            style="font-size: 12px"
+          >
+            ▴ Collapse
+          </button>
+        </h2>
+        <div id="deploy-section">
           <div class="script-list" id="script-list">
             <!-- populated by JS -->
           </div>
-        </div>
 
-        <!-- Deploy button -->
-        <div style="text-align: right; margin-bottom: 20px">
-          <button
-            class="btn btn-primary"
-            id="btn-deploy"
-            onclick="handleDeploy()"
-            disabled
-          >
-            Deploy to my account
-          </button>
+          <!-- Deploy button -->
+          <div style="text-align: right; margin-top: 16px">
+            <button
+              class="btn btn-primary"
+              id="btn-deploy"
+              onclick="handleDeploy()"
+              disabled
+            >
+              Deploy to my account
+            </button>
+          </div>
         </div>
       </div>
 
@@ -806,6 +798,14 @@
 
       function renderScriptList() {
         const container = document.getElementById('script-list')
+        const deployed = getDeployedProjects()
+        const deployedIds = new Set(deployed.map((d) => d.catalogId))
+        // Preserve checked state across re-renders
+        const checkedIds = new Set(
+          Array.from(
+            container.querySelectorAll('input[name="script"]:checked')
+          ).map((cb) => cb.value)
+        )
         const selectAllHtml = `<div style="margin-bottom:8px;">
         <button type="button" class="btn btn-outline btn-sm" id="btn-select-all"
                 onclick="handleSelectAll()">Select all</button>
@@ -816,9 +816,10 @@
             (s) => `
         <label class="script-option" for="script-${s.id}">
           <input type="checkbox" name="script" id="script-${s.id}" value="${s.id}"
+                 ${checkedIds.has(s.id) ? 'checked' : ''}
                  onchange="setDeployEnabled()" />
           <span class="script-info">
-            <strong>${escapeHtml(s.name)}</strong>
+            <strong>${escapeHtml(s.name)}${deployedIds.has(s.id) ? '<span class="deployed-badge">Deployed</span>' : ''}</strong>
             <span>${escapeHtml(s.description)}</span>
           </span>
         </label>
@@ -1307,8 +1308,20 @@
             // a folder (not just navigate into it).
             view.setSelectFolderEnabled(true)
           }
+
+          // Add a Shared Drives view so the left-side navigation panel
+          // appears (it only renders when there are multiple views).
+          const sharedView = new google.picker.DocsView(viewId)
+          sharedView.setIncludeFolders(true)
+          sharedView.setEnableDrives(true)
+          if (viewId === PICKER_VIEW_ID.FOLDERS) {
+            sharedView.setSelectFolderEnabled(true)
+          }
+
           const picker = new google.picker.PickerBuilder()
             .addView(view)
+            .addView(sharedView)
+            .enableFeature(google.picker.Feature.SUPPORT_DRIVES)
             .setOAuthToken(token)
             .setCallback((data) => {
               if (
@@ -2250,24 +2263,50 @@
        * Hides the #deploy-section and shows the "Show deployment options" button.
        * Called automatically when all SCRIPT_CATALOG scripts are deployed.
        */
+      /**
+       * Collapses the deploy section body — card header stays visible.
+       * Called when Step 3 renders or when the user clicks the toggle.
+       */
       function collapseDeploySection() {
+        const card = document.getElementById('deploy-card')
         const section = document.getElementById('deploy-section')
-        const btn = document.getElementById('btn-show-deploy')
+        const btn = document.getElementById('btn-toggle-deploy')
+        if (card) card.style.display = 'block'
         if (section) section.style.display = 'none'
-        if (btn) btn.style.display = 'block'
+        if (btn) {
+          btn.textContent = '▸ Expand'
+          btn.setAttribute('aria-expanded', 'false')
+        }
       }
       window.collapseDeploySection = collapseDeploySection
 
       /**
-       * Shows #deploy-section again and hides the toggle button.
-       * Bound to the "Show deployment options" button.
+       * Shows the deploy card with its body expanded.
+       * Called on sign-in (first-time users) or when the user clicks the toggle.
        */
-      window.showDeploySection = function () {
+      function showDeploySection() {
+        renderScriptList()
+        const card = document.getElementById('deploy-card')
         const section = document.getElementById('deploy-section')
-        const btn = document.getElementById('btn-show-deploy')
+        const btn = document.getElementById('btn-toggle-deploy')
+        if (card) card.style.display = 'block'
         if (section) section.style.display = 'block'
-        if (btn) btn.style.display = 'none'
+        if (btn) {
+          btn.textContent = '▴ Collapse'
+          btn.setAttribute('aria-expanded', 'true')
+        }
       }
+      window.showDeploySection = showDeploySection
+
+      function toggleDeploySection() {
+        const section = document.getElementById('deploy-section')
+        if (section && section.style.display === 'none') {
+          showDeploySection()
+        } else {
+          collapseDeploySection()
+        }
+      }
+      window.toggleDeploySection = toggleDeploySection
 
       // ── Helpers ───────────────────────────────────────────────────────────────────
 

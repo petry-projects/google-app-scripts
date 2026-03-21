@@ -89,6 +89,9 @@ function injectGapiMock() {
       ID: 'id',
       NAME: 'name',
     },
+    Feature: {
+      SUPPORT_DRIVES: 'supportDrives',
+    },
     DocsView: class {
       constructor(viewId) {
         window.__pickerViewId = viewId
@@ -102,9 +105,15 @@ function injectGapiMock() {
       setParent() {
         return this
       }
+      setEnableDrives() {
+        return this
+      }
     },
     PickerBuilder: class {
       addView() {
+        return this
+      }
+      enableFeature() {
         return this
       }
       setOAuthToken() {
@@ -797,7 +806,7 @@ test.describe('deploy index.html', () => {
     })
 
     await signIn(page)
-    await page.locator('#btn-show-deploy').click()
+    await page.locator('#btn-toggle-deploy').click()
     await page
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
@@ -2597,7 +2606,7 @@ test.describe('deploy index.html', () => {
     await page.waitForSelector('#step3-card')
 
     // After first deploy the section collapses; re-expand to deploy again.
-    await page.locator('#btn-show-deploy').click()
+    await page.locator('#btn-toggle-deploy').click()
     await page.locator('#btn-deploy').click()
     await page.waitForSelector('.status-ok')
 
@@ -3048,18 +3057,17 @@ test.describe('deploy index.html', () => {
 
   // ── Deploy section visibility ─────────────────────────────────────────────────
 
-  test('deploy section is hidden before sign-in', async ({ page }) => {
-    await expect(page.locator('#deploy-section')).not.toBeVisible()
-    await expect(page.locator('#btn-show-deploy')).not.toBeVisible()
+  test('deploy card is hidden before sign-in', async ({ page }) => {
+    await expect(page.locator('#deploy-card')).not.toBeVisible()
   })
 
   test('deploy section is shown after sign-in with no prior deployments', async ({
     page,
   }) => {
-    await expect(page.locator('#deploy-section')).not.toBeVisible()
+    await expect(page.locator('#deploy-card')).not.toBeVisible()
     await signIn(page)
     await expect(page.locator('#deploy-section')).toBeVisible()
-    await expect(page.locator('#btn-show-deploy')).not.toBeVisible()
+    await expect(page.locator('#btn-toggle-deploy')).toBeVisible()
     // Configure section should not appear until after a deploy
     await expect(page.locator('#step3-card')).not.toBeAttached()
   })
@@ -3076,9 +3084,10 @@ test.describe('deploy index.html', () => {
     await page.locator('#btn-deploy').click()
     await page.waitForSelector('#step3-card')
 
-    // Deploy section collapses as soon as configure section is rendered
+    // Deploy body collapses but card header stays visible
     await expect(page.locator('#deploy-section')).not.toBeVisible()
-    await expect(page.locator('#btn-show-deploy')).toBeVisible()
+    await expect(page.locator('#deploy-card')).toBeVisible()
+    await expect(page.locator('#btn-toggle-deploy')).toBeVisible()
   })
 
   test('deploy section collapses after both scripts are deployed', async ({
@@ -3091,12 +3100,12 @@ test.describe('deploy index.html', () => {
     await page.locator('#btn-deploy').click()
     await page.waitForSelector('#step3-card')
 
-    // Deploy section should now be hidden
+    // Deploy body hidden, header visible
     await expect(page.locator('#deploy-section')).not.toBeVisible()
-    await expect(page.locator('#btn-show-deploy')).toBeVisible()
+    await expect(page.locator('#deploy-card')).toBeVisible()
   })
 
-  test('clicking Show deployment options reveals the deploy section again', async ({
+  test('clicking toggle button expands and collapses the deploy section', async ({
     page,
   }) => {
     await mockSuccessfulDeploy(page)
@@ -3106,10 +3115,15 @@ test.describe('deploy index.html', () => {
     await page.waitForSelector('#step3-card')
     await expect(page.locator('#deploy-section')).not.toBeVisible()
 
-    // Re-expand
-    await page.locator('#btn-show-deploy').click()
+    // Expand
+    await page.locator('#btn-toggle-deploy').click()
     await expect(page.locator('#deploy-section')).toBeVisible()
-    await expect(page.locator('#btn-show-deploy')).not.toBeVisible()
+    await expect(page.locator('#btn-toggle-deploy')).toContainText('Collapse')
+
+    // Collapse again
+    await page.locator('#btn-toggle-deploy').click()
+    await expect(page.locator('#deploy-section')).not.toBeVisible()
+    await expect(page.locator('#btn-toggle-deploy')).toContainText('Expand')
   })
 
   test('deploy section collapses on sign-in when scripts already deployed', async ({
@@ -3131,8 +3145,9 @@ test.describe('deploy index.html', () => {
     await signIn(page)
     await page.waitForSelector('#step3-card')
 
+    // Card header visible, body collapsed
     await expect(page.locator('#deploy-section')).not.toBeVisible()
-    await expect(page.locator('#btn-show-deploy')).toBeVisible()
+    await expect(page.locator('#deploy-card')).toBeVisible()
   })
 
   test('deploy section collapses on sign-in when only one script was previously deployed', async ({
@@ -3153,9 +3168,39 @@ test.describe('deploy index.html', () => {
     await signIn(page)
     await page.waitForSelector('#step3-card')
 
-    // Any prior deployment → deploy section collapsed
+    // Any prior deployment → deploy body collapsed, card header visible
     await expect(page.locator('#deploy-section')).not.toBeVisible()
-    await expect(page.locator('#btn-show-deploy')).toBeVisible()
+    await expect(page.locator('#deploy-card')).toBeVisible()
+  })
+
+  test('Step 2 shows deployed badge for previously deployed scripts', async ({
+    page,
+  }) => {
+    // Pre-seed localStorage with one script deployed
+    await page.evaluate((key) => {
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          'gmail-to-drive-by-labels\nPetry-Projects – Gmail to Drive':
+            'proj-gmail',
+        })
+      )
+    }, 'gas_copilot_deployed')
+
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+
+    // Expand Step 2 to see the script list
+    await page.locator('#btn-toggle-deploy').click()
+
+    // Gmail script should show "Deployed" badge
+    const gmailLabel = page.locator('label[for="script-gmail-to-drive-by-labels"]')
+    await expect(gmailLabel.locator('.deployed-badge')).toBeVisible()
+    await expect(gmailLabel.locator('.deployed-badge')).toHaveText('Deployed')
+
+    // Calendar script should NOT show badge
+    const calLabel = page.locator('label[for="script-calendar-to-sheets"]')
+    await expect(calLabel.locator('.deployed-badge')).not.toBeAttached()
   })
 
   // ── Step 2 gating: Step 3 must not appear without a valid deployment ──────────
