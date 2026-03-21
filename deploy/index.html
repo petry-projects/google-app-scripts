@@ -1280,7 +1280,9 @@
       function handlePickDoc(rowId) {
         getToken((token) => {
           openPicker(PICKER_VIEW_ID.DOCUMENTS, token, ({ id, name }) => {
-            document.getElementById('doc-id-' + rowId).value = id
+            const idEl = document.getElementById('doc-id-' + rowId)
+            if (!idEl) return // row was removed before picker resolved
+            idEl.value = id
             document.getElementById('doc-name-' + rowId).textContent = name
           })
         })
@@ -1290,7 +1292,9 @@
       function handlePickFolder(rowId) {
         getToken((token) => {
           openPicker(PICKER_VIEW_ID.FOLDERS, token, ({ id, name }) => {
-            document.getElementById('folder-id-' + rowId).value = id
+            const idEl = document.getElementById('folder-id-' + rowId)
+            if (!idEl) return // row was removed before picker resolved
+            idEl.value = id
             document.getElementById('folder-name-' + rowId).textContent = name
           })
         })
@@ -1300,7 +1304,9 @@
       function handlePickSheet(rowId) {
         getToken((token) => {
           openPicker(PICKER_VIEW_ID.SPREADSHEETS, token, ({ id, name }) => {
-            document.getElementById('sheet-id-' + rowId).value = id
+            const idEl = document.getElementById('sheet-id-' + rowId)
+            if (!idEl) return // row was removed before picker resolved
+            idEl.value = id
             document.getElementById('sheet-name-display-' + rowId).textContent =
               name
           })
@@ -1572,6 +1578,7 @@
        */
       function buildGmailConfigSource(entries) {
         const rows = entries.map((e) => {
+          // parseInt returns NaN or 0 for empty/non-numeric/zero values; both are falsy, so || 250 applies.
           const batchSize = parseInt(e.batchSize, 10) || 250
           return (
             '    {\n' +
@@ -1900,6 +1907,7 @@
             let configVerified = !loadExisting
             if (loadExisting) {
               let configError = null
+              let configWarning = null
               try {
                 const content = await apiFetch(
                   `${APPS_SCRIPT_API}/projects/${scriptId}/content`
@@ -1910,18 +1918,22 @@
                 if (configFile) {
                   if (catalogId === 'gmail-to-drive-by-labels') {
                     existingEntries = parseGmailConfig(configFile.source)
-                    if (existingEntries === null)
+                    if (existingEntries === null) {
                       console.warn(
                         'gas-deploy: gmail config parse returned null for project',
                         scriptId
                       )
+                      configWarning = 'Could not read the existing configuration — starting with a blank form.'
+                    }
                   } else if (catalogId === 'calendar-to-sheets') {
                     existingEntries = parseCalendarConfig(configFile.source)
-                    if (existingEntries === null)
+                    if (existingEntries === null) {
                       console.warn(
                         'gas-deploy: calendar config parse returned null for project',
                         scriptId
                       )
+                      configWarning = 'Could not read the existing configuration — starting with a blank form.'
+                    }
                   }
                   configVerified = true
                 } else {
@@ -1992,6 +2004,24 @@
                 )
               } else {
                 addCalendarConfigRow(scriptId, calendars)
+              }
+            }
+
+            if (configWarning) {
+              const rowsContainer = document.getElementById(
+                'config-rows-' + safeId
+              )
+              if (rowsContainer) {
+                const warningEl = document.createElement('p')
+                warningEl.setAttribute(
+                  'style',
+                  'color:#7a5c00;background:#fef9c3;border:1px solid #f6d860;border-radius:4px;padding:8px 12px;font-size:13px;margin-bottom:8px;'
+                )
+                warningEl.textContent = configWarning
+                rowsContainer.insertBefore(
+                  warningEl,
+                  rowsContainer.firstChild
+                )
               }
             }
           } catch (err) {

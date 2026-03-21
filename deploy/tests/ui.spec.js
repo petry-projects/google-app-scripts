@@ -2079,6 +2079,60 @@ test.describe('deploy index.html', () => {
     )
   })
 
+  test('Save Configuration button is marked saving and disabled during in-progress save', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('#step4-card')
+    await page.waitForSelector('.config-row')
+
+    // Fill all required fields so the save proceeds past validation.
+    await page
+      .locator('.config-row [name="triggerLabel"]')
+      .first()
+      .selectOption('inbox')
+    await page
+      .locator('.config-row [name="processedLabel"]')
+      .first()
+      .selectOption('archive')
+    await page.evaluate(() => {
+      document.querySelector('[name="docId"]').value = 'doc-id-1'
+      document.querySelector('[name="folderId"]').value = 'folder-id-1'
+    })
+
+    // Override the PUT to hang indefinitely so we can observe mid-save state.
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      if (route.request().method() === 'PUT') {
+        // Never resolve — keeps the save in-flight for the duration of the test.
+        await new Promise(() => {})
+      } else {
+        await route.continue()
+      }
+    })
+
+    const saveBtn = page.locator('[id^="save-btn-"]').first()
+
+    // Click save — handleSaveConfig sets dataset.saving and disabled synchronously
+    // before the first await, so we can read them immediately via evaluate.
+    await saveBtn.click()
+
+    const { saving, disabled } = await page.evaluate(() => {
+      const btn = document.querySelector('[id^="save-btn-"]')
+      return {
+        saving: btn.dataset.saving,
+        disabled: btn.disabled,
+      }
+    })
+
+    expect(saving).toBe('true')
+    expect(disabled).toBe(true)
+  })
+
   test('returning user with 404 project sees friendly error not raw API message', async ({
     page,
   }) => {
@@ -2201,6 +2255,24 @@ test.describe('deploy index.html', () => {
       ])
     })
     expect(source).toContain('250')
+  })
+
+  test('buildGmailConfigSource treats batchSize of 0 as default 250', async ({
+    page,
+  }) => {
+    const source = await page.evaluate(() => {
+      return window.buildGmailConfigSource([
+        {
+          triggerLabel: 'lbl',
+          processedLabel: 'done',
+          docId: 'd',
+          folderId: 'f',
+          batchSize: '0',
+        },
+      ])
+    })
+    expect(source).toContain('250')
+    expect(source).not.toContain('batchSize: 0')
   })
 
   test('buildCalendarConfigSource generates correct config.gs source', async ({
