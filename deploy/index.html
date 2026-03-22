@@ -375,8 +375,8 @@
         ></span>
       </div>
 
-      <!-- Step 2 – Choose script & deploy -->
-      <div class="card">
+      <!-- Step 2 – Choose script & deploy (hidden until sign-in) -->
+      <div class="card" id="step2-card" style="display: none">
         <h2><span class="step-badge">2</span>Choose scripts to deploy</h2>
         <div class="script-list" id="script-list">
           <!-- populated by JS -->
@@ -424,10 +424,12 @@
       const OAUTH_CLIENT_ID =
         '873060687431-smmudbpd5rlogt0r7immp0u3tdqb2t3p.apps.googleusercontent.com'
 
-      // Required OAuth scopes: Apps Script projects + Calendar (for calendar picker) + email (for default recipient).
+      // Required OAuth scopes: Apps Script projects + Calendar (for calendar picker)
+      // + email (for default recipient) + Drive metadata (to detect existing projects).
       const OAUTH_SCOPE =
         'https://www.googleapis.com/auth/script.projects ' +
         'https://www.googleapis.com/auth/calendar.readonly ' +
+        'https://www.googleapis.com/auth/drive.metadata.readonly ' +
         'email'
 
       // Script catalog — mirrors src/deploy/index.js getScriptCatalog().
@@ -1109,39 +1111,45 @@
       // ── OAuth sign-in ─────────────────────────────────────────────────────────────
 
       /**
-       * Reads localStorage for previously deployed scripts (no API call needed).
-       * Deduplicates by catalogId, keeping only the last entry per script.
-       * Shows Step 3 with config cards for any found deployments.
+       * Searches Google Drive for existing Apps Script projects matching our
+       * "Petry-Projects – {name}" naming convention. Uses Drive API so detection
+       * works across browsers/devices — no localStorage dependency.
        */
-      function loadExistingDeployments() {
+      async function loadExistingDeployments() {
+        if (!accessToken) return
         try {
-          const knownCatalogIds = SCRIPT_CATALOG.map((s) => s.id)
-          const map = JSON.parse(
-            localStorage.getItem(DEPLOY_STORAGE_KEY) || '{}'
+          const q = encodeURIComponent(
+            "mimeType='application/vnd.google-apps.script' and name contains 'Petry-Projects' and trashed=false"
           )
-          const byCatalog = new Map()
-          for (const [key, scriptId] of Object.entries(map)) {
-            const nlIndex = key.indexOf('\n')
-            const catalogId = nlIndex >= 0 ? key.slice(0, nlIndex) : key
-            if (!knownCatalogIds.includes(catalogId)) continue
-            try {
-              const title = nlIndex >= 0 ? key.slice(nlIndex + 1) : 'Unknown'
-              byCatalog.set(catalogId, {
-                scriptId: validateScriptId(scriptId),
-                title,
-                catalogId,
-              })
-            } catch {
-              // invalid scriptId — skip
-            }
-          }
+          const res = await fetch(
+            `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=50`,
+            { headers: { Authorization: `Bearer ${accessToken}` } }
+          )
+          if (!res.ok) return
+          const data = await res.json()
+          const files = data.files || []
 
-          const found = Array.from(byCatalog.values())
-          for (const p of found) {
-            deployedScripts.set(p.catalogId, {
-              scriptId: p.scriptId,
-              title: p.title,
-            })
+          // Match Drive files to our catalog entries by title
+          const found = []
+          for (const file of files) {
+            for (const s of SCRIPT_CATALOG) {
+              const expectedTitle = `Petry-Projects \u2013 ${s.name}`
+              if (file.name === expectedTitle) {
+                const scriptId = validateScriptId(file.id)
+                found.push({
+                  scriptId,
+                  title: file.name,
+                  catalogId: s.id,
+                })
+                deployedScripts.set(s.id, {
+                  scriptId,
+                  title: file.name,
+                })
+                // Also store in localStorage for handleDeploy idempotency
+                storeScriptId(s.id, file.name, scriptId)
+                break
+              }
+            }
           }
 
           // Refresh Step 2 to show deployment badges
@@ -1172,6 +1180,9 @@
             document.getElementById('auth-status').textContent = '✅ Signed in'
             document.getElementById('btn-signin').textContent =
               '✅ Signed in — click to re-authenticate'
+            // Show Step 2 now that we're authenticated
+            document.getElementById('step2-card').style.display = ''
+            // Fetch user data and detect existing deployments in parallel
             fetchUserEmail()
             fetchUserCalendars()
             loadExistingDeployments()

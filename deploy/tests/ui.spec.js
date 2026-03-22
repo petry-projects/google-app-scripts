@@ -119,7 +119,7 @@ test.describe('deploy index.html', () => {
     // Block the real GIS script so it cannot overwrite our mock
     await page.route('https://accounts.google.com/**', (route) => route.abort())
 
-    // Mock Google APIs (Calendar + userinfo)
+    // Mock Google APIs (Calendar + userinfo + Drive)
     await page.route('https://www.googleapis.com/**', async (route) => {
       const url = route.request().url()
       if (url.includes('calendarList')) {
@@ -139,6 +139,13 @@ test.describe('deploy index.html', () => {
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({ email: 'testuser@gmail.com' }),
+        })
+      } else if (url.includes('drive/v3/files')) {
+        // Default: no existing projects found
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ files: [] }),
         })
       } else {
         await route.continue()
@@ -162,7 +169,16 @@ test.describe('deploy index.html', () => {
     await expect(page.locator('header p')).toContainText('Deploy a script')
   })
 
-  test('renders step badges including hidden Step 3', async ({ page }) => {
+  test('Step 2 is hidden before sign-in', async ({ page }) => {
+    await expect(page.locator('#step2-card')).toBeHidden()
+  })
+
+  test('Step 2 appears after sign-in', async ({ page }) => {
+    await signIn(page)
+    await expect(page.locator('#step2-card')).toBeVisible()
+  })
+
+  test('renders step badges including hidden steps', async ({ page }) => {
     const badges = page.locator('.step-badge')
     // All 3 badges exist in the DOM
     await expect(badges).toHaveCount(3)
@@ -191,53 +207,70 @@ test.describe('deploy index.html', () => {
     expect(display).toBe('none')
   })
 
-  test('Step 3 appears after sign-in when previous deployments exist in localStorage', async ({
+  test('Step 3 appears after sign-in when projects exist in Google Drive', async ({
     page,
   }) => {
-    // Pre-seed localStorage with previous deployments for all 3 scripts
-    await page.evaluate(() => {
-      localStorage.setItem(
-        'gas_copilot_deployed',
-        JSON.stringify({
-          'gmail-to-drive-by-labels\nPetry-Projects – Gmail to Drive By Labels':
-            'prev-gmail-123',
-          'calendar-to-sheets\nPetry-Projects – Calendar to Sheets':
-            'prev-sheets-456',
-          'calendar-to-briefing-doc\nPetry-Projects – Calendar to Briefing Doc':
-            'prev-briefing-789',
+    // Override the default Drive API mock to return existing projects
+    await page.route(
+      'https://www.googleapis.com/drive/v3/files**',
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            files: [
+              {
+                id: 'drive-gmail-123',
+                name: 'Petry-Projects \u2013 Gmail to Drive By Labels',
+              },
+              {
+                id: 'drive-sheets-456',
+                name: 'Petry-Projects \u2013 Calendar to Sheets',
+              },
+              {
+                id: 'drive-briefing-789',
+                name: 'Petry-Projects \u2013 Calendar to Briefing Doc',
+              },
+            ],
+          }),
         })
-      )
-    })
+      }
+    )
 
     await signIn(page)
-    // loadExistingDeployments reads localStorage (no API call) and shows Step 3
-    await expect(page.locator('#step3-card')).toBeVisible()
-    await expect(page.locator('#btn-configure-prev-gmail-123')).toBeVisible()
-    await expect(page.locator('#btn-configure-prev-sheets-456')).toBeVisible()
-    await expect(page.locator('#btn-configure-prev-briefing-789')).toBeVisible()
+    // Wait for loadExistingDeployments (Drive API) to complete
+    await expect(page.locator('#step3-card')).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('#btn-configure-drive-gmail-123')).toBeVisible()
+    await expect(page.locator('#btn-configure-drive-sheets-456')).toBeVisible()
+    await expect(
+      page.locator('#btn-configure-drive-briefing-789')
+    ).toBeVisible()
     // Step 2 should show 3 "Deployed" badges
     await expect(page.locator('.deploy-badge')).toHaveCount(3)
   })
 
-  test('Step 3 stays hidden after sign-in when no previous deployments exist', async ({
+  test('Step 3 stays hidden after sign-in when no projects in Drive', async ({
     page,
   }) => {
     await signIn(page)
+    // Default mock returns empty files array
+    await page.waitForTimeout(500)
     await expect(page.locator('#step3-card')).toBeHidden()
   })
 
   // ── Step 2 structure ──────────────────────────────────────────────────────
 
   test('Step 2 deploy button is inside the Step 2 card', async ({ page }) => {
-    // btn-deploy should be a descendant of the Step 2 card
-    const step2Card = page.locator('.card').nth(1)
+    await signIn(page)
+    const step2Card = page.locator('#step2-card')
     await expect(step2Card.locator('#btn-deploy')).toBeVisible()
     await expect(step2Card.locator('h2')).toContainText('Choose scripts')
   })
 
   // ── renderScriptList ────────────────────────────────────────────────────────
 
-  test('script list is populated on page load', async ({ page }) => {
+  test('script list is populated after sign-in', async ({ page }) => {
+    await signIn(page)
     const checkboxes = page.locator('#script-list input[type="checkbox"]')
     await expect(checkboxes).toHaveCount(3)
   })
@@ -245,6 +278,7 @@ test.describe('deploy index.html', () => {
   test('script list shows Gmail to Drive By Labels option', async ({
     page,
   }) => {
+    await signIn(page)
     await expect(
       page.locator('#script-list input[value="gmail-to-drive-by-labels"]')
     ).toBeVisible()
@@ -254,6 +288,7 @@ test.describe('deploy index.html', () => {
   })
 
   test('script list shows Calendar to Sheets option', async ({ page }) => {
+    await signIn(page)
     await expect(
       page.locator('#script-list input[value="calendar-to-sheets"]')
     ).toBeVisible()
@@ -323,13 +358,14 @@ test.describe('deploy index.html', () => {
   test('handleDeploy shows error when called without an access token', async ({
     page,
   }) => {
-    // Select a script and force-enable the button, but do NOT sign in
+    // Force-show Step 2 and enable button without signing in
+    await page.evaluate(() => {
+      document.getElementById('step2-card').style.display = ''
+      document.getElementById('btn-deploy').disabled = false
+    })
     await page
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
-    await page.evaluate(() => {
-      document.getElementById('btn-deploy').disabled = false
-    })
     await page.evaluate(() => window.handleDeploy())
     await expect(page.locator('.status-error')).toContainText('sign in first')
   })
