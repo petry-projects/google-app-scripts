@@ -63,7 +63,7 @@ async function mockSuccessfulDeploy(page) {
     })
   })
 
-  // Apps Script REST API — project creation and content upload
+  // Apps Script REST API — project creation, content upload, and content read
   await page.route('https://script.googleapis.com/**', async (route) => {
     const url = route.request().url()
     const method = route.request().method()
@@ -74,11 +74,32 @@ async function mockSuccessfulDeploy(page) {
         contentType: 'application/json',
         body: JSON.stringify({ scriptId: 'mock-project-id-abc' }),
       })
+    } else if (method === 'GET' && url.includes('/content')) {
+      // Return project content for saveConfig GET request
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          files: [
+            { name: 'appsscript', type: 'JSON', source: '{}' },
+            { name: 'config', type: 'SERVER_JS', source: '// config' },
+            { name: 'code', type: 'SERVER_JS', source: '// code' },
+          ],
+        }),
+      })
     } else if (method === 'PUT' && url.includes('/content')) {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({}),
+      })
+    } else if (method === 'GET' && url.includes('/projects/')) {
+      // GET project metadata (for idempotency check)
+      const scriptId = url.split('/projects/')[1].split('/')[0]
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ scriptId, title: 'Mock Project' }),
       })
     } else {
       await route.continue()
@@ -143,11 +164,12 @@ test.describe('deploy index.html', () => {
 
   test('renders step badges including hidden Step 3', async ({ page }) => {
     const badges = page.locator('.step-badge')
+    // All 3 badges exist in the DOM
     await expect(badges).toHaveCount(3)
     await expect(badges.nth(0)).toHaveText('1')
     await expect(badges.nth(1)).toHaveText('2')
     await expect(badges.nth(2)).toHaveText('3')
-    // Step 3 card is hidden by default
+    // Only Steps 1 and 2 are visible; Step 3 badge is inside hidden card
     await expect(page.locator('#step3-card')).toBeHidden()
   })
 
@@ -156,6 +178,26 @@ test.describe('deploy index.html', () => {
     await expect(page.locator('#btn-signin')).toContainText(
       'Sign in with Google'
     )
+  })
+
+  // ── Step 3 hidden on load ─────────────────────────────────────────────────
+
+  test('Step 3 card is hidden on page load', async ({ page }) => {
+    await expect(page.locator('#step3-card')).toBeHidden()
+    // Verify it uses display:none
+    const display = await page
+      .locator('#step3-card')
+      .evaluate((el) => el.style.display)
+    expect(display).toBe('none')
+  })
+
+  // ── Step 2 structure ──────────────────────────────────────────────────────
+
+  test('Step 2 deploy button is inside the Step 2 card', async ({ page }) => {
+    // btn-deploy should be a descendant of the Step 2 card
+    const step2Card = page.locator('.card').nth(1)
+    await expect(step2Card.locator('#btn-deploy')).toBeVisible()
+    await expect(step2Card.locator('h2')).toContainText('Choose scripts')
   })
 
   // ── renderScriptList ────────────────────────────────────────────────────────
@@ -259,7 +301,7 @@ test.describe('deploy index.html', () => {
 
   // ── handleDeploy – success flow ─────────────────────────────────────────────
 
-  test('handleDeploy success shows link to the new Apps Script project', async ({
+  test('handleDeploy success shows status-ok after deploy', async ({
     page,
   }) => {
     await mockSuccessfulDeploy(page)
@@ -270,14 +312,6 @@ test.describe('deploy index.html', () => {
     await page.locator('#btn-deploy').click()
 
     await expect(page.locator('.status-ok')).toBeVisible()
-    await expect(page.locator('.result-link')).toHaveAttribute(
-      'href',
-      'https://script.google.com/d/mock-project-id-abc/edit'
-    )
-    await expect(page.locator('.result-link')).toHaveAttribute(
-      'target',
-      '_blank'
-    )
   })
 
   test('handleDeploy success shows the script name in the message', async ({
@@ -294,6 +328,104 @@ test.describe('deploy index.html', () => {
     )
   })
 
+  test('handleDeploy success shows link to the new Apps Script project in Step 3', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+
+    await expect(page.locator('.status-ok')).toBeVisible()
+    // Result link appears in Step 3 card
+    const step3Link = page.locator('#step3-card .result-link')
+    await expect(step3Link).toHaveAttribute(
+      'href',
+      'https://script.google.com/d/mock-project-id-abc/edit'
+    )
+    await expect(step3Link).toHaveAttribute('target', '_blank')
+  })
+
+  test('Step 3 appears after successful deploy with Configure buttons', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    await expect(page.locator('#step3-card')).toBeVisible()
+    await expect(
+      page.locator('#btn-configure-mock-project-id-abc')
+    ).toBeVisible()
+  })
+
+  test('Step 3 shows a card for each deployed script', async ({ page }) => {
+    let projectIdCounter = 0
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        projectIdCounter++
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ scriptId: `project-${projectIdCounter}` }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({}),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    // Two configure buttons — one per deployed script
+    await expect(page.locator('#btn-configure-project-1')).toBeVisible()
+    await expect(page.locator('#btn-configure-project-2')).toBeVisible()
+  })
+
+  test('Configure button toggles config form visibility', async ({ page }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    const configForm = page.locator('#config-form-mock-project-id-abc')
+    // Config form is hidden initially
+    await expect(configForm).toBeHidden()
+
+    // Click Configure to expand
+    await page.locator('#btn-configure-mock-project-id-abc').click()
+    await expect(configForm).toBeVisible()
+
+    // Click again to collapse
+    await page.locator('#btn-configure-mock-project-id-abc').click()
+    await expect(configForm).toBeHidden()
+  })
+
   test('handleDeploy renders a per-script card with Deployed successfully', async ({
     page,
   }) => {
@@ -304,77 +436,10 @@ test.describe('deploy index.html', () => {
       .click()
     await page.locator('#btn-deploy').click()
     await page.waitForSelector('.status-ok')
-    // Each project gets its own card showing "Deployed successfully"
-    const card = page.locator('.result-link').first().locator('..')
-    await expect(card).toContainText('Deployed successfully')
-  })
-
-  test('handleDeploy shows setup CTA when setup has not been confirmed', async ({
-    page,
-  }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('.status-ok')
-    // CTA box should be visible with numbered steps and the confirm button
-    await expect(page.locator('[id^="setup-cta-"]')).toBeVisible()
-    await expect(page.locator('[id^="setup-cta-"]')).toContainText(
-      'One more step'
+    // Status area shows "Deployed successfully" per project
+    await expect(page.locator('.status-ok')).toContainText(
+      'Deployed successfully'
     )
-    await expect(
-      page.locator('button:has-text("Done — I ran setup()")')
-    ).toBeVisible()
-  })
-
-  test('clicking confirm button replaces CTA with collapsible trigger-review link', async ({
-    page,
-  }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('[id^="setup-cta-"]')
-    await page.locator('button:has-text("Done — I ran setup()")').click()
-    await expect(page.locator('[id^="setup-done-"]')).toBeVisible()
-    await expect(page.locator('[id^="setup-done-"]')).toContainText(
-      'previously enabled the trigger'
-    )
-    await expect(page.locator('[id^="setup-done-"]')).toContainText(
-      'Click here to review instructions'
-    )
-    await expect(page.locator('[id^="setup-cta-"]')).toHaveCount(0)
-  })
-
-  test('handleDeploy shows collapsible trigger-review when setup already confirmed', async ({
-    page,
-  }) => {
-    // Pre-seed setup confirmation in localStorage so the CTA is skipped
-    await mockSuccessfulDeploy(page)
-    await page.evaluate(() => {
-      localStorage.setItem(
-        'gas_copilot_setup_done',
-        JSON.stringify({ 'mock-project-id-abc': true })
-      )
-    })
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('.status-ok')
-    await expect(page.locator('[id^="setup-done-"]')).toBeVisible()
-    await expect(page.locator('[id^="setup-done-"]')).toContainText(
-      'previously enabled the hourly trigger'
-    )
-    await expect(page.locator('[id^="setup-done-"]')).toContainText(
-      'Click here to review instructions'
-    )
-    await expect(page.locator('[id^="setup-cta-"]')).toHaveCount(0)
   })
 
   test('deploy button resets to "Deploy to my account" after successful deploy', async ({
@@ -542,7 +607,7 @@ test.describe('deploy index.html', () => {
     expect(setupFile.source).toContain('everyHours(1)')
   })
 
-  test('handleDeploy success shows manual trigger setup instruction', async ({
+  test('handleDeploy success shows configure instructions in status', async ({
     page,
   }) => {
     await mockSuccessfulDeploy(page)
@@ -551,9 +616,8 @@ test.describe('deploy index.html', () => {
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
     await page.locator('#btn-deploy').click()
-    await expect(page.locator('.status-ok')).toContainText('setup()')
     await expect(page.locator('.status-ok')).toContainText(
-      'activate the hourly trigger'
+      'configure each script'
     )
   })
 
@@ -611,7 +675,7 @@ test.describe('deploy index.html', () => {
 
     expect(verifiedExisting).toBe(true)
     expect(projectCreated).toBe(false)
-    await expect(page.locator('.result-link')).toHaveAttribute(
+    await expect(page.locator('#step3-card .result-link')).toHaveAttribute(
       'href',
       'https://script.google.com/d/existing-script-id/edit'
     )
@@ -665,7 +729,7 @@ test.describe('deploy index.html', () => {
     await page.waitForSelector('.status-ok')
 
     expect(projectCreated).toBe(true)
-    await expect(page.locator('.result-link')).toHaveAttribute(
+    await expect(page.locator('#step3-card .result-link')).toHaveAttribute(
       'href',
       'https://script.google.com/d/new-fallback-id/edit'
     )
@@ -981,7 +1045,7 @@ test.describe('deploy index.html', () => {
     expect(createProjectCallCount).toBe(2)
   })
 
-  test('deploying multiple scripts shows a result link for each', async ({
+  test('deploying multiple scripts shows a result link for each in Step 3', async ({
     page,
   }) => {
     let projectIdCounter = 0
@@ -1017,13 +1081,14 @@ test.describe('deploy index.html', () => {
     await page.locator('#btn-deploy').click()
     await page.waitForSelector('.status-ok')
 
-    const links = page.locator('.result-link')
-    await expect(links).toHaveCount(2)
-    await expect(links.nth(0)).toHaveAttribute(
+    // Links in Step 3 cards
+    const step3Links = page.locator('#step3-card .result-link')
+    await expect(step3Links).toHaveCount(2)
+    await expect(step3Links.nth(0)).toHaveAttribute(
       'href',
       'https://script.google.com/d/project-1/edit'
     )
-    await expect(links.nth(1)).toHaveAttribute(
+    await expect(step3Links.nth(1)).toHaveAttribute(
       'href',
       'https://script.google.com/d/project-2/edit'
     )
@@ -1072,232 +1137,67 @@ test.describe('deploy index.html', () => {
     expect(capturedTitles).toContain('Petry-Projects – Calendar to Sheets')
   })
 
-  // ── Step 3 – Configuration UI ──────────────────────────────────────────────
+  // ── Step 3 – Post-deploy configuration ──────────────────────────────────────
 
-  test('Step 3 card appears when calendar-to-briefing-doc is checked', async ({
-    page,
-  }) => {
-    await expect(page.locator('#step3-card')).toBeHidden()
-    await page
-      .locator('#script-list input[value="calendar-to-briefing-doc"]')
-      .click()
-    await expect(page.locator('#step3-card')).toBeVisible()
-    await expect(page.locator('#step3-script-name')).toContainText(
-      'Calendar to Briefing Doc'
-    )
-  })
-
-  test('Step 3 card hides when calendar-to-briefing-doc is unchecked', async ({
-    page,
-  }) => {
-    await page
-      .locator('#script-list input[value="calendar-to-briefing-doc"]')
-      .click()
-    await expect(page.locator('#step3-card')).toBeVisible()
-    await page
-      .locator('#script-list input[value="calendar-to-briefing-doc"]')
-      .click()
-    await expect(page.locator('#step3-card')).toBeHidden()
-  })
-
-  test('Step 3 does not appear for gmail-to-drive-by-labels', async ({
-    page,
-  }) => {
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await expect(page.locator('#step3-card')).toBeHidden()
-  })
-
-  test('Step 3 shows calendar checkboxes after sign-in', async ({ page }) => {
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="calendar-to-briefing-doc"]')
-      .click()
-    await expect(page.locator('#cfg-calendar-list')).toBeVisible()
-    const checkboxes = page.locator('.cfg-calendar')
-    await expect(checkboxes).toHaveCount(3)
-    // All checked by default
-    for (let i = 0; i < 3; i++) {
-      await expect(checkboxes.nth(i)).toBeChecked()
-    }
-  })
-
-  test('deploy button enables when briefing doc is checked (email pre-filled)', async ({
-    page,
-  }) => {
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="calendar-to-briefing-doc"]')
-      .click()
-    // Email is pre-filled from userinfo mock
-    await expect(page.locator('#cfg-email')).toHaveValue('testuser@gmail.com')
-    await expect(page.locator('#btn-deploy')).toBeEnabled()
-  })
-
-  test('deploy button disables when briefing doc email is cleared', async ({
-    page,
-  }) => {
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="calendar-to-briefing-doc"]')
-      .click()
-    await expect(page.locator('#btn-deploy')).toBeEnabled()
-    await page.locator('#cfg-email').fill('')
-    await expect(page.locator('#btn-deploy')).toBeDisabled()
-  })
-
-  test('briefing doc deploy uploads hourly trigger setup.gs with schedule in config', async ({
-    page,
-  }) => {
-    let uploadBody = null
-    await page.route('https://raw.githubusercontent.com/**', async (route) => {
-      await route.fulfill({ status: 200, body: '// code' })
-    })
-    await page.route('https://script.googleapis.com/**', async (route) => {
-      const url = route.request().url()
-      const method = route.request().method()
-      if (method === 'POST' && url.endsWith('/projects')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({ scriptId: 'briefing-id' }),
-        })
-      } else if (method === 'PUT' && url.includes('/content')) {
-        uploadBody = JSON.parse(route.request().postData())
-        await route.fulfill({ status: 200, body: '{}' })
-      } else {
-        await route.continue()
-      }
-    })
-
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="calendar-to-briefing-doc"]')
-      .click()
-    await expect(page.locator('#cfg-email')).toHaveValue('testuser@gmail.com')
-    await page.locator('#cfg-triggerDay').selectOption('SUNDAY')
-    await page.locator('#cfg-triggerHour').selectOption('6')
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('.status-ok')
-
-    // setup.gs always uses hourly trigger — schedule is in config.gs
-    const setupFile = uploadBody.files.find((f) => f.name === 'setup')
-    expect(setupFile).toBeDefined()
-    expect(setupFile.source).toContain('generateWeeklyBriefing')
-    expect(setupFile.source).toContain('everyHours(1)')
-
-    // config.gs contains the schedule fields
-    const configFile = uploadBody.files.find((f) => f.name === 'config')
-    expect(configFile.source).toContain('scheduleDay: "SUNDAY"')
-    expect(configFile.source).toContain('scheduleHour: 6')
-    expect(configFile.source).toContain('scheduleFrequency: "weekly"')
-  })
-
-  test('briefing doc deploy uploads config.gs with user email, subject, and lookahead', async ({
-    page,
-  }) => {
-    let uploadBody = null
-    await page.route('https://raw.githubusercontent.com/**', async (route) => {
-      await route.fulfill({ status: 200, body: '// code' })
-    })
-    await page.route('https://script.googleapis.com/**', async (route) => {
-      const url = route.request().url()
-      const method = route.request().method()
-      if (method === 'POST' && url.endsWith('/projects')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({ scriptId: 'briefing-id' }),
-        })
-      } else if (method === 'PUT' && url.includes('/content')) {
-        uploadBody = JSON.parse(route.request().postData())
-        await route.fulfill({ status: 200, body: '{}' })
-      } else {
-        await route.continue()
-      }
-    })
-
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="calendar-to-briefing-doc"]')
-      .click()
-    await page.locator('#cfg-email').fill('boss@example.com')
-    await page.locator('#cfg-subject').fill('My Custom Briefing')
-    await page.locator('#cfg-lookahead').selectOption('14')
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('.status-ok')
-
-    const configFile = uploadBody.files.find((f) => f.name === 'config')
-    expect(configFile).toBeDefined()
-    expect(configFile.source).toContain('boss@example.com')
-    expect(configFile.source).toContain('useAllCalendars: true')
-    expect(configFile.source).toContain('My Custom Briefing')
-    expect(configFile.source).toContain('lookaheadDays: 14')
-    expect(configFile.source).not.toContain('docId')
-  })
-
-  test('briefing doc deploy with every-N-days puts interval in config', async ({
-    page,
-  }) => {
-    let uploadBody = null
-    await page.route('https://raw.githubusercontent.com/**', async (route) => {
-      await route.fulfill({ status: 200, body: '// code' })
-    })
-    await page.route('https://script.googleapis.com/**', async (route) => {
-      const url = route.request().url()
-      const method = route.request().method()
-      if (method === 'POST' && url.endsWith('/projects')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({ scriptId: 'days-id' }),
-        })
-      } else if (method === 'PUT' && url.includes('/content')) {
-        uploadBody = JSON.parse(route.request().postData())
-        await route.fulfill({ status: 200, body: '{}' })
-      } else {
-        await route.continue()
-      }
-    })
-
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="calendar-to-briefing-doc"]')
-      .click()
-    await expect(page.locator('#cfg-email')).toHaveValue('testuser@gmail.com')
-    await page.locator('#cfg-frequency').selectOption('days')
-    await page.locator('#cfg-interval').selectOption('3')
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('.status-ok')
-
-    // setup.gs is always hourly — schedule is in config
-    const setupFile = uploadBody.files.find((f) => f.name === 'setup')
-    expect(setupFile.source).toContain('everyHours(1)')
-
-    const configFile = uploadBody.files.find((f) => f.name === 'config')
-    expect(configFile.source).toContain('scheduleFrequency: "days"')
-    expect(configFile.source).toContain('scheduleIntervalDays: 3')
-  })
-
-  test('briefing doc email field defaults to signed-in user email', async ({
-    page,
-  }) => {
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="calendar-to-briefing-doc"]')
-      .click()
-    await expect(page.locator('#cfg-email')).toHaveValue('testuser@gmail.com')
-  })
-
-  test('briefing doc deploy success shows hourly trigger label', async ({
+  test('confirmSetupDone replaces setup section with trigger activated message', async ({
     page,
   }) => {
     await mockSuccessfulDeploy(page)
     await signIn(page)
     await page
-      .locator('#script-list input[value="calendar-to-briefing-doc"]')
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
-    await expect(page.locator('#cfg-email')).toHaveValue('testuser@gmail.com')
     await page.locator('#btn-deploy').click()
-    await expect(page.locator('.status-ok')).toContainText('hourly trigger')
+    await page.waitForSelector('.status-ok')
+
+    // Click Configure to expand the form
+    await page.locator('#btn-configure-mock-project-id-abc').click()
+
+    // Click Save Configuration
+    await page.locator('#config-form-mock-project-id-abc .btn-primary').click()
+
+    // Wait for setup section to become visible
+    await expect(
+      page.locator('#setup-section-mock-project-id-abc')
+    ).toBeVisible()
+
+    // Click the "Done — I ran setup()" button
+    await page
+      .locator('#setup-section-mock-project-id-abc button:has-text("Done")')
+      .click()
+
+    // Verify it now shows "Trigger previously activated"
+    await expect(
+      page.locator('#setup-section-mock-project-id-abc')
+    ).toContainText('Trigger previously activated')
+  })
+
+  test('handleDeploy shows trigger already activated when setup previously confirmed', async ({
+    page,
+  }) => {
+    // Pre-seed setup confirmation in localStorage so the CTA is skipped
+    await mockSuccessfulDeploy(page)
+    await page.evaluate(() => {
+      localStorage.setItem(
+        'gas_copilot_setup_done',
+        JSON.stringify({ 'mock-project-id-abc': true })
+      )
+    })
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    // Click Configure to open form, then Save to trigger showSetupCta
+    await page.locator('#btn-configure-mock-project-id-abc').click()
+    await page.locator('#config-form-mock-project-id-abc .btn-primary').click()
+
+    // Since setup was already confirmed, it should show "previously activated"
+    await expect(
+      page.locator('#setup-section-mock-project-id-abc')
+    ).toContainText('Trigger previously activated')
   })
 
   test('single-script deploy uses Petry-Projects prefix for project title', async ({
@@ -1337,5 +1237,17 @@ test.describe('deploy index.html', () => {
     await page.waitForSelector('.status-ok')
 
     expect(capturedTitle).toBe('Petry-Projects – Gmail to Drive By Labels')
+  })
+
+  test('briefing doc deploy success shows deployed status', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="calendar-to-briefing-doc"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await expect(page.locator('.status-ok')).toContainText('deployed')
   })
 })

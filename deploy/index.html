@@ -375,40 +375,32 @@
         ></span>
       </div>
 
-      <!-- Step 2 – Choose script -->
+      <!-- Step 2 – Choose script & deploy -->
       <div class="card">
         <h2><span class="step-badge">2</span>Choose scripts to deploy</h2>
         <div class="script-list" id="script-list">
           <!-- populated by JS -->
         </div>
-      </div>
-
-      <!-- Step 3 – Configure (only for scripts with configUI) -->
-      <div class="card" id="step3-card" style="display: none">
-        <h2>
-          <span class="step-badge">3</span>Configure
-          <span id="step3-script-name"></span>
-        </h2>
-        <div id="step3-fields">
-          <!-- populated by JS when a configurable script is checked -->
+        <div style="text-align: right; margin-top: 16px">
+          <button
+            class="btn btn-primary"
+            id="btn-deploy"
+            onclick="handleDeploy()"
+            disabled
+          >
+            Deploy to my account
+          </button>
         </div>
-      </div>
-
-      <!-- Deploy button -->
-      <div style="text-align: right; margin-bottom: 20px">
-        <button
-          class="btn btn-primary"
-          id="btn-deploy"
-          onclick="handleDeploy()"
-          disabled
-        >
-          Deploy to my account
-        </button>
       </div>
 
       <!-- Status / result area -->
       <div id="status-area">
         <div id="status-msg" class="status-msg"></div>
+      </div>
+
+      <div class="card" id="step3-card" style="display: none">
+        <h2><span class="step-badge">3</span>Configure your scripts</h2>
+        <div id="step3-scripts"></div>
       </div>
     </div>
 
@@ -465,7 +457,6 @@
             'Shows which calendar each event comes from. Optionally emails the ' +
             'briefing link to a configured recipient list.',
           triggerFn: 'generateWeeklyBriefing',
-          configUI: true,
         },
       ]
 
@@ -570,19 +561,9 @@
           // best-effort; ignore storage errors
         }
         const safeId = escapeHtml(scriptId)
-        const cta = document.getElementById('setup-cta-' + scriptId)
-        if (cta) {
-          cta.outerHTML =
-            `<details id="setup-done-${safeId}" style="margin-top:8px;font-size:12px;">` +
-            `<summary style="cursor:pointer;color:#137333;">` +
-            `⏱ You had previously enabled the trigger. Click here to review instructions.` +
-            `</summary>` +
-            `<ol style="margin:8px 0 0 18px;font-size:13px;line-height:1.7;">` +
-            `<li>Click the script link above to open it in Apps Script</li>` +
-            `<li>In the toolbar, click <strong>Run</strong></li>` +
-            `<li>Select <strong>setup</strong> from the dropdown</li>` +
-            `</ol>` +
-            `</details>`
+        const section = document.getElementById('setup-section-' + scriptId)
+        if (section) {
+          section.innerHTML = `<div style="font-size:12px;color:#137333;">⏱ Trigger previously activated.</div>`
         }
       }
       window.confirmSetupDone = confirmSetupDone
@@ -635,11 +616,8 @@
         const hasScript = !!document.querySelector(
           'input[name="script"]:checked'
         )
-        const configValid = validateStep3Fields()
         document.getElementById('btn-deploy').disabled = !(
-          hasToken &&
-          hasScript &&
-          configValid
+          hasToken && hasScript
         )
       }
 
@@ -655,12 +633,6 @@
           if (!res.ok) return
           const data = await res.json()
           userEmail = data.email || ''
-          // Pre-fill email field if Step 3 is already rendered
-          const emailEl = document.getElementById('cfg-email')
-          if (emailEl && !emailEl.value) {
-            emailEl.value = userEmail
-            setDeployEnabled()
-          }
         } catch {
           // best-effort
         }
@@ -682,38 +654,67 @@
             name: c.summaryOverride || c.summary || c.id,
             primary: !!c.primary,
           }))
-          // Re-render Step 3 if it's visible so calendar list appears
-          const fields = document.getElementById('step3-fields')
-          if (fields) fields.dataset.renderedFor = ''
-          renderStep3()
         } catch {
           // best-effort; calendar list just won't be available
         }
       }
 
-      // ── Step 3 – Configuration UI ──────────────────────────────────────────────
+      // ── Step 3 – Post-deploy configuration UI ───────────────────────────────────
 
-      function renderStep3() {
-        const checked = Array.from(
-          document.querySelectorAll('input[name="script"]:checked')
-        ).map((el) => el.value)
-        const configScript = SCRIPT_CATALOG.find(
-          (s) => checked.includes(s.id) && s.configUI
-        )
-        const card = document.getElementById('step3-card')
-        if (!configScript) {
-          card.style.display = 'none'
-          return
+      function toggleFrequencyFields() {
+        const freq = document.getElementById('cfg-frequency').value
+        document.getElementById('cfg-day-group').style.display =
+          freq === 'weekly' ? '' : 'none'
+        document.getElementById('cfg-interval-group').style.display =
+          freq === 'days' ? '' : 'none'
+      }
+
+      function renderConfigCards(projects) {
+        const container = document.getElementById('step3-scripts')
+        container.innerHTML = projects
+          .map((p) => {
+            const safeId = escapeHtml(p.scriptId)
+            const safeCatalogId = escapeHtml(p.catalogId)
+            return `<div style="border:1px solid #dadce0;border-radius:6px;padding:16px;margin-bottom:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div>
+                <strong style="font-size:14px;">${escapeHtml(p.title)}</strong>
+                <a class="result-link" href="https://script.google.com/d/${safeId}/edit"
+                   target="_blank" rel="noopener" style="display:block;margin-top:4px;font-size:13px;">
+                   Open in Apps Script ↗</a>
+              </div>
+              <button class="btn btn-outline" onclick="toggleConfigForm('${safeId}', '${safeCatalogId}')"
+                      id="btn-configure-${safeId}">Configure</button>
+            </div>
+            <div id="config-form-${safeId}" style="display:none;margin-top:16px;border-top:1px solid #dadce0;padding-top:16px;">
+            </div>
+            <div id="setup-section-${safeId}" style="display:none;margin-top:12px;"></div>
+          </div>`
+          })
+          .join('')
+        document.getElementById('step3-card').style.display = ''
+      }
+
+      function toggleConfigForm(scriptId, catalogId) {
+        const form = document.getElementById('config-form-' + scriptId)
+        if (form.style.display === 'none') {
+          form.style.display = ''
+          renderConfigFields(form, scriptId, catalogId)
+          document.getElementById('btn-configure-' + scriptId).textContent =
+            'Hide'
+        } else {
+          form.style.display = 'none'
+          document.getElementById('btn-configure-' + scriptId).textContent =
+            'Configure'
         }
-        card.style.display = ''
-        document.getElementById('step3-script-name').textContent =
-          configScript.name
+      }
 
-        const fields = document.getElementById('step3-fields')
-        if (fields.dataset.renderedFor === configScript.id) return
-        fields.dataset.renderedFor = configScript.id
+      function renderConfigFields(container, scriptId, catalogId) {
+        // Only render once
+        if (container.dataset.rendered) return
+        container.dataset.rendered = '1'
 
-        if (configScript.id === 'calendar-to-briefing-doc') {
+        if (catalogId === 'calendar-to-briefing-doc') {
           let calendarListHtml = ''
           if (userCalendars.length > 0) {
             calendarListHtml = userCalendars
@@ -724,7 +725,6 @@
                   escapeHtml(cal.id) +
                   '" ' +
                   'checked ' +
-                  'onchange="setDeployEnabled()" ' +
                   'style="accent-color:#1a73e8;width:16px;height:16px;" />' +
                   '<span style="font-size:14px;">' +
                   escapeHtml(cal.name) +
@@ -743,37 +743,37 @@
             Intl.DateTimeFormat().resolvedOptions().timeZone || 'your timezone'
           const defaultEmail = escapeHtml(userEmail)
 
-          fields.innerHTML =
+          container.innerHTML =
             '<div class="field-group">' +
             '<label>Calendars to include</label>' +
-            '<div id="cfg-calendar-list" style="max-height:200px;overflow-y:auto;border:1px solid #dadce0;border-radius:4px;padding:8px 12px;">' +
+            '<div style="max-height:200px;overflow-y:auto;border:1px solid #dadce0;border-radius:4px;padding:8px 12px;">' +
             calendarListHtml +
             '</div>' +
             '<div class="field-help">Uncheck calendars you want to exclude from the briefing.</div>' +
             '</div>' +
             '<div class="field-row">' +
             '<div class="field-group">' +
-            '<label for="cfg-email">Send briefing to</label>' +
-            '<input type="text" id="cfg-email" value="' +
+            '<label>Send briefing to</label>' +
+            '<input type="text" class="cfg-field" data-key="email" value="' +
             defaultEmail +
-            '" placeholder="you@example.com" oninput="setDeployEnabled()" />' +
+            '" placeholder="you@example.com" />' +
             '</div>' +
             '<div class="field-group">' +
-            '<label for="cfg-subject">Email subject</label>' +
-            '<input type="text" id="cfg-subject" value="Weekly Briefing" placeholder="Weekly Briefing" />' +
+            '<label>Email subject</label>' +
+            '<input type="text" class="cfg-field" data-key="subject" value="Weekly Briefing" placeholder="Weekly Briefing" />' +
             '</div>' +
             '</div>' +
             '<div class="field-row">' +
             '<div class="field-group">' +
-            '<label for="cfg-frequency">Frequency</label>' +
-            '<select id="cfg-frequency" onchange="toggleFrequencyFields()">' +
+            '<label>Frequency</label>' +
+            '<select id="cfg-frequency" class="cfg-field" data-key="frequency" onchange="toggleFrequencyFields()">' +
             '<option value="weekly" selected>Weekly</option>' +
             '<option value="days">Every N days</option>' +
             '</select>' +
             '</div>' +
             '<div class="field-group" id="cfg-day-group">' +
-            '<label for="cfg-triggerDay">Day</label>' +
-            '<select id="cfg-triggerDay">' +
+            '<label>Day</label>' +
+            '<select class="cfg-field" data-key="triggerDay" id="cfg-triggerDay">' +
             '<option value="SUNDAY">Sunday</option>' +
             '<option value="MONDAY" selected>Monday</option>' +
             '<option value="TUESDAY">Tuesday</option>' +
@@ -784,8 +784,8 @@
             '</select>' +
             '</div>' +
             '<div class="field-group" id="cfg-interval-group" style="display:none">' +
-            '<label for="cfg-interval">Every</label>' +
-            '<select id="cfg-interval">' +
+            '<label>Every</label>' +
+            '<select class="cfg-field" data-key="triggerInterval" id="cfg-interval">' +
             '<option value="1">1 day</option>' +
             '<option value="2">2 days</option>' +
             '<option value="3">3 days</option>' +
@@ -795,8 +795,8 @@
             '</select>' +
             '</div>' +
             '<div class="field-group">' +
-            '<label for="cfg-triggerHour">At approximately</label>' +
-            '<select id="cfg-triggerHour">' +
+            '<label>At approximately</label>' +
+            '<select class="cfg-field" data-key="triggerHour" id="cfg-triggerHour">' +
             '<option value="5">5 AM</option>' +
             '<option value="6">6 AM</option>' +
             '<option value="7" selected>7 AM</option>' +
@@ -809,8 +809,8 @@
             escapeHtml(tz) +
             '</div>' +
             '<div class="field-group">' +
-            '<label for="cfg-lookahead">Look ahead days</label>' +
-            '<select id="cfg-lookahead">' +
+            '<label>Look ahead days</label>' +
+            '<select class="cfg-field" data-key="lookaheadDays" id="cfg-lookahead">' +
             '<option value="3">3 days</option>' +
             '<option value="5">5 days</option>' +
             '<option value="7" selected>7 days</option>' +
@@ -819,80 +819,144 @@
             '<option value="30">30 days</option>' +
             '</select>' +
             '<div class="field-help">How many days ahead to include in the briefing.</div>' +
-            '</div>'
+            '</div>' +
+            '<button class="btn btn-primary" onclick="saveConfig(\'' +
+            scriptId +
+            "', '" +
+            catalogId +
+            '\')">Save Configuration</button>'
+        } else if (catalogId === 'gmail-to-drive-by-labels') {
+          container.innerHTML =
+            '<div class="field-group">' +
+            '<label>Trigger Gmail Label</label>' +
+            '<input type="text" class="cfg-field" data-key="triggerLabel" placeholder="e.g. receipts" />' +
+            '</div>' +
+            '<div class="field-group">' +
+            '<label>Processed Gmail Label</label>' +
+            '<input type="text" class="cfg-field" data-key="processedLabel" placeholder="e.g. receipts-archived" />' +
+            '</div>' +
+            '<div class="field-group">' +
+            '<label>Google Doc ID (for email text)</label>' +
+            '<input type="text" class="cfg-field" data-key="docId" placeholder="Paste Doc ID from URL" />' +
+            '<div class="field-help">Create a new <a href="https://docs.google.com/document/create" target="_blank">blank Google Doc</a>, copy the ID from between /d/ and /edit</div>' +
+            '</div>' +
+            '<div class="field-group">' +
+            '<label>Drive Folder ID (for attachments)</label>' +
+            '<input type="text" class="cfg-field" data-key="folderId" placeholder="Paste Folder ID from URL" />' +
+            '<div class="field-help">Open Google Drive folder, copy the ID from the URL</div>' +
+            '</div>' +
+            '<button class="btn btn-primary" onclick="saveConfig(\'' +
+            scriptId +
+            "', '" +
+            catalogId +
+            '\')">Save Configuration</button>'
+        } else if (catalogId === 'calendar-to-sheets') {
+          let calendarSelectHtml = ''
+          if (userCalendars.length > 0) {
+            const opts = userCalendars
+              .map(
+                (cal) =>
+                  '<option value="' +
+                  escapeHtml(cal.id) +
+                  '"' +
+                  (cal.primary ? ' selected' : '') +
+                  '>' +
+                  escapeHtml(cal.name) +
+                  (cal.primary ? ' (primary)' : '') +
+                  '</option>'
+              )
+              .join('')
+            calendarSelectHtml =
+              '<select class="cfg-field" data-key="calendarId">' +
+              opts +
+              '</select>'
+          } else {
+            calendarSelectHtml =
+              '<input type="text" class="cfg-field" data-key="calendarId" placeholder="your-email@gmail.com" />'
+          }
+          container.innerHTML =
+            '<div class="field-group">' +
+            '<label>Calendar</label>' +
+            calendarSelectHtml +
+            '</div>' +
+            '<div class="field-group">' +
+            '<label>Spreadsheet ID</label>' +
+            '<input type="text" class="cfg-field" data-key="spreadsheetId" placeholder="Paste Spreadsheet ID from URL" />' +
+            '<div class="field-help">Open Google Sheet, copy the ID from between /d/ and /edit</div>' +
+            '</div>' +
+            '<div class="field-group">' +
+            '<label>Sheet Name</label>' +
+            '<input type="text" class="cfg-field" data-key="sheetName" value="Sheet1" placeholder="Sheet1" />' +
+            '</div>' +
+            '<button class="btn btn-primary" onclick="saveConfig(\'' +
+            scriptId +
+            "', '" +
+            catalogId +
+            '\')">Save Configuration</button>'
         }
       }
 
-      function toggleFrequencyFields() {
-        const freq = document.getElementById('cfg-frequency').value
-        document.getElementById('cfg-day-group').style.display =
-          freq === 'weekly' ? '' : 'none'
-        document.getElementById('cfg-interval-group').style.display =
-          freq === 'days' ? '' : 'none'
-      }
+      async function saveConfig(scriptId, catalogId) {
+        const form = document.getElementById('config-form-' + scriptId)
+        const btn = form.querySelector('.btn-primary')
+        btn.disabled = true
+        btn.textContent = 'Saving...'
 
-      function getStep3Values(catalogId) {
-        if (catalogId !== 'calendar-to-briefing-doc') return null
-        const emailEl = document.getElementById('cfg-email')
-        if (!emailEl) return null
-        const selectedCalendars = Array.from(
-          document.querySelectorAll('.cfg-calendar:checked')
-        ).map((el) => el.value)
-        const excludedCalendars = Array.from(
-          document.querySelectorAll('.cfg-calendar:not(:checked)')
-        ).map((el) => el.value)
-        const frequency = document.getElementById('cfg-frequency').value
-        return {
-          email: (emailEl.value || '').trim(),
-          subject:
-            (document.getElementById('cfg-subject').value || '').trim() ||
-            'Weekly Briefing',
-          selectedCalendars,
-          excludeCalendars: excludedCalendars,
-          frequency,
-          triggerDay:
-            frequency === 'weekly'
-              ? document.getElementById('cfg-triggerDay').value
-              : null,
-          triggerInterval:
-            frequency === 'days'
-              ? parseInt(document.getElementById('cfg-interval').value, 10)
-              : null,
-          triggerHour: document.getElementById('cfg-triggerHour').value,
-          lookaheadDays: parseInt(
-            document.getElementById('cfg-lookahead').value,
-            10
-          ),
+        try {
+          const configSource = buildConfigForScript(catalogId, form)
+          if (!configSource) throw new Error('Could not build config')
+
+          // Fetch current project content
+          const project = await apiFetch(
+            `${APPS_SCRIPT_API}/projects/${scriptId}/content`
+          )
+          const files = project.files.map((f) => {
+            if (f.name === 'config') return { ...f, source: configSource }
+            return f
+          })
+
+          // Upload updated content
+          await apiFetch(`${APPS_SCRIPT_API}/projects/${scriptId}/content`, {
+            method: 'PUT',
+            body: JSON.stringify({ files }),
+          })
+
+          btn.textContent = '✅ Saved!'
+          btn.style.background = '#137333'
+
+          // Show setup section
+          showSetupCta(scriptId)
+        } catch (err) {
+          btn.textContent = 'Save Configuration'
+          btn.disabled = false
+          showStatus(
+            'error',
+            `❌ Failed to save config: ${escapeHtml(err.message)}`
+          )
         }
       }
 
-      function validateStep3Fields() {
-        const checked = Array.from(
-          document.querySelectorAll('input[name="script"]:checked')
-        ).map((el) => el.value)
-        const configScript = SCRIPT_CATALOG.find(
-          (s) => checked.includes(s.id) && s.configUI
-        )
-        if (!configScript) return true
-        const values = getStep3Values(configScript.id)
-        if (!values) return true
-        return values.email.length > 0
-      }
-
-      function buildConfigSource(catalogId, userValues) {
-        if (catalogId === 'calendar-to-briefing-doc' && userValues) {
-          const excludeList = JSON.stringify(userValues.excludeCalendars || [])
+      function buildConfigForScript(catalogId, formEl) {
+        if (catalogId === 'calendar-to-briefing-doc') {
+          const fields = Object.fromEntries(
+            Array.from(formEl.querySelectorAll('.cfg-field')).map((el) => [
+              el.dataset.key,
+              el.value.trim(),
+            ])
+          )
+          const excludedCalendars = Array.from(
+            formEl.querySelectorAll('.cfg-calendar:not(:checked)')
+          ).map((el) => el.value)
+          const excludeList = JSON.stringify(excludedCalendars)
           const emailRecipients = JSON.stringify(
-            userValues.email ? [userValues.email] : []
+            fields.email ? [fields.email] : []
           )
-          const subject = JSON.stringify(
-            userValues.subject || 'Weekly Briefing'
-          )
-          const lookahead = userValues.lookaheadDays || 7
-          const freq = JSON.stringify(userValues.frequency || 'weekly')
-          const day = JSON.stringify(userValues.triggerDay || 'MONDAY')
-          const hour = parseInt(userValues.triggerHour, 10) || 7
-          const interval = userValues.triggerInterval || 1
+          const subject = JSON.stringify(fields.subject || 'Weekly Briefing')
+          const lookahead = parseInt(fields.lookaheadDays, 10) || 7
+          const freq = JSON.stringify(fields.frequency || 'weekly')
+          const day = JSON.stringify(fields.triggerDay || 'MONDAY')
+          const hour = parseInt(fields.triggerHour, 10) || 7
+          const interval = parseInt(fields.triggerInterval, 10) || 1
           let scheduleLines =
             '    scheduleFrequency: ' +
             freq +
@@ -900,7 +964,7 @@
             '    scheduleHour: ' +
             hour +
             ',\n'
-          if (userValues.frequency === 'days') {
+          if (fields.frequency === 'days') {
             scheduleLines += '    scheduleIntervalDays: ' + interval + ',\n'
           } else {
             scheduleLines += '    scheduleDay: ' + day + ',\n'
@@ -926,7 +990,46 @@
             ']\n'
           )
         }
+        if (catalogId === 'gmail-to-drive-by-labels') {
+          const fields = Object.fromEntries(
+            Array.from(formEl.querySelectorAll('.cfg-field')).map((el) => [
+              el.dataset.key,
+              el.value.trim(),
+            ])
+          )
+          return `function getProcessConfig() {\n  return [\n    {\n      triggerLabel: ${JSON.stringify(fields.triggerLabel || '')},\n      processedLabel: ${JSON.stringify(fields.processedLabel || '')},\n      docId: ${JSON.stringify(fields.docId || '')},\n      folderId: ${JSON.stringify(fields.folderId || '')},\n    },\n  ]\n}\n`
+        }
+        if (catalogId === 'calendar-to-sheets') {
+          const fields = Object.fromEntries(
+            Array.from(formEl.querySelectorAll('.cfg-field')).map((el) => [
+              el.dataset.key,
+              el.value.trim(),
+            ])
+          )
+          return `var SYNC_CONFIGS = [{ spreadsheetId: ${JSON.stringify(fields.spreadsheetId || '')}, sheetName: ${JSON.stringify(fields.sheetName || 'Sheet1')}, calendarId: ${JSON.stringify(fields.calendarId || '')} }]\n`
+        }
         return null
+      }
+
+      function showSetupCta(scriptId) {
+        const section = document.getElementById('setup-section-' + scriptId)
+        const safeId = escapeHtml(scriptId)
+        if (isSetupDone(scriptId)) {
+          section.innerHTML = `<div style="font-size:12px;color:#137333;">⏱ Trigger previously activated.</div>`
+        } else {
+          section.innerHTML =
+            `<div style="background:#fff8e1;border:1px solid #f9a825;border-radius:6px;padding:12px 16px;">` +
+            `<strong style="font-size:13px;">⏱ Final step — activate the hourly trigger</strong>` +
+            `<ol style="margin:8px 0 0 18px;font-size:13px;line-height:1.7;">` +
+            `<li>Click "Open in Apps Script" above</li>` +
+            `<li>In the toolbar, click <strong>Run</strong></li>` +
+            `<li>Select <strong>setup</strong> from the dropdown</li>` +
+            `</ol>` +
+            `<button class="btn" style="background:#137333;color:#fff;border:none;padding:7px 14px;border-radius:4px;font-size:13px;cursor:pointer;margin-top:10px;" ` +
+            `onclick="window.confirmSetupDone('${safeId}')">✅ Done — I ran setup()</button>` +
+            `</div>`
+        }
+        section.style.display = ''
       }
 
       // ── Script list ───────────────────────────────────────────────────────────────
@@ -937,7 +1040,7 @@
           (s) => `
     <label class="script-option" for="script-${s.id}">
       <input type="checkbox" name="script" id="script-${s.id}" value="${s.id}"
-             onchange="renderStep3(); setDeployEnabled()" />
+             onchange="setDeployEnabled()" />
       <span class="script-info">
         <strong>${escapeHtml(s.name)}</strong>
         <span>${escapeHtml(s.description)}</span>
@@ -1074,20 +1177,10 @@
               `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Uploading files for <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
             )
 
-            // Collect user config values from Step 3 form (if any)
-            const userConfig = getStep3Values(catalogId)
-
             // All scripts use an hourly trigger. Schedule logic lives in config.gs.
             const setupSource = buildSetupSource(script.triggerFn)
 
-            // Optionally replace config.gs with user-provided values
-            const customConfig = buildConfigSource(catalogId, userConfig)
-            if (customConfig) {
-              const configFile = files.find((f) => f.name === 'config')
-              if (configFile) configFile.source = customConfig
-            }
-
-            // Upload source files: manifest + setup.gs + code.gs + config.gs.
+            // Upload source files: manifest + setup.gs + code.gs + config.gs (template).
             await apiFetch(`${APPS_SCRIPT_API}/projects/${projectId}/content`, {
               method: 'PUT',
               body: JSON.stringify({
@@ -1111,47 +1204,22 @@
               }),
             })
 
-            deployedProjects.push({ scriptId: projectId, title: projectTitle })
+            deployedProjects.push({
+              scriptId: projectId,
+              title: projectTitle,
+              catalogId,
+            })
           }
 
-          const setupStepsHtml =
-            `<ol style="margin:8px 0 0 18px;font-size:13px;line-height:1.7;">` +
-            `<li>Click the script link above to open it in Apps Script</li>` +
-            `<li>In the toolbar, click <strong>Run</strong></li>` +
-            `<li>Select <strong>setup</strong> from the dropdown</li>` +
-            `</ol>`
-
-          const projectSectionsHtml = deployedProjects
+          const projectLinksHtml = deployedProjects
             .map((p) => {
               const safeId = escapeHtml(p.scriptId)
-              const triggerLabel = 'hourly trigger'
-              const triggerSchedule = ''
-              const triggerSection = isSetupDone(p.scriptId)
-                ? `<details id="setup-done-${safeId}" style="margin-top:8px;font-size:12px;">` +
-                  `<summary style="cursor:pointer;color:#137333;">` +
-                  `⏱ You had previously enabled the ${triggerLabel}${triggerSchedule}. Click here to review instructions.` +
-                  `</summary>` +
-                  setupStepsHtml +
-                  `</details>`
-                : `<div id="setup-cta-${safeId}" ` +
-                  `style="background:#fff8e1;border:1px solid #f9a825;border-radius:6px;` +
-                  `padding:12px 16px;margin-top:12px;">` +
-                  `<strong style="font-size:13px;">⏱ One more step — activate the ${triggerLabel}${triggerSchedule}</strong>` +
-                  setupStepsHtml +
-                  `<button class="btn" ` +
-                  `style="background:#137333;color:#fff;border:none;padding:7px 14px;` +
-                  `border-radius:4px;font-size:13px;cursor:pointer;margin-top:10px;" ` +
-                  `onclick="window.confirmSetupDone('${safeId}')">` +
-                  `✅ Done — I ran setup()</button>` +
-                  `</div>`
-
               return (
                 `<div style="border:1px solid #c8e6c9;border-radius:6px;padding:12px 16px;margin-top:12px;">` +
                 `<div style="font-size:13px;font-weight:600;color:#137333;">✅ Deployed successfully</div>` +
                 `<a class="result-link" href="https://script.google.com/d/${safeId}/edit" ` +
                 `target="_blank" rel="noopener" style="margin-top:6px;display:block;">` +
                 `${escapeHtml(p.title)} ↗</a>` +
-                triggerSection +
                 `</div>`
               )
             })
@@ -1159,15 +1227,14 @@
 
           showStatus(
             'ok',
-            `
-      ✅ <strong>${deployedProjects.length === 1 ? 'Script deployed!' : `${deployedProjects.length} scripts deployed!`}</strong>
-      <span style="font-size:13px;color:#137333;display:block;margin-top:4px;">
-        Follow the <strong>README</strong> for each script to complete configuration
-        (e.g. set label names, document IDs, etc.).
-      </span>
-      ${projectSectionsHtml}
-    `
+            `✅ <strong>${deployedProjects.length === 1 ? 'Script deployed!' : `${deployedProjects.length} scripts deployed!`}</strong>` +
+              `<span style="font-size:13px;color:#137333;display:block;margin-top:4px;">` +
+              `Now configure each script below, then activate the trigger.</span>` +
+              projectLinksHtml
           )
+
+          // Show Step 3 config cards
+          renderConfigCards(deployedProjects)
         } catch (err) {
           const isApiDisabled =
             err.message && err.message.includes('Apps Script API')
