@@ -949,9 +949,13 @@
         } catch (err) {
           btn.textContent = 'Save Configuration'
           btn.disabled = false
+          const detail = err.apiDetail || err.stack || err.message
           showStatus(
             'error',
-            `❌ Failed to save config: ${escapeHtml(err.message)}`
+            `❌ Failed to save config for ${escapeHtml(catalogId)}: ${escapeHtml(err.message)}` +
+              `<details style="margin-top:6px;font-size:12px;">` +
+              `<summary style="cursor:pointer;color:#888;">Error detail</summary>` +
+              `<div class="error-detail">${escapeHtml(String(detail))}</div></details>`
           )
         }
       }

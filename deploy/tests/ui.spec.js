@@ -475,6 +475,149 @@ test.describe('deploy index.html', () => {
     await expect(configForm).toBeHidden()
   })
 
+  test('gmail-to-drive config form renders all fields and saves', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+    await page.locator('#btn-configure-mock-project-id-abc').click()
+
+    const form = page.locator('#config-form-mock-project-id-abc')
+    await expect(form.locator('input[data-key="triggerLabel"]')).toBeVisible()
+    await expect(form.locator('input[data-key="processedLabel"]')).toBeVisible()
+    await expect(form.locator('input[data-key="docId"]')).toBeVisible()
+    await expect(form.locator('input[data-key="folderId"]')).toBeVisible()
+
+    await form.locator('input[data-key="triggerLabel"]').fill('receipts')
+    await form
+      .locator('input[data-key="processedLabel"]')
+      .fill('receipts-archived')
+    await form.locator('input[data-key="docId"]').fill('doc-abc')
+    await form.locator('input[data-key="folderId"]').fill('folder-xyz')
+    await form.locator('.btn-primary').click()
+    await expect(form.locator('.btn-primary')).toContainText('Saved')
+  })
+
+  test('calendar-to-sheets config form renders all fields and saves', async ({
+    page,
+  }) => {
+    let projectIdCounter = 0
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        projectIdCounter++
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ scriptId: `sheets-proj-${projectIdCounter}` }),
+        })
+      } else if (method === 'GET' && url.includes('/content')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            files: [{ name: 'config', type: 'SERVER_JS', source: '// config' }],
+          }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        await route.fulfill({ status: 200, body: '{}' })
+      } else if (method === 'GET' && url.includes('/projects/')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ scriptId: 'sheets-proj-1' }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+    await signIn(page)
+    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    const configBtn = page.locator('[id^="btn-configure-sheets"]')
+    await configBtn.click()
+
+    const form = page.locator('[id^="config-form-sheets"]')
+    await expect(form.locator('[data-key="calendarId"]')).toBeVisible()
+    await expect(form.locator('input[data-key="spreadsheetId"]')).toBeVisible()
+    await expect(form.locator('input[data-key="sheetName"]')).toBeVisible()
+
+    await form.locator('input[data-key="spreadsheetId"]').fill('ss-123')
+    await form.locator('.btn-primary').click()
+    await expect(form.locator('.btn-primary')).toContainText('Saved')
+  })
+
+  test('calendar-to-briefing-doc config form renders all fields and saves', async ({
+    page,
+  }) => {
+    let projectIdCounter = 0
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        projectIdCounter++
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            scriptId: `briefing-proj-${projectIdCounter}`,
+          }),
+        })
+      } else if (method === 'GET' && url.includes('/content')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            files: [{ name: 'config', type: 'SERVER_JS', source: '// config' }],
+          }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        await route.fulfill({ status: 200, body: '{}' })
+      } else if (method === 'GET' && url.includes('/projects/')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ scriptId: 'briefing-proj-1' }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="calendar-to-briefing-doc"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    const configBtn = page.locator('[id^="btn-configure-briefing"]')
+    await configBtn.click()
+
+    const form = page.locator('[id^="config-form-briefing"]')
+    await expect(form.locator('[data-key="email"]')).toBeVisible()
+    await expect(form.locator('[data-key="subject"]')).toBeVisible()
+    await expect(form.locator('[data-key="frequency"]')).toBeVisible()
+    await expect(form.locator('[data-key="lookaheadDays"]')).toBeVisible()
+
+    await form.locator('[data-key="email"]').fill('user@test.com')
+    await form.locator('.btn-primary').click()
+    await expect(form.locator('.btn-primary')).toContainText('Saved')
+  })
+
   test('handleDeploy renders a per-script card with Deployed successfully', async ({
     page,
   }) => {
