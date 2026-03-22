@@ -16,14 +16,13 @@ This complements [`calendar-to-sheets`](../calendar-to-sheets/README.md), which 
 
 ## Setup
 
-1. **Deploy** using the [browser deploy page](../../deploy/index.html) — sign in, check "Calendar to Briefing Doc", configure in Step 3, and click Deploy
-2. The deploy page lets you:
-   - **Pick calendars** — multi-select which of your Google Calendars to include
-   - **Set recipient email** — defaults to your signed-in Google account
-   - **Choose schedule** — weekly (pick a day) or every N days, plus the hour
-   - **Set look-ahead days** — how far ahead to scan (3–30 days)
-   - **Customize email subject**
-3. Click **Deploy**, then open the script and run `setup()` to activate the trigger
+1. **Deploy** using the [browser deploy page](../../deploy/index.html):
+   - **Step 1**: Sign in with Google
+   - **Step 2**: Check "Calendar to Briefing Doc" and click Deploy
+   - **Step 3**: Click Configure to set calendars, email, schedule, and look-ahead
+   - Click "Save Configuration", then run `setup()` in the Apps Script editor
+2. The deploy page auto-detects previously deployed scripts via the Drive API
+3. Version detection shows when updates are available
 4. For manual setup: copy `code.gs` and `config.gs` into a new Apps Script project and edit `config.gs`
 
 ## Configuration
@@ -33,27 +32,32 @@ Edit `config.gs`:
 ```javascript
 var BRIEFING_CONFIGS = [
   {
-    useAllCalendars: true, // include all accessible calendars (default)
-    excludeCalendars: [], // calendar IDs to skip (e.g. holiday calendars)
-    selectedCalendars: [], // calendar IDs to include (empty = all)
-    emailRecipients: ['you@example.com'], // required — who receives the briefing
-    emailSubject: 'Weekly Briefing', // email subject line
-    lookaheadDays: 7, // days ahead to include (default: 7)
+    useAllCalendars: true,
+    excludeCalendars: [],
+    emailRecipients: ['you@example.com'],
+    emailSubject: 'Weekly Briefing',
+    lookaheadDays: 7,
+    scheduleFrequency: 'weekly',
+    scheduleDay: 'MONDAY',
+    scheduleHour: 7,
   },
 ]
 ```
 
 ### Config fields
 
-| Field               | Required | Default             | Description                                                                |
-| ------------------- | -------- | ------------------- | -------------------------------------------------------------------------- |
-| `useAllCalendars`   | ❌       | `false`             | When `true`, enumerates all accessible calendars                           |
-| `excludeCalendars`  | ❌       | `[]`                | Calendar IDs to skip (only used with `useAllCalendars`)                    |
-| `selectedCalendars` | ❌       | `[]`                | Calendar IDs to include (empty = all; only used with `useAllCalendars`)    |
-| `calendarId`        | ❌       | —                   | Google Calendar ID for single-calendar mode (ignored if `useAllCalendars`) |
-| `emailRecipients`   | ✅       | —                   | Email addresses to send the briefing to                                    |
-| `emailSubject`      | ❌       | `'Weekly Briefing'` | Subject line for the briefing email                                        |
-| `lookaheadDays`     | ❌       | `7`                 | Number of days ahead to include                                            |
+| Field                  | Required | Default             | Description                                   |
+| ---------------------- | -------- | ------------------- | --------------------------------------------- |
+| `useAllCalendars`      | ❌       | `false`             | When `true`, include all accessible calendars |
+| `excludeCalendars`     | ❌       | `[]`                | Calendar IDs to skip                          |
+| `calendarId`           | ❌       | —                   | Single calendar ID (legacy mode)              |
+| `emailRecipients`      | ✅       | —                   | Email addresses to send briefing to           |
+| `emailSubject`         | ❌       | `'Weekly Briefing'` | Email subject line                            |
+| `lookaheadDays`        | ❌       | `7`                 | Days ahead to include                         |
+| `scheduleFrequency`    | ❌       | `'weekly'`          | `'weekly'` or `'days'`                        |
+| `scheduleDay`          | ❌       | `'MONDAY'`          | Day of week (weekly mode)                     |
+| `scheduleHour`         | ❌       | `7`                 | Hour to send (0–23)                           |
+| `scheduleIntervalDays` | ❌       | `1`                 | Interval for every-N-days mode                |
 
 ## Required OAuth Scopes
 
@@ -64,13 +68,12 @@ var BRIEFING_CONFIGS = [
 
 ## Trigger
 
-The deploy page generates a `setup.gs` file with your chosen schedule (weekly or every N days). After deploying, run `setup()` once in the Apps Script editor to activate the trigger.
+The script runs on an **hourly trigger** and checks the schedule config each
+hour to decide whether to send. After deploying and configuring, run `setup()`
+once in the Apps Script editor to activate the hourly trigger.
 
-To change the schedule later:
-
-1. Open **Triggers** (clock icon) in the Apps Script editor
-2. Delete the existing trigger
-3. Add a new trigger: `generateWeeklyBriefing` → Time-driven → choose your preferred cadence
+To change the schedule: edit the `scheduleFrequency`, `scheduleDay`, and
+`scheduleHour` fields in `config.gs` (or use the deploy page's Configure form).
 
 ## Output format
 
