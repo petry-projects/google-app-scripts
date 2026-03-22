@@ -406,6 +406,7 @@
 
     <!-- Google Identity Services -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://apis.google.com/js/api.js" async defer></script>
 
     <script>
       /**
@@ -488,6 +489,76 @@
 
       // localStorage key used to record which projects have had setup() run.
       const SETUP_STORAGE_KEY = 'gas_copilot_setup_done'
+
+      // ── Google Picker ─────────────────────────────────────────────────────────────
+
+      const PICKER_VIEW_ID = {
+        DOCS: 'DOCUMENTS',
+        FOLDERS: 'FOLDERS',
+        SPREADSHEETS: 'SPREADSHEETS',
+      }
+
+      function openPicker(viewId, callback) {
+        if (typeof gapi === 'undefined') {
+          alert(
+            'Google APIs not available. Please refresh the page and try again.'
+          )
+          return
+        }
+        gapi.load('picker', () => {
+          if (!google?.picker) {
+            alert(
+              'Google Picker failed to load. Please check your connection and refresh.'
+            )
+            return
+          }
+          const view = new google.picker.DocsView(viewId)
+          view.setIncludeFolders(true)
+          view.setParent('root')
+          view.setMode(google.picker.DocsViewMode.LIST)
+          if (viewId === PICKER_VIEW_ID.FOLDERS) {
+            view.setSelectFolderEnabled(true)
+          }
+
+          const sharedView = new google.picker.DocsView(viewId)
+          sharedView.setIncludeFolders(true)
+          sharedView.setEnableDrives(true)
+          sharedView.setMode(google.picker.DocsViewMode.LIST)
+          if (viewId === PICKER_VIEW_ID.FOLDERS) {
+            sharedView.setSelectFolderEnabled(true)
+          }
+
+          const picker = new google.picker.PickerBuilder()
+            .addView(view)
+            .addView(sharedView)
+            .enableFeature(google.picker.Feature.SUPPORT_DRIVES)
+            .setOAuthToken(accessToken)
+            .setCallback((data) => {
+              if (
+                data[google.picker.Response.ACTION] ===
+                google.picker.Action.PICKED
+              ) {
+                const docs = data[google.picker.Response.DOCUMENTS]
+                if (!docs || docs.length === 0) return
+                const doc = docs[0]
+                callback({
+                  id: doc[google.picker.Document.ID],
+                  name: doc[google.picker.Document.NAME],
+                })
+              }
+            })
+            .build()
+          picker.setVisible(true)
+        })
+      }
+
+      function browseForFile(viewId, inputId) {
+        openPicker(viewId, (result) => {
+          const el = document.getElementById(inputId)
+          if (el) el.value = result.id
+        })
+      }
+      window.browseForFile = browseForFile
 
       // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -898,13 +969,27 @@
             '</div>' +
             '<div class="field-group">' +
             '<label>Google Doc ID (for email text)</label>' +
-            '<input type="text" class="cfg-field" data-key="docId" placeholder="Paste Doc ID from URL" />' +
-            '<div class="field-help">Create a new <a href="https://docs.google.com/document/create" target="_blank">blank Google Doc</a>, copy the ID from between /d/ and /edit</div>' +
+            '<div style="display:flex;gap:8px;">' +
+            '<input type="text" class="cfg-field" data-key="docId" id="cfg-docId-' +
+            scriptId +
+            '" placeholder="Paste Doc ID or click Browse" style="flex:1" />' +
+            '<button type="button" class="btn btn-outline" onclick="browseForFile(\'DOCUMENTS\', \'cfg-docId-' +
+            scriptId +
+            '\')" style="white-space:nowrap">Browse</button>' +
+            '</div>' +
+            '<div class="field-help">Create a new <a href="https://docs.google.com/document/create" target="_blank">blank Google Doc</a> or use Browse to pick one</div>' +
             '</div>' +
             '<div class="field-group">' +
             '<label>Drive Folder ID (for attachments)</label>' +
-            '<input type="text" class="cfg-field" data-key="folderId" placeholder="Paste Folder ID from URL" />' +
-            '<div class="field-help">Open Google Drive folder, copy the ID from the URL</div>' +
+            '<div style="display:flex;gap:8px;">' +
+            '<input type="text" class="cfg-field" data-key="folderId" id="cfg-folderId-' +
+            scriptId +
+            '" placeholder="Paste Folder ID or click Browse" style="flex:1" />' +
+            '<button type="button" class="btn btn-outline" onclick="browseForFile(\'FOLDERS\', \'cfg-folderId-' +
+            scriptId +
+            '\')" style="white-space:nowrap">Browse</button>' +
+            '</div>' +
+            '<div class="field-help">Open Google Drive folder or use Browse to pick one</div>' +
             '</div>' +
             '<button class="btn btn-primary" onclick="saveConfig(\'' +
             scriptId +
@@ -942,8 +1027,15 @@
             '</div>' +
             '<div class="field-group">' +
             '<label>Spreadsheet ID</label>' +
-            '<input type="text" class="cfg-field" data-key="spreadsheetId" placeholder="Paste Spreadsheet ID from URL" />' +
-            '<div class="field-help">Open Google Sheet, copy the ID from between /d/ and /edit</div>' +
+            '<div style="display:flex;gap:8px;">' +
+            '<input type="text" class="cfg-field" data-key="spreadsheetId" id="cfg-spreadsheetId-' +
+            scriptId +
+            '" placeholder="Paste Spreadsheet ID or click Browse" style="flex:1" />' +
+            '<button type="button" class="btn btn-outline" onclick="browseForFile(\'SPREADSHEETS\', \'cfg-spreadsheetId-' +
+            scriptId +
+            '\')" style="white-space:nowrap">Browse</button>' +
+            '</div>' +
+            '<div class="field-help">Open Google Sheet or use Browse to pick one</div>' +
             '</div>' +
             '<div class="field-group">' +
             '<label>Sheet Name</label>' +
@@ -1106,6 +1198,15 @@
 
           btn.textContent = '✅ Saved!'
           btn.style.background = '#137333'
+          btn.style.color = '#fff'
+
+          // Re-enable after a short delay so user can save again after edits
+          setTimeout(() => {
+            btn.textContent = 'Save Configuration'
+            btn.style.background = ''
+            btn.style.color = ''
+            btn.disabled = false
+          }, 2000)
 
           // Show setup section
           showSetupCta(scriptId)
