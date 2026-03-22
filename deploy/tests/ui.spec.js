@@ -226,6 +226,9 @@ test.describe('deploy index.html', () => {
     // Wait for loadExistingDeployments to complete and show Step 3
     await expect(page.locator('#step3-card')).toBeVisible({ timeout: 10000 })
     await expect(page.locator('#btn-configure-prev-script-123')).toBeVisible()
+    // Step 2 should show "Deployed" badge on the deployed script
+    await expect(page.locator('.deploy-badge')).toBeVisible()
+    await expect(page.locator('.deploy-badge')).toContainText('Deployed')
   })
 
   test('Step 3 stays hidden after sign-in when no previous deployments exist', async ({
@@ -497,6 +500,21 @@ test.describe('deploy index.html', () => {
     await page.locator('#btn-deploy').click()
     await page.waitForSelector('.status-ok')
     await expect(page.locator('#btn-deploy')).toHaveText('Deploy to my account')
+  })
+
+  test('deploy button shows "Re-deploy" when a deployed script is re-checked', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+    // Script list re-rendered with "Deployed" badge; re-check the script
+    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
+    await expect(page.locator('#btn-deploy')).toHaveText(
+      'Re-deploy to my account'
+    )
   })
 
   // ── fetchScriptFiles – URL construction ─────────────────────────────────────

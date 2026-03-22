@@ -490,6 +490,8 @@
       let accessToken = null
       let userCalendars = [] // populated after sign-in
       let userEmail = '' // populated after sign-in
+      // catalogId → { scriptId, title } for verified existing deployments
+      const deployedScripts = new Map()
 
       // ── Idempotency helpers ───────────────────────────────────────────────────────
 
@@ -613,12 +615,24 @@
 
       function setDeployEnabled() {
         const hasToken = !!accessToken
-        const hasScript = !!document.querySelector(
-          'input[name="script"]:checked'
+        const checked = Array.from(
+          document.querySelectorAll('input[name="script"]:checked')
         )
-        document.getElementById('btn-deploy').disabled = !(
-          hasToken && hasScript
-        )
+        const hasScript = checked.length > 0
+        const btn = document.getElementById('btn-deploy')
+        btn.disabled = !(hasToken && hasScript)
+
+        // Update button label based on whether all selected scripts are already deployed
+        if (hasScript) {
+          const allDeployed = checked.every((el) =>
+            deployedScripts.has(el.value)
+          )
+          btn.textContent = allDeployed
+            ? 'Re-deploy to my account'
+            : 'Deploy to my account'
+        } else {
+          btn.textContent = 'Deploy to my account'
+        }
       }
 
       // ── User info ─────────────────────────────────────────────────────────────────
@@ -1042,18 +1056,22 @@
 
       function renderScriptList() {
         const container = document.getElementById('script-list')
-        container.innerHTML = SCRIPT_CATALOG.map(
-          (s) => `
+        container.innerHTML = SCRIPT_CATALOG.map((s) => {
+          const deployed = deployedScripts.has(s.id)
+          const badge = deployed
+            ? ' <span class="deploy-badge" style="display:inline-block;background:#e6f4ea;color:#137333;font-size:11px;padding:2px 8px;border-radius:10px;margin-left:6px;">Deployed</span>'
+            : ''
+          return `
     <label class="script-option" for="script-${s.id}">
       <input type="checkbox" name="script" id="script-${s.id}" value="${s.id}"
              onchange="setDeployEnabled()" />
       <span class="script-info">
-        <strong>${escapeHtml(s.name)}</strong>
+        <strong>${escapeHtml(s.name)}${badge}</strong>
         <span>${escapeHtml(s.description)}</span>
       </span>
     </label>
   `
-        ).join('')
+        }).join('')
       }
 
       function escapeHtml(str) {
@@ -1097,15 +1115,19 @@
             try {
               const safeId = validateScriptId(scriptId)
               await apiFetch(`${APPS_SCRIPT_API}/projects/${safeId}`)
-              // key is "catalogId\ntitle"
               const parts = key.split('\n')
               const catalogId = parts[0]
               const title = parts.slice(1).join('\n')
               verified.push({ scriptId: safeId, title, catalogId })
+              deployedScripts.set(catalogId, { scriptId: safeId, title })
             } catch {
               // Project no longer exists or access denied — skip
             }
           }
+
+          // Refresh Step 2 to show deployment badges
+          renderScriptList()
+          setDeployEnabled()
 
           if (verified.length > 0) {
             renderConfigCards(verified)
@@ -1252,7 +1274,14 @@
               title: projectTitle,
               catalogId,
             })
+            deployedScripts.set(catalogId, {
+              scriptId: projectId,
+              title: projectTitle,
+            })
           }
+
+          // Refresh Step 2 to show deployment badges
+          renderScriptList()
 
           const projectLinksHtml = deployedProjects
             .map((p) => {
