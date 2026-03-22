@@ -12,8 +12,9 @@ const {
   groupEventsByDay,
   formatDayLabel,
   formatEventEntry,
-  writeBriefingDoc,
+  formatBriefing,
   emailBriefing,
+  shouldRunNow,
   generateBriefingForConfig,
 } = require('../src/index')
 
@@ -223,14 +224,15 @@ describe('formatEventEntry', () => {
   })
 })
 
-// ── writeBriefingDoc ──────────────────────────────────────────────────────────
+// ── formatBriefing ──────────────────────────────────────────────────────────
 
-describe('writeBriefingDoc', () => {
-  it('clears the doc and writes title + day sections', () => {
-    const doc = DocumentApp.openById('doc1')
-    // Pre-populate to verify clear works
-    doc.getBody().appendParagraph('Old content')
+describe('formatBriefing', () => {
+  it('returns title only for empty groupedEvents', () => {
+    const text = formatBriefing('Empty Briefing', new Map(), testFormatTime)
+    expect(text).toBe('Empty Briefing')
+  })
 
+  it('formats a single day with one event', () => {
     const e1 = createCalendarEvent({
       id: 'e1',
       title: 'Standup',
@@ -238,27 +240,14 @@ describe('writeBriefingDoc', () => {
       end: new Date('2025-01-13T15:30:00Z'),
     })
     const grouped = new Map([['2025-01-13', [e1]]])
-
-    writeBriefingDoc(
-      doc,
-      'Weekly Briefing',
-      grouped,
-      testFormatTime,
-      DocumentApp
-    )
-
-    const paras = doc.getBody().getParagraphs()
-    // Old content should be gone; should have: title, day heading, event
-    expect(paras.length).toBe(3)
-    expect(paras[0].getText()).toBe('Weekly Briefing')
-    expect(paras[0].attrs).toEqual({ [DocumentApp.Attribute.BOLD]: true })
-    expect(paras[1].getText()).toBe('Monday, January 13')
-    expect(paras[1].heading).toBe(DocumentApp.ParagraphHeading.HEADING_3)
-    expect(paras[2].getText()).toContain('Standup')
+    const text = formatBriefing('Weekly Briefing', grouped, testFormatTime)
+    expect(text).toContain('Weekly Briefing')
+    expect(text).toContain('Monday, January 13')
+    expect(text).toContain('Standup')
+    expect(text).toContain('3:00 PM')
   })
 
-  it('writes multiple days in ascending order', () => {
-    const doc = DocumentApp.openById('doc2')
+  it('formats multiple days in ascending order', () => {
     const e1 = createCalendarEvent({
       id: 'e1',
       title: 'Monday Event',
@@ -272,17 +261,13 @@ describe('writeBriefingDoc', () => {
       end: new Date('2025-01-14T10:00:00Z'),
     })
     const grouped = groupEventsByDay([e1, e2], testDateKey)
-
-    writeBriefingDoc(doc, 'Briefing', grouped, testFormatTime, DocumentApp)
-    const paras = doc.getBody().getParagraphs()
-    const texts = paras.map((p) => p.getText())
-    expect(texts.indexOf('Monday, January 13')).toBeLessThan(
-      texts.indexOf('Tuesday, January 14')
-    )
+    const text = formatBriefing('Briefing', grouped, testFormatTime)
+    const monIdx = text.indexOf('Monday, January 13')
+    const tueIdx = text.indexOf('Tuesday, January 14')
+    expect(monIdx).toBeLessThan(tueIdx)
   })
 
   it('sorts events within a day by start time', () => {
-    const doc = DocumentApp.openById('doc3')
     const late = createCalendarEvent({
       id: 'e1',
       title: 'Afternoon',
@@ -296,103 +281,227 @@ describe('writeBriefingDoc', () => {
       end: new Date('2025-01-13T10:00:00Z'),
     })
     const grouped = new Map([['2025-01-13', [late, early]]])
-
-    writeBriefingDoc(doc, 'Briefing', grouped, testFormatTime, DocumentApp)
-    const paras = doc
-      .getBody()
-      .getParagraphs()
-      .map((p) => p.getText())
-    const morningIdx = paras.findIndex((t) => t.includes('Morning'))
-    const afternoonIdx = paras.findIndex((t) => t.includes('Afternoon'))
+    const text = formatBriefing('Briefing', grouped, testFormatTime)
+    const morningIdx = text.indexOf('Morning')
+    const afternoonIdx = text.indexOf('Afternoon')
     expect(morningIdx).toBeLessThan(afternoonIdx)
   })
 
-  it('writes no day sections for empty groupedEvents', () => {
-    const doc = DocumentApp.openById('doc4')
-    writeBriefingDoc(
-      doc,
-      'Empty Briefing',
-      new Map(),
-      testFormatTime,
-      DocumentApp
-    )
-    const paras = doc.getBody().getParagraphs()
-    expect(paras.length).toBe(1) // only title
-    expect(paras[0].getText()).toBe('Empty Briefing')
+  it('includes conflict warnings when events overlap', () => {
+    const tuples = [
+      {
+        event: createCalendarEvent({
+          id: 'e1',
+          title: 'Meeting A',
+          start: new Date('2025-01-13T09:00:00Z'),
+          end: new Date('2025-01-13T10:00:00Z'),
+        }),
+        calendarName: null,
+      },
+      {
+        event: createCalendarEvent({
+          id: 'e2',
+          title: 'Meeting B',
+          start: new Date('2025-01-13T09:30:00Z'),
+          end: new Date('2025-01-13T10:30:00Z'),
+        }),
+        calendarName: 'Work',
+      },
+    ]
+    const grouped = new Map([['2025-01-13', tuples]])
+    const text = formatBriefing('Briefing', grouped, testFormatTime)
+    expect(text).toContain('\u26A0\uFE0F')
+    expect(text).toContain('overlaps with')
+    expect(text).toContain('\uD83D\uDCC5 Work')
+  })
+
+  it('includes calendar names for non-default calendar events', () => {
+    const tuples = [
+      {
+        event: createCalendarEvent({
+          id: 'e1',
+          title: 'Work Event',
+          start: new Date('2025-01-13T09:00:00Z'),
+          end: new Date('2025-01-13T10:00:00Z'),
+        }),
+        calendarName: 'Work',
+      },
+      {
+        event: createCalendarEvent({
+          id: 'e2',
+          title: 'Personal',
+          start: new Date('2025-01-13T11:00:00Z'),
+          end: new Date('2025-01-13T12:00:00Z'),
+        }),
+        calendarName: null,
+      },
+    ]
+    const grouped = new Map([['2025-01-13', tuples]])
+    const text = formatBriefing('Briefing', grouped, testFormatTime)
+    expect(text).toContain('\uD83D\uDCC5 Work')
+    // Personal event should not have a calendar label
+    const lines = text.split('\n')
+    const personalIdx = lines.findIndex((l) => l === 'Personal')
+    expect(personalIdx).toBeGreaterThan(-1)
+    // Next line after "Personal" should be the time, not a calendar label
+    expect(lines[personalIdx + 1]).not.toContain('\uD83D\uDCC5')
+  })
+
+  it('omits conflict warnings when no overlaps', () => {
+    const tuples = [
+      {
+        event: createCalendarEvent({
+          id: 'e1',
+          title: 'A',
+          start: new Date('2025-01-13T09:00:00Z'),
+          end: new Date('2025-01-13T10:00:00Z'),
+        }),
+        calendarName: null,
+      },
+      {
+        event: createCalendarEvent({
+          id: 'e2',
+          title: 'B',
+          start: new Date('2025-01-13T10:00:00Z'),
+          end: new Date('2025-01-13T11:00:00Z'),
+        }),
+        calendarName: null,
+      },
+    ]
+    const grouped = new Map([['2025-01-13', tuples]])
+    const text = formatBriefing('Briefing', grouped, testFormatTime)
+    expect(text).not.toContain('\u26A0\uFE0F')
   })
 })
 
 // ── emailBriefing ─────────────────────────────────────────────────────────────
 
 describe('emailBriefing', () => {
-  it('sends an email to each recipient', () => {
+  it('sends an email to each recipient with the briefing body', () => {
+    const body = 'Weekly Briefing: Monday, January 13\n\nStandup\n3:00 PM'
     emailBriefing(
       GmailApp,
       ['alice@example.com', 'bob@example.com'],
       'Weekly Briefing',
-      'https://docs.google.com/document/d/abc/edit'
+      body
     )
     const sent = GmailApp.__sentEmails
     expect(sent).toHaveLength(2)
     expect(sent[0].to).toBe('alice@example.com')
     expect(sent[0].subject).toBe('Weekly Briefing')
-    expect(sent[0].body).toContain(
-      'https://docs.google.com/document/d/abc/edit'
-    )
+    expect(sent[0].body).toContain('Standup')
     expect(sent[1].to).toBe('bob@example.com')
+    expect(sent[1].body).toContain('Standup')
   })
 
   it('is a no-op for empty recipients array', () => {
-    emailBriefing(GmailApp, [], 'Subject', 'http://example.com')
+    emailBriefing(GmailApp, [], 'Subject', 'body text')
     expect(GmailApp.__sentEmails).toHaveLength(0)
   })
 
   it('is a no-op for null recipients', () => {
-    emailBriefing(GmailApp, null, 'Subject', 'http://example.com')
+    emailBriefing(GmailApp, null, 'Subject', 'body text')
     expect(GmailApp.__sentEmails).toHaveLength(0)
+  })
+})
+
+// ── shouldRunNow ─────────────────────────────────────────────────────────────
+
+describe('shouldRunNow', () => {
+  it('returns true on the configured weekly day and hour', () => {
+    const config = {
+      scheduleFrequency: 'weekly',
+      scheduleDay: 'MONDAY',
+      scheduleHour: 7,
+    }
+    // Monday at 7 AM
+    const now = new Date('2025-01-13T07:00:00')
+    expect(shouldRunNow(config, now, null)).toBe(true)
+  })
+
+  it('returns false on wrong day', () => {
+    const config = {
+      scheduleFrequency: 'weekly',
+      scheduleDay: 'MONDAY',
+      scheduleHour: 7,
+    }
+    // Tuesday at 7 AM
+    const now = new Date('2025-01-14T07:00:00')
+    expect(shouldRunNow(config, now, null)).toBe(false)
+  })
+
+  it('returns false on wrong hour', () => {
+    const config = {
+      scheduleFrequency: 'weekly',
+      scheduleDay: 'MONDAY',
+      scheduleHour: 7,
+    }
+    // Monday at 8 AM
+    const now = new Date('2025-01-13T08:00:00')
+    expect(shouldRunNow(config, now, null)).toBe(false)
+  })
+
+  it('defaults to weekly Monday 7 AM when schedule fields are missing', () => {
+    const config = {}
+    // Monday at 7 AM
+    const now = new Date('2025-01-13T07:00:00')
+    expect(shouldRunNow(config, now, null)).toBe(true)
+  })
+
+  it('returns true for every-N-days when enough time has elapsed', () => {
+    const config = {
+      scheduleFrequency: 'days',
+      scheduleIntervalDays: 3,
+      scheduleHour: 6,
+    }
+    const now = new Date('2025-01-16T06:00:00')
+    const lastRun = new Date('2025-01-13T06:00:00').getTime()
+    expect(shouldRunNow(config, now, lastRun)).toBe(true)
+  })
+
+  it('returns false for every-N-days when not enough time has elapsed', () => {
+    const config = {
+      scheduleFrequency: 'days',
+      scheduleIntervalDays: 3,
+      scheduleHour: 6,
+    }
+    const now = new Date('2025-01-15T06:00:00')
+    const lastRun = new Date('2025-01-13T06:00:00').getTime()
+    expect(shouldRunNow(config, now, lastRun)).toBe(false)
+  })
+
+  it('returns true for every-N-days on first run (no lastRun)', () => {
+    const config = {
+      scheduleFrequency: 'days',
+      scheduleIntervalDays: 7,
+      scheduleHour: 5,
+    }
+    const now = new Date('2025-01-13T05:00:00')
+    expect(shouldRunNow(config, now, null)).toBe(true)
   })
 })
 
 // ── generateBriefingForConfig ─────────────────────────────────────────────────
 
 describe('generateBriefingForConfig', () => {
-  it('writes briefing doc and skips email when no recipients', () => {
-    const calendar = CalendarApp.getCalendarById('primary')
-    const futureStart = new Date(Date.now() + 60 * 60 * 1000) // 1h from now
-    const futureEnd = new Date(Date.now() + 2 * 60 * 60 * 1000)
-    const evt = createCalendarEvent({
-      id: 'e1',
-      title: 'Sprint Review',
-      start: futureStart,
-      end: futureEnd,
-    })
-    calendar.__addEvent(evt)
-
-    const doc = DocumentApp.openById('docA')
+  it('throws when emailRecipients is missing', () => {
     const config = {
       calendarId: 'primary',
-      docId: 'docA',
       lookaheadDays: 7,
       emailRecipients: [],
     }
-
-    generateBriefingForConfig(
-      CalendarApp,
-      doc,
-      GmailApp,
-      config,
-      testDateKey,
-      testFormatTime,
-      DocumentApp
-    )
-
-    const paras = doc.getBody().getParagraphs()
-    expect(paras.length).toBeGreaterThan(0)
-    expect(paras[0].getText()).toContain('Weekly Briefing')
-    expect(GmailApp.__sentEmails).toHaveLength(0)
+    expect(() =>
+      generateBriefingForConfig(
+        CalendarApp,
+        GmailApp,
+        config,
+        testDateKey,
+        testFormatTime
+      )
+    ).toThrow('emailRecipients is required')
   })
 
-  it('sends email when recipients are configured', () => {
+  it('sends email with briefing content to recipients', () => {
     const calendar = CalendarApp.getCalendarById('primary')
     const futureStart = new Date(Date.now() + 60 * 60 * 1000)
     const futureEnd = new Date(Date.now() + 2 * 60 * 60 * 1000)
@@ -404,69 +513,55 @@ describe('generateBriefingForConfig', () => {
         end: futureEnd,
       })
     )
-
-    const doc = DocumentApp.openById('docB')
     const config = {
       calendarId: 'primary',
-      docId: 'docB',
       lookaheadDays: 7,
       emailRecipients: ['manager@example.com'],
       emailSubject: 'My Weekly Briefing',
     }
-
     generateBriefingForConfig(
       CalendarApp,
-      doc,
       GmailApp,
       config,
       testDateKey,
-      testFormatTime,
-      DocumentApp
+      testFormatTime
     )
-
     expect(GmailApp.__sentEmails).toHaveLength(1)
     expect(GmailApp.__sentEmails[0].subject).toBe('My Weekly Briefing')
     expect(GmailApp.__sentEmails[0].to).toBe('manager@example.com')
-  })
-
-  it('uses default lookaheadDays of 7 when not specified', () => {
-    const doc = DocumentApp.openById('docC')
-    const config = { calendarId: 'primary', docId: 'docC' }
-
-    generateBriefingForConfig(
-      CalendarApp,
-      doc,
-      GmailApp,
-      config,
-      testDateKey,
-      testFormatTime,
-      DocumentApp
-    )
-    // Just verifies no error is thrown and doc title is written
-    expect(doc.getBody().getParagraphs()[0].getText()).toContain(
-      'Weekly Briefing'
-    )
+    expect(GmailApp.__sentEmails[0].body).toContain('Weekly Briefing')
+    expect(GmailApp.__sentEmails[0].body).toContain('All Hands')
   })
 
   it('uses default email subject when emailSubject is not set', () => {
-    const doc = DocumentApp.openById('docD')
-    doc.id = 'myDocId'
     const config = {
       calendarId: 'primary',
-      docId: 'docD',
+      lookaheadDays: 7,
       emailRecipients: ['x@example.com'],
     }
-
     generateBriefingForConfig(
       CalendarApp,
-      doc,
       GmailApp,
       config,
       testDateKey,
-      testFormatTime,
-      DocumentApp
+      testFormatTime
     )
     expect(GmailApp.__sentEmails[0].subject).toBe('Weekly Briefing')
+  })
+
+  it('uses default lookaheadDays of 7 when not specified', () => {
+    const config = {
+      calendarId: 'primary',
+      emailRecipients: ['x@example.com'],
+    }
+    generateBriefingForConfig(
+      CalendarApp,
+      GmailApp,
+      config,
+      testDateKey,
+      testFormatTime
+    )
+    expect(GmailApp.__sentEmails[0].body).toContain('Weekly Briefing')
   })
 })
 
@@ -482,7 +577,6 @@ describe('fetchAllCalendarEvents', () => {
       end: new Date('2025-01-13T10:00:00Z'),
     })
     cal.__addEvent(evt)
-
     const tuples = fetchAllCalendarEvents(
       [cal],
       'primary',
@@ -505,7 +599,6 @@ describe('fetchAllCalendarEvents', () => {
         end: new Date('2025-01-13T10:00:00Z'),
       })
     )
-
     const tuples = fetchAllCalendarEvents(
       [primary, work],
       'primary',
@@ -544,7 +637,6 @@ describe('fetchAllCalendarEvents', () => {
         end: new Date('2025-01-13T19:00:00Z'),
       })
     )
-
     const tuples = fetchAllCalendarEvents(
       [primary, work, family],
       'primary',
@@ -569,7 +661,6 @@ describe('fetchAllCalendarEvents', () => {
         allDay: true,
       })
     )
-
     const tuples = fetchAllCalendarEvents(
       [primary, holidays],
       'primary',
@@ -692,7 +783,6 @@ describe('detectConflicts', () => {
       },
     ]
     const conflicts = detectConflicts(tuples)
-    // A-B, A-C, B-C
     expect(conflicts).toHaveLength(3)
   })
 })
@@ -848,74 +938,6 @@ describe('groupEventsByDay with tuples', () => {
   })
 })
 
-// ── writeBriefingDoc with conflicts ─────────────────────────────────────────
-
-describe('writeBriefingDoc with conflicts and calendar names', () => {
-  it('writes conflict warning when events overlap', () => {
-    const doc = DocumentApp.openById('conflictDoc')
-    const tuples = [
-      {
-        event: createCalendarEvent({
-          id: 'e1',
-          title: 'Meeting A',
-          start: new Date('2025-01-13T09:00:00Z'),
-          end: new Date('2025-01-13T10:00:00Z'),
-        }),
-        calendarName: null,
-      },
-      {
-        event: createCalendarEvent({
-          id: 'e2',
-          title: 'Meeting B',
-          start: new Date('2025-01-13T09:30:00Z'),
-          end: new Date('2025-01-13T10:30:00Z'),
-        }),
-        calendarName: 'Work',
-      },
-    ]
-    const grouped = new Map([['2025-01-13', tuples]])
-
-    writeBriefingDoc(doc, 'Briefing', grouped, testFormatTime, DocumentApp)
-
-    const paras = doc.getBody().getParagraphs()
-    const texts = paras.map((p) => p.getText())
-    // title, day heading, conflict warning, event A, event B
-    expect(texts.some((t) => t.includes('\u26A0\uFE0F'))).toBe(true)
-    expect(texts.some((t) => t.includes('\uD83D\uDCC5 Work'))).toBe(true)
-  })
-
-  it('writes no conflict warning when no overlaps', () => {
-    const doc = DocumentApp.openById('noConflictDoc')
-    const tuples = [
-      {
-        event: createCalendarEvent({
-          id: 'e1',
-          title: 'A',
-          start: new Date('2025-01-13T09:00:00Z'),
-          end: new Date('2025-01-13T10:00:00Z'),
-        }),
-        calendarName: null,
-      },
-      {
-        event: createCalendarEvent({
-          id: 'e2',
-          title: 'B',
-          start: new Date('2025-01-13T10:00:00Z'),
-          end: new Date('2025-01-13T11:00:00Z'),
-        }),
-        calendarName: null,
-      },
-    ]
-    const grouped = new Map([['2025-01-13', tuples]])
-
-    writeBriefingDoc(doc, 'Briefing', grouped, testFormatTime, DocumentApp)
-
-    const paras = doc.getBody().getParagraphs()
-    const texts = paras.map((p) => p.getText())
-    expect(texts.some((t) => t.includes('\u26A0\uFE0F'))).toBe(false)
-  })
-})
-
 // ── generateBriefingForConfig with multi-calendar ───────────────────────────
 
 describe('generateBriefingForConfig with multi-calendar', () => {
@@ -932,30 +954,22 @@ describe('generateBriefingForConfig with multi-calendar', () => {
       })
     )
     CalendarApp.__addCalendar(work)
-
-    const doc = DocumentApp.openById('multiCalDoc')
     const config = {
       useAllCalendars: true,
-      docId: 'multiCalDoc',
       lookaheadDays: 7,
+      emailRecipients: ['test@example.com'],
     }
-
     generateBriefingForConfig(
       CalendarApp,
-      doc,
       GmailApp,
       config,
       testDateKey,
-      testFormatTime,
-      DocumentApp
+      testFormatTime
     )
-
-    const paras = doc.getBody().getParagraphs()
-    expect(paras.length).toBeGreaterThan(0)
-    expect(paras[0].getText()).toContain('Weekly Briefing')
-    // Work calendar events should have calendar name label
-    const texts = paras.map((p) => p.getText())
-    expect(texts.some((t) => t.includes('\uD83D\uDCC5 Work'))).toBe(true)
+    expect(GmailApp.__sentEmails).toHaveLength(1)
+    const body = GmailApp.__sentEmails[0].body
+    expect(body).toContain('Weekly Briefing')
+    expect(body).toContain('\uD83D\uDCC5 Work')
   })
 
   it('excludes calendars in excludeCalendars', () => {
@@ -971,30 +985,21 @@ describe('generateBriefingForConfig with multi-calendar', () => {
       })
     )
     CalendarApp.__addCalendar(excluded)
-
-    const doc = DocumentApp.openById('excludeDoc')
     const config = {
       useAllCalendars: true,
       excludeCalendars: ['excluded@group.calendar'],
-      docId: 'excludeDoc',
       lookaheadDays: 7,
+      emailRecipients: ['test@example.com'],
     }
-
     generateBriefingForConfig(
       CalendarApp,
-      doc,
       GmailApp,
       config,
       testDateKey,
-      testFormatTime,
-      DocumentApp
+      testFormatTime
     )
-
-    const texts = doc
-      .getBody()
-      .getParagraphs()
-      .map((p) => p.getText())
-    expect(texts.some((t) => t.includes('Should Not Appear'))).toBe(false)
+    const body = GmailApp.__sentEmails[0].body
+    expect(body).not.toContain('Should Not Appear')
   })
 
   it('falls back to legacy single-calendar mode when useAllCalendars is falsy', () => {
@@ -1009,31 +1014,21 @@ describe('generateBriefingForConfig with multi-calendar', () => {
         end: futureEnd,
       })
     )
-
-    const doc = DocumentApp.openById('legacyDoc')
     const config = {
       calendarId: 'primary',
-      docId: 'legacyDoc',
       lookaheadDays: 7,
+      emailRecipients: ['test@example.com'],
     }
-
     generateBriefingForConfig(
       CalendarApp,
-      doc,
       GmailApp,
       config,
       testDateKey,
-      testFormatTime,
-      DocumentApp
+      testFormatTime
     )
-
-    const texts = doc
-      .getBody()
-      .getParagraphs()
-      .map((p) => p.getText())
-    expect(texts.some((t) => t.includes('Legacy Event'))).toBe(true)
-    // No calendar name labels in legacy mode
-    expect(texts.some((t) => t.includes('\uD83D\uDCC5'))).toBe(false)
+    const body = GmailApp.__sentEmails[0].body
+    expect(body).toContain('Legacy Event')
+    expect(body).not.toContain('\uD83D\uDCC5')
   })
 })
 
@@ -1049,11 +1044,13 @@ describe('code.gs', () => {
 
   describe('getBriefingConfigs_', () => {
     it('returns BRIEFING_CONFIGS when defined as an array', () => {
-      global.BRIEFING_CONFIGS = [{ calendarId: 'cal1', docId: 'doc1' }]
+      global.BRIEFING_CONFIGS = [
+        { calendarId: 'cal1', emailRecipients: ['a@b.com'] },
+      ]
       delete require.cache[require.resolve('../code.gs')]
       const freshCode = require('../code.gs')
       expect(freshCode.getBriefingConfigs_()).toEqual([
-        { calendarId: 'cal1', docId: 'doc1' },
+        { calendarId: 'cal1', emailRecipients: ['a@b.com'] },
       ])
       delete global.BRIEFING_CONFIGS
     })
@@ -1228,11 +1225,13 @@ describe('code.gs', () => {
     })
   })
 
-  describe('_writeBriefingDocGAS_', () => {
-    it('clears the doc and writes sections', () => {
-      const doc = DocumentApp.openById('gasDoc1')
-      doc.getBody().appendParagraph('Stale content')
+  describe('_formatBriefingGAS_', () => {
+    it('returns title only for empty groupedEvents', () => {
+      const text = code._formatBriefingGAS_('Empty Briefing', new Map(), 'UTC')
+      expect(text).toBe('Empty Briefing')
+    })
 
+    it('formats a single day with events', () => {
       const e1 = createCalendarEvent({
         id: 'e1',
         title: 'Sprint',
@@ -1240,37 +1239,116 @@ describe('code.gs', () => {
         end: new Date('2025-01-13T11:00:00Z'),
       })
       const grouped = new Map([['2025-01-13', [e1]]])
+      const text = code._formatBriefingGAS_('Weekly Briefing', grouped, 'UTC')
+      expect(text).toContain('Weekly Briefing')
+      expect(text).toContain('Monday, January 13')
+      expect(text).toContain('Sprint')
+    })
 
-      code._writeBriefingDocGAS_(doc, 'Weekly Briefing', grouped, 'UTC')
+    it('includes conflict warnings for overlapping events', () => {
+      const tuples = [
+        {
+          event: createCalendarEvent({
+            id: 'e1',
+            title: 'Meeting A',
+            start: new Date('2025-01-13T09:00:00Z'),
+            end: new Date('2025-01-13T10:00:00Z'),
+          }),
+          calendarName: null,
+        },
+        {
+          event: createCalendarEvent({
+            id: 'e2',
+            title: 'Meeting B',
+            start: new Date('2025-01-13T09:30:00Z'),
+            end: new Date('2025-01-13T10:30:00Z'),
+          }),
+          calendarName: 'Work',
+        },
+      ]
+      const grouped = new Map([['2025-01-13', tuples]])
+      const text = code._formatBriefingGAS_('Briefing', grouped, 'UTC')
+      expect(text).toContain('\u26A0\uFE0F')
+      expect(text).toContain('overlaps with')
+    })
+  })
 
-      const paras = doc.getBody().getParagraphs()
-      expect(paras.length).toBe(3)
-      expect(paras[0].getText()).toBe('Weekly Briefing')
-      expect(paras[1].heading).toBe(DocumentApp.ParagraphHeading.HEADING_3)
-      expect(paras[2].getText()).toContain('Sprint')
+  describe('_shouldRunNowGAS_', () => {
+    it('returns true on matching weekly day and hour', () => {
+      const cfg = {
+        scheduleFrequency: 'weekly',
+        scheduleDay: 'MONDAY',
+        scheduleHour: 7,
+      }
+      const now = new Date('2025-01-13T07:00:00')
+      expect(code._shouldRunNowGAS_(cfg, now, null)).toBe(true)
+    })
+
+    it('returns false on wrong hour', () => {
+      const cfg = {
+        scheduleFrequency: 'weekly',
+        scheduleDay: 'MONDAY',
+        scheduleHour: 7,
+      }
+      const now = new Date('2025-01-13T08:00:00')
+      expect(code._shouldRunNowGAS_(cfg, now, null)).toBe(false)
+    })
+
+    it('returns true for every-N-days when interval elapsed', () => {
+      const cfg = {
+        scheduleFrequency: 'days',
+        scheduleIntervalDays: 2,
+        scheduleHour: 6,
+      }
+      const now = new Date('2025-01-15T06:00:00')
+      const lastRun = new Date('2025-01-13T06:00:00').getTime()
+      expect(code._shouldRunNowGAS_(cfg, now, lastRun)).toBe(true)
     })
   })
 
   describe('generateWeeklyBriefing', () => {
-    it('skips configs missing docId', () => {
-      global.BRIEFING_CONFIGS = [{ calendarId: 'primary', lookaheadDays: 7 }]
+    // Helper: get schedule fields that match the current hour/day so tests pass
+    function scheduleNow() {
+      const now = new Date()
+      const days = [
+        'SUNDAY',
+        'MONDAY',
+        'TUESDAY',
+        'WEDNESDAY',
+        'THURSDAY',
+        'FRIDAY',
+        'SATURDAY',
+      ]
+      return {
+        scheduleFrequency: 'weekly',
+        scheduleDay: days[now.getDay()],
+        scheduleHour: now.getHours(),
+      }
+    }
+
+    it('skips configs missing emailRecipients', () => {
+      global.BRIEFING_CONFIGS = [
+        { calendarId: 'primary', lookaheadDays: 7, ...scheduleNow() },
+      ]
       delete require.cache[require.resolve('../code.gs')]
       const freshCode = require('../code.gs')
-
       expect(() => freshCode.generateWeeklyBriefing()).not.toThrow()
+      expect(GmailApp.__sentEmails).toHaveLength(0)
       delete global.BRIEFING_CONFIGS
     })
 
     it('skips configs missing calendarId when useAllCalendars is off', () => {
-      global.BRIEFING_CONFIGS = [{ docId: 'doc1', lookaheadDays: 7 }]
+      global.BRIEFING_CONFIGS = [
+        { emailRecipients: ['a@b.com'], lookaheadDays: 7, ...scheduleNow() },
+      ]
       delete require.cache[require.resolve('../code.gs')]
       const freshCode = require('../code.gs')
-
       expect(() => freshCode.generateWeeklyBriefing()).not.toThrow()
+      expect(GmailApp.__sentEmails).toHaveLength(0)
       delete global.BRIEFING_CONFIGS
     })
 
-    it('writes briefing doc for a valid legacy config', () => {
+    it('emails briefing for a valid legacy config', () => {
       const futureStart = new Date(Date.now() + 60 * 60 * 1000)
       const futureEnd = new Date(Date.now() + 2 * 60 * 60 * 1000)
       CalendarApp.getDefaultCalendar().__addEvent(
@@ -1282,21 +1360,24 @@ describe('code.gs', () => {
         })
       )
       global.BRIEFING_CONFIGS = [
-        { calendarId: 'primary', docId: 'myDoc', lookaheadDays: 7 },
+        {
+          calendarId: 'primary',
+          lookaheadDays: 7,
+          emailRecipients: ['user@example.com'],
+          ...scheduleNow(),
+        },
       ]
       delete require.cache[require.resolve('../code.gs')]
       const freshCode = require('../code.gs')
-
       freshCode.generateWeeklyBriefing()
-
-      const doc = DocumentApp.openById('myDoc')
-      const paras = doc.getBody().getParagraphs()
-      expect(paras.length).toBeGreaterThan(0)
-      expect(paras[0].getText()).toContain('Weekly Briefing')
+      expect(GmailApp.__sentEmails).toHaveLength(1)
+      expect(GmailApp.__sentEmails[0].to).toBe('user@example.com')
+      expect(GmailApp.__sentEmails[0].body).toContain('Weekly Briefing')
+      expect(GmailApp.__sentEmails[0].body).toContain('Sprint Planning')
       delete global.BRIEFING_CONFIGS
     })
 
-    it('writes briefing with useAllCalendars and labels non-primary events', () => {
+    it('emails briefing with useAllCalendars and labels non-primary events', () => {
       const futureStart = new Date(Date.now() + 60 * 60 * 1000)
       const futureEnd = new Date(Date.now() + 2 * 60 * 60 * 1000)
       const work = createCalendar('work@group.calendar', 'Work')
@@ -1312,26 +1393,22 @@ describe('code.gs', () => {
       global.BRIEFING_CONFIGS = [
         {
           useAllCalendars: true,
-          docId: 'multiDoc',
           lookaheadDays: 7,
+          emailRecipients: ['user@example.com'],
+          ...scheduleNow(),
         },
       ]
       delete require.cache[require.resolve('../code.gs')]
       const freshCode = require('../code.gs')
-
       freshCode.generateWeeklyBriefing()
-
-      const doc = DocumentApp.openById('multiDoc')
-      const texts = doc
-        .getBody()
-        .getParagraphs()
-        .map((p) => p.getText())
-      expect(texts[0]).toContain('Weekly Briefing')
-      expect(texts.some((t) => t.includes('\uD83D\uDCC5 Work'))).toBe(true)
+      expect(GmailApp.__sentEmails).toHaveLength(1)
+      const body = GmailApp.__sentEmails[0].body
+      expect(body).toContain('Weekly Briefing')
+      expect(body).toContain('\uD83D\uDCC5 Work')
       delete global.BRIEFING_CONFIGS
     })
 
-    it('sends email when recipients are configured', () => {
+    it('sends email with custom subject', () => {
       const futureStart = new Date(Date.now() + 60 * 60 * 1000)
       const futureEnd = new Date(Date.now() + 2 * 60 * 60 * 1000)
       CalendarApp.getDefaultCalendar().__addEvent(
@@ -1345,37 +1422,57 @@ describe('code.gs', () => {
       global.BRIEFING_CONFIGS = [
         {
           calendarId: 'primary',
-          docId: 'emailDoc',
           lookaheadDays: 7,
           emailRecipients: ['boss@example.com'],
           emailSubject: 'Your Weekly Briefing',
+          ...scheduleNow(),
         },
       ]
       delete require.cache[require.resolve('../code.gs')]
       const freshCode = require('../code.gs')
-
       freshCode.generateWeeklyBriefing()
-
       expect(GmailApp.__sentEmails).toHaveLength(1)
       expect(GmailApp.__sentEmails[0].to).toBe('boss@example.com')
       expect(GmailApp.__sentEmails[0].subject).toBe('Your Weekly Briefing')
       delete global.BRIEFING_CONFIGS
     })
 
-    it('logs and continues on error (does not throw)', () => {
-      const origOpen = DocumentApp.openById
-      DocumentApp.openById = () => {
-        throw new Error('Permission denied')
-      }
+    it('skips config when schedule does not match', () => {
       global.BRIEFING_CONFIGS = [
-        { calendarId: 'primary', docId: 'badDoc', lookaheadDays: 7 },
+        {
+          calendarId: 'primary',
+          emailRecipients: ['user@example.com'],
+          lookaheadDays: 7,
+          scheduleFrequency: 'weekly',
+          scheduleDay: 'MONDAY',
+          scheduleHour: 99,
+        },
       ]
       delete require.cache[require.resolve('../code.gs')]
       const freshCode = require('../code.gs')
+      freshCode.generateWeeklyBriefing()
+      expect(GmailApp.__sentEmails).toHaveLength(0)
+      delete global.BRIEFING_CONFIGS
+    })
 
+    it('logs and continues on error (does not throw)', () => {
+      global.BRIEFING_CONFIGS = [
+        {
+          calendarId: 'nonexistent',
+          emailRecipients: ['a@b.com'],
+          lookaheadDays: 7,
+          ...scheduleNow(),
+        },
+      ]
+      const origGetById = CalendarApp.getCalendarById
+      CalendarApp.getCalendarById = (id) => {
+        if (id === 'nonexistent') throw new Error('Calendar not found')
+        return origGetById(id)
+      }
+      delete require.cache[require.resolve('../code.gs')]
+      const freshCode = require('../code.gs')
       expect(() => freshCode.generateWeeklyBriefing()).not.toThrow()
-
-      DocumentApp.openById = origOpen
+      CalendarApp.getCalendarById = origGetById
       delete global.BRIEFING_CONFIGS
     })
 

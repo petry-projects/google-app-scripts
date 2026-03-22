@@ -98,6 +98,32 @@ test.describe('deploy index.html', () => {
     // Block the real GIS script so it cannot overwrite our mock
     await page.route('https://accounts.google.com/**', (route) => route.abort())
 
+    // Mock Google APIs (Calendar + userinfo)
+    await page.route('https://www.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      if (url.includes('calendarList')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            items: [
+              { id: 'primary@gmail.com', summary: 'Primary', primary: true },
+              { id: 'work@group.calendar', summary: 'Work' },
+              { id: 'family@group.calendar', summary: 'Family' },
+            ],
+          }),
+        })
+      } else if (url.includes('userinfo')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ email: 'testuser@gmail.com' }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+
     // Inject the synchronous GIS mock before page scripts run
     await page.addInitScript(injectGisMock)
 
@@ -115,11 +141,14 @@ test.describe('deploy index.html', () => {
     await expect(page.locator('header p')).toContainText('Deploy a script')
   })
 
-  test('renders two numbered step badges', async ({ page }) => {
+  test('renders step badges including hidden Step 3', async ({ page }) => {
     const badges = page.locator('.step-badge')
-    await expect(badges).toHaveCount(2)
+    await expect(badges).toHaveCount(3)
     await expect(badges.nth(0)).toHaveText('1')
     await expect(badges.nth(1)).toHaveText('2')
+    await expect(badges.nth(2)).toHaveText('3')
+    // Step 3 card is hidden by default
+    await expect(page.locator('#step3-card')).toBeHidden()
   })
 
   test('renders sign-in button', async ({ page }) => {
@@ -313,7 +342,7 @@ test.describe('deploy index.html', () => {
     await page.locator('button:has-text("Done — I ran setup()")').click()
     await expect(page.locator('[id^="setup-done-"]')).toBeVisible()
     await expect(page.locator('[id^="setup-done-"]')).toContainText(
-      'previously enabled the hourly trigger'
+      'previously enabled the trigger'
     )
     await expect(page.locator('[id^="setup-done-"]')).toContainText(
       'Click here to review instructions'
@@ -1041,6 +1070,234 @@ test.describe('deploy index.html', () => {
       'Petry-Projects – Gmail to Drive By Labels'
     )
     expect(capturedTitles).toContain('Petry-Projects – Calendar to Sheets')
+  })
+
+  // ── Step 3 – Configuration UI ──────────────────────────────────────────────
+
+  test('Step 3 card appears when calendar-to-briefing-doc is checked', async ({
+    page,
+  }) => {
+    await expect(page.locator('#step3-card')).toBeHidden()
+    await page
+      .locator('#script-list input[value="calendar-to-briefing-doc"]')
+      .click()
+    await expect(page.locator('#step3-card')).toBeVisible()
+    await expect(page.locator('#step3-script-name')).toContainText(
+      'Calendar to Briefing Doc'
+    )
+  })
+
+  test('Step 3 card hides when calendar-to-briefing-doc is unchecked', async ({
+    page,
+  }) => {
+    await page
+      .locator('#script-list input[value="calendar-to-briefing-doc"]')
+      .click()
+    await expect(page.locator('#step3-card')).toBeVisible()
+    await page
+      .locator('#script-list input[value="calendar-to-briefing-doc"]')
+      .click()
+    await expect(page.locator('#step3-card')).toBeHidden()
+  })
+
+  test('Step 3 does not appear for gmail-to-drive-by-labels', async ({
+    page,
+  }) => {
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await expect(page.locator('#step3-card')).toBeHidden()
+  })
+
+  test('Step 3 shows calendar checkboxes after sign-in', async ({ page }) => {
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="calendar-to-briefing-doc"]')
+      .click()
+    await expect(page.locator('#cfg-calendar-list')).toBeVisible()
+    const checkboxes = page.locator('.cfg-calendar')
+    await expect(checkboxes).toHaveCount(3)
+    // All checked by default
+    for (let i = 0; i < 3; i++) {
+      await expect(checkboxes.nth(i)).toBeChecked()
+    }
+  })
+
+  test('deploy button enables when briefing doc is checked (email pre-filled)', async ({
+    page,
+  }) => {
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="calendar-to-briefing-doc"]')
+      .click()
+    // Email is pre-filled from userinfo mock
+    await expect(page.locator('#cfg-email')).toHaveValue('testuser@gmail.com')
+    await expect(page.locator('#btn-deploy')).toBeEnabled()
+  })
+
+  test('deploy button disables when briefing doc email is cleared', async ({
+    page,
+  }) => {
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="calendar-to-briefing-doc"]')
+      .click()
+    await expect(page.locator('#btn-deploy')).toBeEnabled()
+    await page.locator('#cfg-email').fill('')
+    await expect(page.locator('#btn-deploy')).toBeDisabled()
+  })
+
+  test('briefing doc deploy uploads hourly trigger setup.gs with schedule in config', async ({
+    page,
+  }) => {
+    let uploadBody = null
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ scriptId: 'briefing-id' }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        uploadBody = JSON.parse(route.request().postData())
+        await route.fulfill({ status: 200, body: '{}' })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="calendar-to-briefing-doc"]')
+      .click()
+    await expect(page.locator('#cfg-email')).toHaveValue('testuser@gmail.com')
+    await page.locator('#cfg-triggerDay').selectOption('SUNDAY')
+    await page.locator('#cfg-triggerHour').selectOption('6')
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    // setup.gs always uses hourly trigger — schedule is in config.gs
+    const setupFile = uploadBody.files.find((f) => f.name === 'setup')
+    expect(setupFile).toBeDefined()
+    expect(setupFile.source).toContain('generateWeeklyBriefing')
+    expect(setupFile.source).toContain('everyHours(1)')
+
+    // config.gs contains the schedule fields
+    const configFile = uploadBody.files.find((f) => f.name === 'config')
+    expect(configFile.source).toContain('scheduleDay: "SUNDAY"')
+    expect(configFile.source).toContain('scheduleHour: 6')
+    expect(configFile.source).toContain('scheduleFrequency: "weekly"')
+  })
+
+  test('briefing doc deploy uploads config.gs with user email, subject, and lookahead', async ({
+    page,
+  }) => {
+    let uploadBody = null
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ scriptId: 'briefing-id' }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        uploadBody = JSON.parse(route.request().postData())
+        await route.fulfill({ status: 200, body: '{}' })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="calendar-to-briefing-doc"]')
+      .click()
+    await page.locator('#cfg-email').fill('boss@example.com')
+    await page.locator('#cfg-subject').fill('My Custom Briefing')
+    await page.locator('#cfg-lookahead').selectOption('14')
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    const configFile = uploadBody.files.find((f) => f.name === 'config')
+    expect(configFile).toBeDefined()
+    expect(configFile.source).toContain('boss@example.com')
+    expect(configFile.source).toContain('useAllCalendars: true')
+    expect(configFile.source).toContain('My Custom Briefing')
+    expect(configFile.source).toContain('lookaheadDays: 14')
+    expect(configFile.source).not.toContain('docId')
+  })
+
+  test('briefing doc deploy with every-N-days puts interval in config', async ({
+    page,
+  }) => {
+    let uploadBody = null
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ scriptId: 'days-id' }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        uploadBody = JSON.parse(route.request().postData())
+        await route.fulfill({ status: 200, body: '{}' })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="calendar-to-briefing-doc"]')
+      .click()
+    await expect(page.locator('#cfg-email')).toHaveValue('testuser@gmail.com')
+    await page.locator('#cfg-frequency').selectOption('days')
+    await page.locator('#cfg-interval').selectOption('3')
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    // setup.gs is always hourly — schedule is in config
+    const setupFile = uploadBody.files.find((f) => f.name === 'setup')
+    expect(setupFile.source).toContain('everyHours(1)')
+
+    const configFile = uploadBody.files.find((f) => f.name === 'config')
+    expect(configFile.source).toContain('scheduleFrequency: "days"')
+    expect(configFile.source).toContain('scheduleIntervalDays: 3')
+  })
+
+  test('briefing doc email field defaults to signed-in user email', async ({
+    page,
+  }) => {
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="calendar-to-briefing-doc"]')
+      .click()
+    await expect(page.locator('#cfg-email')).toHaveValue('testuser@gmail.com')
+  })
+
+  test('briefing doc deploy success shows hourly trigger label', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="calendar-to-briefing-doc"]')
+      .click()
+    await expect(page.locator('#cfg-email')).toHaveValue('testuser@gmail.com')
+    await page.locator('#btn-deploy').click()
+    await expect(page.locator('.status-ok')).toContainText('hourly trigger')
   })
 
   test('single-script deploy uses Petry-Projects prefix for project title', async ({

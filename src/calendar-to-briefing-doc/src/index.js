@@ -34,8 +34,7 @@ function fetchAllCalendarEvents(
   const excluded = new Set(excludeCalendars || [])
   const tuples = []
   for (const cal of calendars) {
-    const calId =
-      typeof cal.getId === 'function' ? cal.getId() : cal.id || ''
+    const calId = typeof cal.getId === 'function' ? cal.getId() : cal.id || ''
     if (excluded.has(calId)) continue
     const events = fetchEvents(cal, start, end)
     const calName = calId === defaultCalendarId ? null : cal.getName()
@@ -200,28 +199,18 @@ function formatEventEntry(event, formatTime, calendarName) {
 }
 
 /**
- * Writes the weekly briefing to a Google Doc.
- * Clears the doc body first (idempotent), then writes the title followed by
- * day sections. Days with no events are skipped. Events within each day are
- * sorted by start time ascending.
- *
- * @param {Object} doc - GAS Document
+ * Formats the full briefing as a plain text string.
  * @param {string} title - Briefing title line
  * @param {Map<string, Array>} groupedEvents - from groupEventsByDay
  * @param {function(Date): string} formatTime
- * @param {Object} DocumentApp - GAS DocumentApp global (for enum access)
+ * @returns {string}
  */
-function writeBriefingDoc(doc, title, groupedEvents, formatTime, DocumentApp) {
-  const body = doc.getBody()
-  body.clear()
-
-  const titlePara = body.appendParagraph(title)
-  titlePara.setAttributes({ [DocumentApp.Attribute.BOLD]: true })
+function formatBriefing(title, groupedEvents, formatTime) {
+  const sections = [title, '']
 
   for (const [dateKey, items] of groupedEvents.entries()) {
     const dayLabel = formatDayLabel(dateKey)
-    const heading = body.appendParagraph(dayLabel)
-    heading.setHeading(DocumentApp.ParagraphHeading.HEADING_3)
+    sections.push(dayLabel)
 
     // Detect if items are tuples or plain events
     const isTuple = items.length > 0 && items[0] && items[0].event
@@ -232,7 +221,7 @@ function writeBriefingDoc(doc, title, groupedEvents, formatTime, DocumentApp) {
     const conflicts = detectConflicts(tuples)
     const warning = formatConflictWarning(conflicts, formatTime)
     if (warning) {
-      body.appendParagraph(warning)
+      sections.push(warning)
     }
 
     const sorted = [...tuples].sort(
@@ -240,48 +229,93 @@ function writeBriefingDoc(doc, title, groupedEvents, formatTime, DocumentApp) {
         a.event.getStartTime().getTime() - b.event.getStartTime().getTime()
     )
     for (const tuple of sorted) {
-      body.appendParagraph(
+      sections.push(
         formatEventEntry(tuple.event, formatTime, tuple.calendarName)
       )
     }
+
+    sections.push('')
   }
+
+  return sections.join('\n').trimEnd()
 }
 
 /**
- * Sends an email with a link to the briefing doc.
+ * Sends an email with the briefing content.
  * No-op if recipients is empty or falsy.
  * @param {Object} gmailApp - GAS GmailApp global
  * @param {string[]} recipients
  * @param {string} subject
- * @param {string} docUrl
+ * @param {string} body - The full briefing text
  */
-function emailBriefing(gmailApp, recipients, subject, docUrl) {
+function emailBriefing(gmailApp, recipients, subject, body) {
   if (!recipients || !recipients.length) return
-  const body = `Your weekly briefing is ready:\n\n${docUrl}`
   for (const recipient of recipients) {
     gmailApp.sendEmail(recipient, subject, body)
   }
 }
 
 /**
+ * Determines whether the briefing should run now based on schedule config.
+ * Called every hour by the trigger; returns true only at the scheduled time.
+ *
+ * @param {Object} config - BRIEFING_CONFIGS entry with schedule fields
+ * @param {Date} now - current date/time
+ * @param {number|null} lastRunMs - timestamp (ms) of the last successful run, or null
+ * @returns {boolean}
+ */
+function shouldRunNow(config, now, lastRunMs) {
+  const hour = now.getHours()
+  const scheduleHour = config.scheduleHour != null ? config.scheduleHour : 7
+
+  if (hour !== scheduleHour) return false
+
+  const frequency = config.scheduleFrequency || 'weekly'
+
+  if (frequency === 'weekly') {
+    const DAY_MAP = {
+      SUNDAY: 0,
+      MONDAY: 1,
+      TUESDAY: 2,
+      WEDNESDAY: 3,
+      THURSDAY: 4,
+      FRIDAY: 5,
+      SATURDAY: 6,
+    }
+    const targetDay = DAY_MAP[config.scheduleDay || 'MONDAY']
+    return now.getDay() === targetDay
+  }
+
+  if (frequency === 'days') {
+    const intervalDays = config.scheduleIntervalDays || 1
+    if (lastRunMs == null) return true
+    const elapsed = now.getTime() - lastRunMs
+    const daysSinceLastRun = elapsed / (24 * 60 * 60 * 1000)
+    return daysSinceLastRun >= intervalDays
+  }
+
+  return true
+}
+
+/**
  * Generates a briefing for a single config entry.
  * @param {Object} calendarApp - GAS CalendarApp global (or single calendar for legacy mode)
- * @param {Object} doc - GAS Document
  * @param {Object} gmailApp - GAS GmailApp global
  * @param {Object} config - single BRIEFING_CONFIGS entry
  * @param {function(Date): string} getDateKey - maps Date to 'YYYY-MM-DD'
  * @param {function(Date): string} formatTime - maps Date to time string
- * @param {Object} DocumentApp - GAS DocumentApp global (for enum access)
  */
 function generateBriefingForConfig(
   calendarApp,
-  doc,
   gmailApp,
   config,
   getDateKey,
-  formatTime,
-  DocumentApp
+  formatTime
 ) {
+  if (!config.emailRecipients || !config.emailRecipients.length) {
+    throw new Error('emailRecipients is required')
+  }
+
   const now = new Date()
   // Round start down to the beginning of today so events before the trigger
   // time are not silently excluded from Day 1 of the briefing.
@@ -318,18 +352,14 @@ function generateBriefingForConfig(
   // subtract 1ms to get a timestamp within the last included day for labeling.
   const lastIncludedDay = new Date(end.getTime() - 1)
   const briefingTitle = `Weekly Briefing: ${formatDayLabel(getDateKey(now))} \u2013 ${formatDayLabel(getDateKey(lastIncludedDay))}`
-  writeBriefingDoc(doc, briefingTitle, grouped, formatTime, DocumentApp)
+  const briefingText = formatBriefing(briefingTitle, grouped, formatTime)
 
-  if (config.emailRecipients && config.emailRecipients.length) {
-    const docId = typeof doc.getId === 'function' ? doc.getId() : doc.id || ''
-    const docUrl = `https://docs.google.com/document/d/${docId}/edit`
-    emailBriefing(
-      gmailApp,
-      config.emailRecipients,
-      config.emailSubject || 'Weekly Briefing',
-      docUrl
-    )
-  }
+  emailBriefing(
+    gmailApp,
+    config.emailRecipients,
+    config.emailSubject || 'Weekly Briefing',
+    briefingText
+  )
 }
 
 module.exports = {
@@ -340,7 +370,8 @@ module.exports = {
   groupEventsByDay,
   formatDayLabel,
   formatEventEntry,
-  writeBriefingDoc,
+  formatBriefing,
   emailBriefing,
+  shouldRunNow,
   generateBriefingForConfig,
 }

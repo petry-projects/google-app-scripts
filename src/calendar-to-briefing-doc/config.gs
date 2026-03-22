@@ -3,19 +3,20 @@
  * Supports multiple briefing configurations.
  * Update values when deploying in Google Apps Script.
  *
- * When useAllCalendars is true (default), events from every accessible
- * calendar are included and labelled by source. Set calendarId instead
- * to pull from a single calendar only.
+ * The script runs on an hourly trigger and uses the schedule fields
+ * below to decide when to actually send the briefing email.
  *
  * Example:
  * var BRIEFING_CONFIGS = [
  *   {
  *     useAllCalendars: true,
  *     excludeCalendars: [],
- *     docId: 'YOUR_GOOGLE_DOC_ID',
- *     lookaheadDays: 7,
  *     emailRecipients: ['you@example.com'],
  *     emailSubject: 'Weekly Briefing',
+ *     lookaheadDays: 7,
+ *     scheduleFrequency: 'weekly',
+ *     scheduleDay: 'MONDAY',
+ *     scheduleHour: 7,
  *   },
  * ]
  */
@@ -24,9 +25,11 @@ var BRIEFING_CONFIGS = [
   {
     useAllCalendars: true,
     excludeCalendars: [],
-    docId: '',
-    lookaheadDays: 7,
-    emailRecipients: [],
+    emailRecipients: ['you@example.com'],
     emailSubject: 'Weekly Briefing',
+    lookaheadDays: 7,
+    scheduleFrequency: 'weekly',
+    scheduleDay: 'MONDAY',
+    scheduleHour: 7,
   },
 ]

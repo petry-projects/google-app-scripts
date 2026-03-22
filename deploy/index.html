@@ -236,6 +236,49 @@
         font-size: 12px;
       }
 
+      /* ── Form controls for Step 3 ──────────────────────────────────────── */
+      select,
+      textarea {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #dadce0;
+        border-radius: 4px;
+        font-size: 14px;
+        color: #202124;
+        font-family: inherit;
+        transition: border-color 0.15s;
+        background: #fff;
+      }
+      select:focus,
+      textarea:focus {
+        outline: none;
+        border-color: #1a73e8;
+        box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+      }
+      textarea {
+        resize: vertical;
+        min-height: 60px;
+      }
+      .field-group {
+        margin-bottom: 16px;
+      }
+      .field-help {
+        font-size: 12px;
+        color: #5f6368;
+        margin-top: 4px;
+        line-height: 1.4;
+      }
+      .field-help a {
+        color: #1a73e8;
+      }
+      .field-row {
+        display: flex;
+        gap: 16px;
+      }
+      .field-row .field-group {
+        flex: 1;
+      }
+
       /* ── Error detail (copyable) ─────────────────────────────────────────── */
       .error-detail {
         margin-top: 6px;
@@ -340,6 +383,17 @@
         </div>
       </div>
 
+      <!-- Step 3 – Configure (only for scripts with configUI) -->
+      <div class="card" id="step3-card" style="display: none">
+        <h2>
+          <span class="step-badge">3</span>Configure
+          <span id="step3-script-name"></span>
+        </h2>
+        <div id="step3-fields">
+          <!-- populated by JS when a configurable script is checked -->
+        </div>
+      </div>
+
       <!-- Deploy button -->
       <div style="text-align: right; margin-bottom: 20px">
         <button
@@ -378,8 +432,11 @@
       const OAUTH_CLIENT_ID =
         '873060687431-smmudbpd5rlogt0r7immp0u3tdqb2t3p.apps.googleusercontent.com'
 
-      // Required OAuth scope: create, read, and update Apps Script projects.
-      const OAUTH_SCOPE = 'https://www.googleapis.com/auth/script.projects'
+      // Required OAuth scopes: Apps Script projects + Calendar (for calendar picker) + email (for default recipient).
+      const OAUTH_SCOPE =
+        'https://www.googleapis.com/auth/script.projects ' +
+        'https://www.googleapis.com/auth/calendar.readonly ' +
+        'email'
 
       // Script catalog — mirrors src/deploy/index.js getScriptCatalog().
       const SCRIPT_CATALOG = [
@@ -408,12 +465,14 @@
             'Shows which calendar each event comes from. Optionally emails the ' +
             'briefing link to a configured recipient list.',
           triggerFn: 'generateWeeklyBriefing',
+          configUI: true,
         },
       ]
 
       // Base URL for fetching raw script files from this repository on GitHub.
+      // TODO: revert to 'main' before merging PR #58
       const GITHUB_RAW_BASE =
-        'https://raw.githubusercontent.com/petry-projects/google-app-scripts/main/src'
+        'https://raw.githubusercontent.com/petry-projects/google-app-scripts/copilot/calendar-to-briefing-doc/src'
 
       // Default Apps Script manifest required by the API for every project.
       // oauthScopes is intentionally omitted — Google infers required scopes
@@ -438,6 +497,8 @@
 
       let tokenClient = null
       let accessToken = null
+      let userCalendars = [] // populated after sign-in
+      let userEmail = '' // populated after sign-in
 
       // ── Idempotency helpers ───────────────────────────────────────────────────────
 
@@ -514,7 +575,7 @@
           cta.outerHTML =
             `<details id="setup-done-${safeId}" style="margin-top:8px;font-size:12px;">` +
             `<summary style="cursor:pointer;color:#137333;">` +
-            `⏱ You had previously enabled the hourly trigger. Click here to review instructions.` +
+            `⏱ You had previously enabled the trigger. Click here to review instructions.` +
             `</summary>` +
             `<ol style="margin:8px 0 0 18px;font-size:13px;line-height:1.7;">` +
             `<li>Click the script link above to open it in Apps Script</li>` +
@@ -574,9 +635,298 @@
         const hasScript = !!document.querySelector(
           'input[name="script"]:checked'
         )
+        const configValid = validateStep3Fields()
         document.getElementById('btn-deploy').disabled = !(
-          hasToken && hasScript
+          hasToken &&
+          hasScript &&
+          configValid
         )
+      }
+
+      // ── User info ─────────────────────────────────────────────────────────────────
+
+      async function fetchUserEmail() {
+        if (!accessToken) return
+        try {
+          const res = await fetch(
+            'https://www.googleapis.com/oauth2/v2/userinfo',
+            { headers: { Authorization: `Bearer ${accessToken}` } }
+          )
+          if (!res.ok) return
+          const data = await res.json()
+          userEmail = data.email || ''
+          // Pre-fill email field if Step 3 is already rendered
+          const emailEl = document.getElementById('cfg-email')
+          if (emailEl && !emailEl.value) {
+            emailEl.value = userEmail
+            setDeployEnabled()
+          }
+        } catch {
+          // best-effort
+        }
+      }
+
+      // ── Calendar API ─────────────────────────────────────────────────────────────
+
+      async function fetchUserCalendars() {
+        if (!accessToken) return
+        try {
+          const res = await fetch(
+            'https://www.googleapis.com/calendar/v3/users/me/calendarList',
+            { headers: { Authorization: `Bearer ${accessToken}` } }
+          )
+          if (!res.ok) return
+          const data = await res.json()
+          userCalendars = (data.items || []).map((c) => ({
+            id: c.id,
+            name: c.summaryOverride || c.summary || c.id,
+            primary: !!c.primary,
+          }))
+          // Re-render Step 3 if it's visible so calendar list appears
+          const fields = document.getElementById('step3-fields')
+          if (fields) fields.dataset.renderedFor = ''
+          renderStep3()
+        } catch {
+          // best-effort; calendar list just won't be available
+        }
+      }
+
+      // ── Step 3 – Configuration UI ──────────────────────────────────────────────
+
+      function renderStep3() {
+        const checked = Array.from(
+          document.querySelectorAll('input[name="script"]:checked')
+        ).map((el) => el.value)
+        const configScript = SCRIPT_CATALOG.find(
+          (s) => checked.includes(s.id) && s.configUI
+        )
+        const card = document.getElementById('step3-card')
+        if (!configScript) {
+          card.style.display = 'none'
+          return
+        }
+        card.style.display = ''
+        document.getElementById('step3-script-name').textContent =
+          configScript.name
+
+        const fields = document.getElementById('step3-fields')
+        if (fields.dataset.renderedFor === configScript.id) return
+        fields.dataset.renderedFor = configScript.id
+
+        if (configScript.id === 'calendar-to-briefing-doc') {
+          let calendarListHtml = ''
+          if (userCalendars.length > 0) {
+            calendarListHtml = userCalendars
+              .map(
+                (cal) =>
+                  '<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;">' +
+                  '<input type="checkbox" class="cfg-calendar" value="' +
+                  escapeHtml(cal.id) +
+                  '" ' +
+                  'checked ' +
+                  'onchange="setDeployEnabled()" ' +
+                  'style="accent-color:#1a73e8;width:16px;height:16px;" />' +
+                  '<span style="font-size:14px;">' +
+                  escapeHtml(cal.name) +
+                  (cal.primary
+                    ? ' <span style="font-size:11px;color:#5f6368;">(primary)</span>'
+                    : '') +
+                  '</span></label>'
+              )
+              .join('')
+          } else {
+            calendarListHtml =
+              '<p style="font-size:13px;color:#5f6368;">Sign in first to load your calendars, or all calendars will be included by default.</p>'
+          }
+
+          const tz =
+            Intl.DateTimeFormat().resolvedOptions().timeZone || 'your timezone'
+          const defaultEmail = escapeHtml(userEmail)
+
+          fields.innerHTML =
+            '<div class="field-group">' +
+            '<label>Calendars to include</label>' +
+            '<div id="cfg-calendar-list" style="max-height:200px;overflow-y:auto;border:1px solid #dadce0;border-radius:4px;padding:8px 12px;">' +
+            calendarListHtml +
+            '</div>' +
+            '<div class="field-help">Uncheck calendars you want to exclude from the briefing.</div>' +
+            '</div>' +
+            '<div class="field-row">' +
+            '<div class="field-group">' +
+            '<label for="cfg-email">Send briefing to</label>' +
+            '<input type="text" id="cfg-email" value="' +
+            defaultEmail +
+            '" placeholder="you@example.com" oninput="setDeployEnabled()" />' +
+            '</div>' +
+            '<div class="field-group">' +
+            '<label for="cfg-subject">Email subject</label>' +
+            '<input type="text" id="cfg-subject" value="Weekly Briefing" placeholder="Weekly Briefing" />' +
+            '</div>' +
+            '</div>' +
+            '<div class="field-row">' +
+            '<div class="field-group">' +
+            '<label for="cfg-frequency">Frequency</label>' +
+            '<select id="cfg-frequency" onchange="toggleFrequencyFields()">' +
+            '<option value="weekly" selected>Weekly</option>' +
+            '<option value="days">Every N days</option>' +
+            '</select>' +
+            '</div>' +
+            '<div class="field-group" id="cfg-day-group">' +
+            '<label for="cfg-triggerDay">Day</label>' +
+            '<select id="cfg-triggerDay">' +
+            '<option value="SUNDAY">Sunday</option>' +
+            '<option value="MONDAY" selected>Monday</option>' +
+            '<option value="TUESDAY">Tuesday</option>' +
+            '<option value="WEDNESDAY">Wednesday</option>' +
+            '<option value="THURSDAY">Thursday</option>' +
+            '<option value="FRIDAY">Friday</option>' +
+            '<option value="SATURDAY">Saturday</option>' +
+            '</select>' +
+            '</div>' +
+            '<div class="field-group" id="cfg-interval-group" style="display:none">' +
+            '<label for="cfg-interval">Every</label>' +
+            '<select id="cfg-interval">' +
+            '<option value="1">1 day</option>' +
+            '<option value="2">2 days</option>' +
+            '<option value="3">3 days</option>' +
+            '<option value="5">5 days</option>' +
+            '<option value="7">7 days</option>' +
+            '<option value="14">14 days</option>' +
+            '</select>' +
+            '</div>' +
+            '<div class="field-group">' +
+            '<label for="cfg-triggerHour">At approximately</label>' +
+            '<select id="cfg-triggerHour">' +
+            '<option value="5">5 AM</option>' +
+            '<option value="6">6 AM</option>' +
+            '<option value="7" selected>7 AM</option>' +
+            '<option value="8">8 AM</option>' +
+            '<option value="9">9 AM</option>' +
+            '</select>' +
+            '</div>' +
+            '</div>' +
+            '<div class="field-help" style="margin-top:-8px;margin-bottom:12px;">Times are in ' +
+            escapeHtml(tz) +
+            '</div>' +
+            '<div class="field-group">' +
+            '<label for="cfg-lookahead">Look ahead days</label>' +
+            '<select id="cfg-lookahead">' +
+            '<option value="3">3 days</option>' +
+            '<option value="5">5 days</option>' +
+            '<option value="7" selected>7 days</option>' +
+            '<option value="10">10 days</option>' +
+            '<option value="14">14 days</option>' +
+            '<option value="30">30 days</option>' +
+            '</select>' +
+            '<div class="field-help">How many days ahead to include in the briefing.</div>' +
+            '</div>'
+        }
+      }
+
+      function toggleFrequencyFields() {
+        const freq = document.getElementById('cfg-frequency').value
+        document.getElementById('cfg-day-group').style.display =
+          freq === 'weekly' ? '' : 'none'
+        document.getElementById('cfg-interval-group').style.display =
+          freq === 'days' ? '' : 'none'
+      }
+
+      function getStep3Values(catalogId) {
+        if (catalogId !== 'calendar-to-briefing-doc') return null
+        const emailEl = document.getElementById('cfg-email')
+        if (!emailEl) return null
+        const selectedCalendars = Array.from(
+          document.querySelectorAll('.cfg-calendar:checked')
+        ).map((el) => el.value)
+        const excludedCalendars = Array.from(
+          document.querySelectorAll('.cfg-calendar:not(:checked)')
+        ).map((el) => el.value)
+        const frequency = document.getElementById('cfg-frequency').value
+        return {
+          email: (emailEl.value || '').trim(),
+          subject:
+            (document.getElementById('cfg-subject').value || '').trim() ||
+            'Weekly Briefing',
+          selectedCalendars,
+          excludeCalendars: excludedCalendars,
+          frequency,
+          triggerDay:
+            frequency === 'weekly'
+              ? document.getElementById('cfg-triggerDay').value
+              : null,
+          triggerInterval:
+            frequency === 'days'
+              ? parseInt(document.getElementById('cfg-interval').value, 10)
+              : null,
+          triggerHour: document.getElementById('cfg-triggerHour').value,
+          lookaheadDays: parseInt(
+            document.getElementById('cfg-lookahead').value,
+            10
+          ),
+        }
+      }
+
+      function validateStep3Fields() {
+        const checked = Array.from(
+          document.querySelectorAll('input[name="script"]:checked')
+        ).map((el) => el.value)
+        const configScript = SCRIPT_CATALOG.find(
+          (s) => checked.includes(s.id) && s.configUI
+        )
+        if (!configScript) return true
+        const values = getStep3Values(configScript.id)
+        if (!values) return true
+        return values.email.length > 0
+      }
+
+      function buildConfigSource(catalogId, userValues) {
+        if (catalogId === 'calendar-to-briefing-doc' && userValues) {
+          const excludeList = JSON.stringify(userValues.excludeCalendars || [])
+          const emailRecipients = JSON.stringify(
+            userValues.email ? [userValues.email] : []
+          )
+          const subject = JSON.stringify(
+            userValues.subject || 'Weekly Briefing'
+          )
+          const lookahead = userValues.lookaheadDays || 7
+          const freq = JSON.stringify(userValues.frequency || 'weekly')
+          const day = JSON.stringify(userValues.triggerDay || 'MONDAY')
+          const hour = parseInt(userValues.triggerHour, 10) || 7
+          const interval = userValues.triggerInterval || 1
+          let scheduleLines =
+            '    scheduleFrequency: ' +
+            freq +
+            ',\n' +
+            '    scheduleHour: ' +
+            hour +
+            ',\n'
+          if (userValues.frequency === 'days') {
+            scheduleLines += '    scheduleIntervalDays: ' + interval + ',\n'
+          } else {
+            scheduleLines += '    scheduleDay: ' + day + ',\n'
+          }
+          return (
+            'var BRIEFING_CONFIGS = [\n' +
+            '  {\n' +
+            '    useAllCalendars: true,\n' +
+            '    excludeCalendars: ' +
+            excludeList +
+            ',\n' +
+            '    lookaheadDays: ' +
+            lookahead +
+            ',\n' +
+            '    emailRecipients: ' +
+            emailRecipients +
+            ',\n' +
+            '    emailSubject: ' +
+            subject +
+            ',\n' +
+            scheduleLines +
+            '  },\n' +
+            ']\n'
+          )
+        }
+        return null
       }
 
       // ── Script list ───────────────────────────────────────────────────────────────
@@ -587,7 +937,7 @@
           (s) => `
     <label class="script-option" for="script-${s.id}">
       <input type="checkbox" name="script" id="script-${s.id}" value="${s.id}"
-             onchange="setDeployEnabled()" />
+             onchange="renderStep3(); setDeployEnabled()" />
       <span class="script-info">
         <strong>${escapeHtml(s.name)}</strong>
         <span>${escapeHtml(s.description)}</span>
@@ -636,6 +986,8 @@
             document.getElementById('auth-status').textContent = '✅ Signed in'
             document.getElementById('btn-signin').textContent =
               '✅ Signed in — click to re-authenticate'
+            fetchUserEmail()
+            fetchUserCalendars()
             setDeployEnabled()
           },
         })
@@ -722,6 +1074,19 @@
               `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Uploading files for <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
             )
 
+            // Collect user config values from Step 3 form (if any)
+            const userConfig = getStep3Values(catalogId)
+
+            // All scripts use an hourly trigger. Schedule logic lives in config.gs.
+            const setupSource = buildSetupSource(script.triggerFn)
+
+            // Optionally replace config.gs with user-provided values
+            const customConfig = buildConfigSource(catalogId, userConfig)
+            if (customConfig) {
+              const configFile = files.find((f) => f.name === 'config')
+              if (configFile) configFile.source = customConfig
+            }
+
             // Upload source files: manifest + setup.gs + code.gs + config.gs.
             await apiFetch(`${APPS_SCRIPT_API}/projects/${projectId}/content`, {
               method: 'PUT',
@@ -735,7 +1100,7 @@
                   {
                     name: 'setup',
                     type: 'SERVER_JS',
-                    source: buildSetupSource(script.triggerFn),
+                    source: setupSource,
                   },
                   ...files.map((f) => ({
                     name: f.name,
@@ -759,17 +1124,19 @@
           const projectSectionsHtml = deployedProjects
             .map((p) => {
               const safeId = escapeHtml(p.scriptId)
+              const triggerLabel = 'hourly trigger'
+              const triggerSchedule = ''
               const triggerSection = isSetupDone(p.scriptId)
                 ? `<details id="setup-done-${safeId}" style="margin-top:8px;font-size:12px;">` +
                   `<summary style="cursor:pointer;color:#137333;">` +
-                  `⏱ You had previously enabled the hourly trigger. Click here to review instructions.` +
+                  `⏱ You had previously enabled the ${triggerLabel}${triggerSchedule}. Click here to review instructions.` +
                   `</summary>` +
                   setupStepsHtml +
                   `</details>`
                 : `<div id="setup-cta-${safeId}" ` +
                   `style="background:#fff8e1;border:1px solid #f9a825;border-radius:6px;` +
                   `padding:12px 16px;margin-top:12px;">` +
-                  `<strong style="font-size:13px;">⏱ One more step — activate the hourly trigger</strong>` +
+                  `<strong style="font-size:13px;">⏱ One more step — activate the ${triggerLabel}${triggerSchedule}</strong>` +
                   setupStepsHtml +
                   `<button class="btn" ` +
                   `style="background:#137333;color:#fff;border:none;padding:7px 14px;` +

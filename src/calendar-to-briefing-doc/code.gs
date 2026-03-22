@@ -119,8 +119,12 @@ function _formatConflictWarningGAS_(conflicts, timezone) {
     .map(function (c) {
       var aTitle = c.a.event.getTitle() || '(No Title)'
       var bTitle = c.b.event.getTitle() || '(No Title)'
-      var aLabel = c.a.calendarName ? aTitle + ' (' + c.a.calendarName + ')' : aTitle
-      var bLabel = c.b.calendarName ? bTitle + ' (' + c.b.calendarName + ')' : bTitle
+      var aLabel = c.a.calendarName
+        ? aTitle + ' (' + c.a.calendarName + ')'
+        : aTitle
+      var bLabel = c.b.calendarName
+        ? bTitle + ' (' + c.b.calendarName + ')'
+        : bTitle
       var aTime =
         Utilities.formatDate(c.a.event.getStartTime(), timezone, 'h:mm a') +
         '\u2013' +
@@ -144,21 +148,21 @@ function _formatConflictWarningGAS_(conflicts, timezone) {
     .join('\n')
 }
 
-function _writeBriefingDocGAS_(doc, title, groupedEvents, timezone) {
-  var body = doc.getBody()
-  body.clear()
-
-  var titlePara = body.appendParagraph(title)
-  var boldAttr = {}
-  boldAttr[DocumentApp.Attribute.BOLD] = true
-  titlePara.setAttributes(boldAttr)
+/**
+ * Formats the full briefing as a plain text string.
+ * @param {string} title - Briefing title line
+ * @param {Map} groupedEvents - Map of dateKey to event tuples/events
+ * @param {string} timezone - IANA timezone string
+ * @returns {string}
+ */
+function _formatBriefingGAS_(title, groupedEvents, timezone) {
+  var sections = [title, '']
 
   for (var entry of groupedEvents.entries()) {
     var dateKey = entry[0]
     var items = entry[1]
     var dayLabel = _formatDayLabelGAS_(dateKey)
-    var heading = body.appendParagraph(dayLabel)
-    heading.setHeading(DocumentApp.ParagraphHeading.HEADING_3)
+    sections.push(dayLabel)
 
     // Detect if items are tuples or plain events
     var isTuple = items.length > 0 && items[0] && items[0].event
@@ -171,37 +175,76 @@ function _writeBriefingDocGAS_(doc, title, groupedEvents, timezone) {
     var conflicts = _detectConflictsGAS_(tuples, timezone)
     var warning = _formatConflictWarningGAS_(conflicts, timezone)
     if (warning) {
-      body.appendParagraph(warning)
+      sections.push(warning)
     }
 
     var sorted = tuples.slice().sort(function (a, b) {
-      return (
-        a.event.getStartTime().getTime() - b.event.getStartTime().getTime()
-      )
+      return a.event.getStartTime().getTime() - b.event.getStartTime().getTime()
     })
     for (var i = 0; i < sorted.length; i++) {
-      body.appendParagraph(
+      sections.push(
         _formatEventEntryGAS_(sorted[i].event, timezone, sorted[i].calendarName)
       )
     }
+
+    sections.push('')
   }
+
+  // Trim trailing whitespace
+  var result = sections.join('\n')
+  return result.replace(/\s+$/, '')
 }
 
 /**
- * Main trigger function. The deploy page installs an hourly trigger by default.
- * For a true weekly cadence, replace it with a weekly time-driven trigger
- * (e.g., every Monday at 7 AM) in the Apps Script editor.
+ * Checks whether the briefing should run now based on schedule config.
+ * Called every hour by the trigger; returns true only at the scheduled time.
+ */
+function _shouldRunNowGAS_(cfg, now, lastRunMs) {
+  var hour = now.getHours()
+  var scheduleHour = cfg.scheduleHour != null ? cfg.scheduleHour : 7
+  if (hour !== scheduleHour) return false
+
+  var frequency = cfg.scheduleFrequency || 'weekly'
+  if (frequency === 'weekly') {
+    var DAY_MAP = {
+      SUNDAY: 0,
+      MONDAY: 1,
+      TUESDAY: 2,
+      WEDNESDAY: 3,
+      THURSDAY: 4,
+      FRIDAY: 5,
+      SATURDAY: 6,
+    }
+    var targetDay = DAY_MAP[cfg.scheduleDay || 'MONDAY']
+    return now.getDay() === targetDay
+  }
+  if (frequency === 'days') {
+    var intervalDays = cfg.scheduleIntervalDays || 1
+    if (lastRunMs == null) return true
+    var elapsed = now.getTime() - lastRunMs
+    return elapsed / (24 * 60 * 60 * 1000) >= intervalDays
+  }
+  return true
+}
+
+/**
+ * Main trigger function. Runs hourly via time-driven trigger.
+ * Checks each config's schedule to determine whether to send the briefing.
+ * Uses PropertiesService to track last run time per config index.
  */
 function generateWeeklyBriefing() {
   var configs = getBriefingConfigs_()
   var timezone = Session.getScriptTimeZone()
+  var props = PropertiesService.getUserProperties()
 
   for (var i = 0; i < configs.length; i++) {
     try {
       var cfg = configs[i]
-      if (!cfg.docId) {
+      if (!cfg.emailRecipients || !cfg.emailRecipients.length) {
         Logger.log(
-          '[generateWeeklyBriefing] Skipping config #' + i + ': missing docId'
+          '[generateWeeklyBriefing] Skipping config #' +
+            i +
+            ': missing emailRecipients'
         )
         continue
       }
@@ -214,8 +257,15 @@ function generateWeeklyBriefing() {
         continue
       }
 
-      var doc = DocumentApp.openById(cfg.docId)
+      // Check schedule
       var now = new Date()
+      var lastRunKey = 'briefing_lastRun_' + i
+      var lastRunStr = props.getProperty(lastRunKey)
+      var lastRunMs = lastRunStr ? parseInt(lastRunStr, 10) : null
+      if (!_shouldRunNowGAS_(cfg, now, lastRunMs)) {
+        continue
+      }
+
       now.setHours(0, 0, 0, 0)
       var end = new Date(now)
       end.setDate(end.getDate() + (cfg.lookaheadDays || 7))
@@ -270,21 +320,19 @@ function generateWeeklyBriefing() {
         ' \u2013 ' +
         _formatDayLabelGAS_(endKey)
 
-      _writeBriefingDocGAS_(doc, briefingTitle, grouped, timezone)
-      Logger.log('[generateWeeklyBriefing] Briefing written for config #' + i)
+      var briefingText = _formatBriefingGAS_(briefingTitle, grouped, timezone)
+      Logger.log('[generateWeeklyBriefing] Briefing formatted for config #' + i)
 
-      if (cfg.emailRecipients && cfg.emailRecipients.length) {
-        var docId = typeof doc.getId === 'function' ? doc.getId() : doc.id || ''
-        var docUrl = 'https://docs.google.com/document/d/' + docId + '/edit'
-        var emailBody = 'Your weekly briefing is ready:\n\n' + docUrl
-        for (var k = 0; k < cfg.emailRecipients.length; k++) {
-          GmailApp.sendEmail(
-            cfg.emailRecipients[k],
-            cfg.emailSubject || 'Weekly Briefing',
-            emailBody
-          )
-        }
+      for (var k = 0; k < cfg.emailRecipients.length; k++) {
+        GmailApp.sendEmail(
+          cfg.emailRecipients[k],
+          cfg.emailSubject || 'Weekly Briefing',
+          briefingText
+        )
       }
+
+      // Record successful run time
+      props.setProperty(lastRunKey, String(new Date().getTime()))
     } catch (e) {
       Logger.log('[generateWeeklyBriefing] Error for config #' + i + ': ' + e)
     }
@@ -299,7 +347,8 @@ if (typeof module !== 'undefined' && module.exports) {
     _formatEventEntryGAS_,
     _detectConflictsGAS_,
     _formatConflictWarningGAS_,
-    _writeBriefingDocGAS_,
+    _formatBriefingGAS_,
+    _shouldRunNowGAS_,
     generateWeeklyBriefing,
   }
 }
