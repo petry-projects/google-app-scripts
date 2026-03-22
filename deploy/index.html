@@ -683,14 +683,21 @@
           freq === 'days' ? '' : 'none'
       }
 
-      // Track which scriptIds are already rendered in Step 3
-      const renderedConfigCards = new Set()
+      // Track which catalogIds are already rendered in Step 3
+      const renderedConfigCards = new Map() // catalogId → scriptId
 
       function renderConfigCards(projects) {
         const container = document.getElementById('step3-scripts')
         for (const p of projects) {
-          if (renderedConfigCards.has(p.scriptId)) continue
-          renderedConfigCards.add(p.scriptId)
+          // If this catalogId already has a card with a different scriptId,
+          // remove the old card (e.g. deleted project replaced by new one)
+          const existingId = renderedConfigCards.get(p.catalogId)
+          if (existingId === p.scriptId) continue
+          if (existingId) {
+            const old = document.getElementById('config-card-' + existingId)
+            if (old) old.remove()
+          }
+          renderedConfigCards.set(p.catalogId, p.scriptId)
           const safeId = escapeHtml(p.scriptId)
           const safeCatalogId = escapeHtml(p.catalogId)
           container.insertAdjacentHTML(
@@ -1102,39 +1109,47 @@
       // ── OAuth sign-in ─────────────────────────────────────────────────────────────
 
       /**
-       * Scans localStorage for previously deployed scripts and verifies they
-       * still exist. If any are found, shows Step 3 with their config cards.
+       * Reads localStorage for previously deployed scripts (no API call needed).
+       * Deduplicates by catalogId, keeping only the last entry per script.
+       * Shows Step 3 with config cards for any found deployments.
        */
-      async function loadExistingDeployments() {
-        if (!accessToken) return
+      function loadExistingDeployments() {
         try {
+          const knownCatalogIds = SCRIPT_CATALOG.map((s) => s.id)
           const map = JSON.parse(
             localStorage.getItem(DEPLOY_STORAGE_KEY) || '{}'
           )
-          const entries = Object.entries(map)
-          if (entries.length === 0) return
-
-          const verified = []
-          for (const [key, scriptId] of entries) {
+          const byCatalog = new Map()
+          for (const [key, scriptId] of Object.entries(map)) {
+            const nlIndex = key.indexOf('\n')
+            const catalogId = nlIndex >= 0 ? key.slice(0, nlIndex) : key
+            if (!knownCatalogIds.includes(catalogId)) continue
             try {
-              const safeId = validateScriptId(scriptId)
-              await apiFetch(`${APPS_SCRIPT_API}/projects/${safeId}`)
-              const parts = key.split('\n')
-              const catalogId = parts[0]
-              const title = parts.slice(1).join('\n')
-              verified.push({ scriptId: safeId, title, catalogId })
-              deployedScripts.set(catalogId, { scriptId: safeId, title })
+              const title = nlIndex >= 0 ? key.slice(nlIndex + 1) : 'Unknown'
+              byCatalog.set(catalogId, {
+                scriptId: validateScriptId(scriptId),
+                title,
+                catalogId,
+              })
             } catch {
-              // Project no longer exists or access denied — skip
+              // invalid scriptId — skip
             }
+          }
+
+          const found = Array.from(byCatalog.values())
+          for (const p of found) {
+            deployedScripts.set(p.catalogId, {
+              scriptId: p.scriptId,
+              title: p.title,
+            })
           }
 
           // Refresh Step 2 to show deployment badges
           renderScriptList()
           setDeployEnabled()
 
-          if (verified.length > 0) {
-            renderConfigCards(verified)
+          if (found.length > 0) {
+            renderConfigCards(found)
           }
         } catch {
           // best-effort; ignore errors

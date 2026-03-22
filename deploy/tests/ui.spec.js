@@ -194,49 +194,35 @@ test.describe('deploy index.html', () => {
   test('Step 3 appears after sign-in when previous deployments exist in localStorage', async ({
     page,
   }) => {
-    // Pre-seed localStorage with a previous deployment
+    // Pre-seed localStorage with previous deployments for all 3 scripts
     await page.evaluate(() => {
       localStorage.setItem(
         'gas_copilot_deployed',
         JSON.stringify({
           'gmail-to-drive-by-labels\nPetry-Projects – Gmail to Drive By Labels':
-            'prev-script-123',
+            'prev-gmail-123',
+          'calendar-to-sheets\nPetry-Projects – Calendar to Sheets':
+            'prev-sheets-456',
+          'calendar-to-briefing-doc\nPetry-Projects – Calendar to Briefing Doc':
+            'prev-briefing-789',
         })
       )
     })
 
-    // Mock the Apps Script API so loadExistingDeployments can verify the project
-    await page.route('https://script.googleapis.com/**', async (route) => {
-      const url = route.request().url()
-      if (url.includes('/projects/prev-script-123')) {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            scriptId: 'prev-script-123',
-            title: 'Petry-Projects – Gmail to Drive By Labels',
-          }),
-        })
-      } else {
-        await route.continue()
-      }
-    })
-
     await signIn(page)
-    // Wait for loadExistingDeployments to complete and show Step 3
-    await expect(page.locator('#step3-card')).toBeVisible({ timeout: 10000 })
-    await expect(page.locator('#btn-configure-prev-script-123')).toBeVisible()
-    // Step 2 should show "Deployed" badge on the deployed script
-    await expect(page.locator('.deploy-badge')).toBeVisible()
-    await expect(page.locator('.deploy-badge')).toContainText('Deployed')
+    // loadExistingDeployments reads localStorage (no API call) and shows Step 3
+    await expect(page.locator('#step3-card')).toBeVisible()
+    await expect(page.locator('#btn-configure-prev-gmail-123')).toBeVisible()
+    await expect(page.locator('#btn-configure-prev-sheets-456')).toBeVisible()
+    await expect(page.locator('#btn-configure-prev-briefing-789')).toBeVisible()
+    // Step 2 should show 3 "Deployed" badges
+    await expect(page.locator('.deploy-badge')).toHaveCount(3)
   })
 
   test('Step 3 stays hidden after sign-in when no previous deployments exist', async ({
     page,
   }) => {
     await signIn(page)
-    // Give loadExistingDeployments time to run (it's async)
-    await page.waitForTimeout(500)
     await expect(page.locator('#step3-card')).toBeHidden()
   })
 
