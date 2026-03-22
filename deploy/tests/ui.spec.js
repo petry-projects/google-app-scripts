@@ -191,6 +191,52 @@ test.describe('deploy index.html', () => {
     expect(display).toBe('none')
   })
 
+  test('Step 3 appears after sign-in when previous deployments exist in localStorage', async ({
+    page,
+  }) => {
+    // Pre-seed localStorage with a previous deployment
+    await page.evaluate(() => {
+      localStorage.setItem(
+        'gas_copilot_deployed',
+        JSON.stringify({
+          'gmail-to-drive-by-labels\nPetry-Projects – Gmail to Drive By Labels':
+            'prev-script-123',
+        })
+      )
+    })
+
+    // Mock the Apps Script API so loadExistingDeployments can verify the project
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      if (url.includes('/projects/prev-script-123')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            scriptId: 'prev-script-123',
+            title: 'Petry-Projects – Gmail to Drive By Labels',
+          }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+    // Wait for loadExistingDeployments to complete and show Step 3
+    await expect(page.locator('#step3-card')).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('#btn-configure-prev-script-123')).toBeVisible()
+  })
+
+  test('Step 3 stays hidden after sign-in when no previous deployments exist', async ({
+    page,
+  }) => {
+    await signIn(page)
+    // Give loadExistingDeployments time to run (it's async)
+    await page.waitForTimeout(500)
+    await expect(page.locator('#step3-card')).toBeHidden()
+  })
+
   // ── Step 2 structure ──────────────────────────────────────────────────────
 
   test('Step 2 deploy button is inside the Step 2 card', async ({ page }) => {

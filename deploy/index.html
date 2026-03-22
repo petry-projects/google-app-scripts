@@ -669,13 +669,19 @@
           freq === 'days' ? '' : 'none'
       }
 
+      // Track which scriptIds are already rendered in Step 3
+      const renderedConfigCards = new Set()
+
       function renderConfigCards(projects) {
         const container = document.getElementById('step3-scripts')
-        container.innerHTML = projects
-          .map((p) => {
-            const safeId = escapeHtml(p.scriptId)
-            const safeCatalogId = escapeHtml(p.catalogId)
-            return `<div style="border:1px solid #dadce0;border-radius:6px;padding:16px;margin-bottom:12px;">
+        for (const p of projects) {
+          if (renderedConfigCards.has(p.scriptId)) continue
+          renderedConfigCards.add(p.scriptId)
+          const safeId = escapeHtml(p.scriptId)
+          const safeCatalogId = escapeHtml(p.catalogId)
+          container.insertAdjacentHTML(
+            'beforeend',
+            `<div id="config-card-${safeId}" style="border:1px solid #dadce0;border-radius:6px;padding:16px;margin-bottom:12px;">
             <div style="display:flex;justify-content:space-between;align-items:center;">
               <div>
                 <strong style="font-size:14px;">${escapeHtml(p.title)}</strong>
@@ -690,8 +696,8 @@
             </div>
             <div id="setup-section-${safeId}" style="display:none;margin-top:12px;"></div>
           </div>`
-          })
-          .join('')
+          )
+        }
         document.getElementById('step3-card').style.display = ''
       }
 
@@ -1073,6 +1079,42 @@
 
       // ── OAuth sign-in ─────────────────────────────────────────────────────────────
 
+      /**
+       * Scans localStorage for previously deployed scripts and verifies they
+       * still exist. If any are found, shows Step 3 with their config cards.
+       */
+      async function loadExistingDeployments() {
+        if (!accessToken) return
+        try {
+          const map = JSON.parse(
+            localStorage.getItem(DEPLOY_STORAGE_KEY) || '{}'
+          )
+          const entries = Object.entries(map)
+          if (entries.length === 0) return
+
+          const verified = []
+          for (const [key, scriptId] of entries) {
+            try {
+              const safeId = validateScriptId(scriptId)
+              await apiFetch(`${APPS_SCRIPT_API}/projects/${safeId}`)
+              // key is "catalogId\ntitle"
+              const parts = key.split('\n')
+              const catalogId = parts[0]
+              const title = parts.slice(1).join('\n')
+              verified.push({ scriptId: safeId, title, catalogId })
+            } catch {
+              // Project no longer exists or access denied — skip
+            }
+          }
+
+          if (verified.length > 0) {
+            renderConfigCards(verified)
+          }
+        } catch {
+          // best-effort; ignore errors
+        }
+      }
+
       function handleSignIn() {
         tokenClient = google.accounts.oauth2.initTokenClient({
           client_id: OAUTH_CLIENT_ID,
@@ -1091,6 +1133,7 @@
               '✅ Signed in — click to re-authenticate'
             fetchUserEmail()
             fetchUserCalendars()
+            loadExistingDeployments()
             setDeployEnabled()
           },
         })
