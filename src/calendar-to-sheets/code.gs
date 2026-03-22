@@ -1,3 +1,4 @@
+// @version 1.0.0
 /**
  * GAS wrapper for Calendar to Sheets.
  *

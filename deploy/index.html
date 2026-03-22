@@ -429,14 +429,16 @@
       const OAUTH_SCOPE =
         'https://www.googleapis.com/auth/script.projects ' +
         'https://www.googleapis.com/auth/calendar.readonly ' +
-        'https://www.googleapis.com/auth/drive.metadata.readonly ' +
+        'https://www.googleapis.com/auth/drive ' +
         'email'
 
       // Script catalog — mirrors src/deploy/index.js getScriptCatalog().
+      // version must match the // @version tag in each script's code.gs.
       const SCRIPT_CATALOG = [
         {
           id: 'gmail-to-drive-by-labels',
           name: 'Gmail to Drive By Labels',
+          version: '1.0.0',
           description:
             'Archives emails from specific Gmail labels into a Google Doc ' +
             '(text) and a Google Drive Folder (attachments).',
@@ -445,6 +447,7 @@
         {
           id: 'calendar-to-sheets',
           name: 'Calendar to Sheets',
+          version: '1.0.0',
           description:
             'Syncs Google Calendar events into a Google Sheet, keeping rows ' +
             'up to date on changes and deletions.',
@@ -453,11 +456,11 @@
         {
           id: 'calendar-to-briefing-doc',
           name: 'Calendar to Briefing Doc',
+          version: '2.0.0',
           description:
-            'Generates a weekly Google Doc briefing from all your calendars, grouped ' +
-            'by day with times, locations, attendees, and conflict warnings. ' +
-            'Shows which calendar each event comes from. Optionally emails the ' +
-            'briefing link to a configured recipient list.',
+            'Generates a weekly calendar briefing and emails it to configured ' +
+            'recipients, grouped by day with times, locations, attendees, and ' +
+            'conflict warnings. Shows which calendar each event comes from.',
           triggerFn: 'generateWeeklyBriefing',
         },
       ]
@@ -624,14 +627,22 @@
         const btn = document.getElementById('btn-deploy')
         btn.disabled = !(hasToken && hasScript)
 
-        // Update button label based on whether all selected scripts are already deployed
+        // Update button label based on deployment state
         if (hasScript) {
           const allDeployed = checked.every((el) =>
             deployedScripts.has(el.value)
           )
-          btn.textContent = allDeployed
-            ? 'Re-deploy to my account'
-            : 'Deploy to my account'
+          const anyNeedsUpdate = checked.some((el) => {
+            const v = scriptVersions.get(el.value)
+            return v && v.needsUpdate
+          })
+          if (anyNeedsUpdate) {
+            btn.textContent = 'Update & Deploy to my account'
+          } else if (allDeployed) {
+            btn.textContent = 'Re-deploy to my account'
+          } else {
+            btn.textContent = 'Deploy to my account'
+          }
         } else {
           btn.textContent = 'Deploy to my account'
         }
@@ -708,12 +719,19 @@
             <div style="display:flex;justify-content:space-between;align-items:center;">
               <div>
                 <strong style="font-size:14px;">${escapeHtml(p.title)}</strong>
+                <span id="version-info-${safeId}" style="margin-left:8px;"></span>
                 <a class="result-link" href="https://script.google.com/d/${safeId}/edit"
                    target="_blank" rel="noopener" style="display:block;margin-top:4px;font-size:13px;">
                    Open in Apps Script ↗</a>
               </div>
-              <button class="btn btn-outline" onclick="toggleConfigForm('${safeId}', '${safeCatalogId}')"
-                      id="btn-configure-${safeId}">Configure</button>
+              <div style="display:flex;gap:8px;">
+                <button class="btn btn-outline" onclick="updateScript('${safeId}', '${safeCatalogId}')"
+                        id="btn-update-${safeId}" style="display:none;background:#fff8e1;border-color:#f9a825;color:#e37400;">Update</button>
+                <button class="btn btn-outline" onclick="toggleConfigForm('${safeId}', '${safeCatalogId}')"
+                        id="btn-configure-${safeId}">Configure</button>
+                <button class="btn btn-outline" onclick="deleteScript('${safeId}', '${safeCatalogId}')"
+                        id="btn-delete-${safeId}" style="color:#c5221f;border-color:#f5c6cb;">Delete</button>
+              </div>
             </div>
             <div id="config-form-${safeId}" style="display:none;margin-top:16px;border-top:1px solid #dadce0;padding-top:16px;">
             </div>
@@ -826,11 +844,25 @@
             '<div class="field-group">' +
             '<label>At approximately</label>' +
             '<select class="cfg-field" data-key="triggerHour" id="cfg-triggerHour">' +
-            '<option value="5">5 AM</option>' +
-            '<option value="6">6 AM</option>' +
-            '<option value="7" selected>7 AM</option>' +
-            '<option value="8">8 AM</option>' +
-            '<option value="9">9 AM</option>' +
+            Array.from({ length: 24 }, (_, h) => {
+              const label =
+                h === 0
+                  ? '12 AM'
+                  : h < 12
+                    ? h + ' AM'
+                    : h === 12
+                      ? '12 PM'
+                      : h - 12 + ' PM'
+              return (
+                '<option value="' +
+                h +
+                '"' +
+                (h === 7 ? ' selected' : '') +
+                '>' +
+                label +
+                '</option>'
+              )
+            }).join('') +
             '</select>' +
             '</div>' +
             '</div>' +
@@ -922,6 +954,128 @@
             "', '" +
             catalogId +
             '\')">Save Configuration</button>'
+        }
+      }
+
+      /**
+       * Updates a deployed script to the latest version. Fetches the newest
+       * code.gs from GitHub and uploads it, preserving the user's config.gs.
+       */
+      async function updateScript(scriptId, catalogId) {
+        const btn = document.getElementById('btn-update-' + scriptId)
+        btn.disabled = true
+        btn.textContent = 'Updating...'
+        try {
+          // Fetch latest code.gs from GitHub
+          const files = await fetchScriptFiles(catalogId)
+          const latestCode = files.find((f) => f.name === 'code')
+          if (!latestCode) throw new Error('Could not fetch latest code.gs')
+
+          // Get current project content (preserves user's config.gs)
+          const project = await apiFetch(
+            `${APPS_SCRIPT_API}/projects/${scriptId}/content`
+          )
+          const updatedFiles = project.files.map((f) => {
+            if (f.name === 'code') return { ...f, source: latestCode.source }
+            return f
+          })
+
+          // Also update setup.gs with current trigger function
+          const catalogEntry = SCRIPT_CATALOG.find((s) => s.id === catalogId)
+          if (catalogEntry) {
+            const setupIdx = updatedFiles.findIndex((f) => f.name === 'setup')
+            const setupSource = buildSetupSource(catalogEntry.triggerFn)
+            if (setupIdx >= 0) {
+              updatedFiles[setupIdx] = {
+                ...updatedFiles[setupIdx],
+                source: setupSource,
+              }
+            }
+          }
+
+          await apiFetch(`${APPS_SCRIPT_API}/projects/${scriptId}/content`, {
+            method: 'PUT',
+            body: JSON.stringify({ files: updatedFiles }),
+          })
+
+          btn.textContent = '✅ Updated!'
+          btn.style.background = '#137333'
+          btn.style.color = '#fff'
+          btn.style.borderColor = '#137333'
+
+          // Refresh version info
+          scriptVersions.delete(catalogId)
+          await checkProjectVersion(scriptId, catalogId)
+        } catch (err) {
+          btn.textContent = 'Update'
+          btn.disabled = false
+          showStatus('error', `❌ Update failed: ${escapeHtml(err.message)}`)
+        }
+      }
+
+      /**
+       * Deletes (trashes) an Apps Script project via Drive API and removes
+       * it from the UI and local state.
+       */
+      async function deleteScript(scriptId, catalogId) {
+        if (
+          !confirm(
+            'Are you sure you want to delete this script project? This will move it to Trash in Google Drive.'
+          )
+        ) {
+          return
+        }
+        const btn = document.getElementById('btn-delete-' + scriptId)
+        btn.disabled = true
+        btn.textContent = 'Deleting...'
+        try {
+          // Trash the file via Drive API
+          await fetch(`https://www.googleapis.com/drive/v3/files/${scriptId}`, {
+            method: 'PATCH',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ trashed: true }),
+          })
+
+          // Remove from local state
+          deployedScripts.delete(catalogId)
+          scriptVersions.delete(catalogId)
+          renderedConfigCards.delete(catalogId)
+
+          // Remove localStorage entry
+          try {
+            const map = JSON.parse(
+              localStorage.getItem(DEPLOY_STORAGE_KEY) || '{}'
+            )
+            for (const key of Object.keys(map)) {
+              if (key.startsWith(catalogId + '\n')) delete map[key]
+            }
+            localStorage.setItem(DEPLOY_STORAGE_KEY, JSON.stringify(map))
+          } catch {
+            /* best-effort */
+          }
+
+          // Remove the card from DOM
+          const card = document.getElementById('config-card-' + scriptId)
+          if (card) card.remove()
+
+          // Hide Step 3 if no cards remain
+          const remaining = document.querySelectorAll(
+            '#step3-scripts [id^="config-card-"]'
+          )
+          if (remaining.length === 0) {
+            document.getElementById('step3-card').style.display = 'none'
+          }
+
+          // Refresh Step 2 badges
+          renderScriptList()
+          setDeployEnabled()
+        } catch (err) {
+          btn.textContent = 'Delete'
+          btn.disabled = false
+          showStatus('error', `❌ Delete failed: ${escapeHtml(err.message)}`)
         }
       }
 
@@ -1071,9 +1225,15 @@
         const container = document.getElementById('script-list')
         container.innerHTML = SCRIPT_CATALOG.map((s) => {
           const deployed = deployedScripts.has(s.id)
-          const badge = deployed
-            ? ' <span class="deploy-badge" style="display:inline-block;background:#e6f4ea;color:#137333;font-size:11px;padding:2px 8px;border-radius:10px;margin-left:6px;">Deployed</span>'
-            : ''
+          const vInfo = scriptVersions.get(s.id)
+          let badge = ''
+          if (deployed && vInfo && vInfo.needsUpdate) {
+            badge =
+              ' <span class="deploy-badge" style="display:inline-block;background:#fff8e1;color:#e37400;font-size:11px;padding:2px 8px;border-radius:10px;margin-left:6px;">Update available</span>'
+          } else if (deployed) {
+            badge =
+              ' <span class="deploy-badge" style="display:inline-block;background:#e6f4ea;color:#137333;font-size:11px;padding:2px 8px;border-radius:10px;margin-left:6px;">Deployed</span>'
+          }
           return `
     <label class="script-option" for="script-${s.id}">
       <input type="checkbox" name="script" id="script-${s.id}" value="${s.id}"
@@ -1111,9 +1271,22 @@
       // ── OAuth sign-in ─────────────────────────────────────────────────────────────
 
       /**
+       * Extracts the @version tag from a code.gs source string.
+       * Returns the version string or null if not found.
+       */
+      function parseDeployedVersion(source) {
+        if (!source) return null
+        const match = source.match(/\/\/\s*@version\s+(\S+)/)
+        return match ? match[1] : null
+      }
+
+      // catalogId → { deployedVersion, latestVersion, needsUpdate }
+      const scriptVersions = new Map()
+
+      /**
        * Searches Google Drive for existing Apps Script projects matching our
-       * "Petry-Projects – {name}" naming convention. Uses Drive API so detection
-       * works across browsers/devices — no localStorage dependency.
+       * "Petry-Projects – {name}" naming convention. Then fetches each project's
+       * content to check the deployed version against the catalog version.
        */
       async function loadExistingDeployments() {
         if (!accessToken) return
@@ -1145,22 +1318,70 @@
                   scriptId,
                   title: file.name,
                 })
-                // Also store in localStorage for handleDeploy idempotency
                 storeScriptId(s.id, file.name, scriptId)
                 break
               }
             }
           }
 
-          // Refresh Step 2 to show deployment badges
+          // Refresh Step 2 badges immediately (before version check)
           renderScriptList()
           setDeployEnabled()
 
           if (found.length > 0) {
             renderConfigCards(found)
           }
+
+          // Check versions in background (don't block UI)
+          for (const p of found) {
+            checkProjectVersion(p.scriptId, p.catalogId)
+          }
         } catch {
           // best-effort; ignore errors
+        }
+      }
+
+      /**
+       * Fetches a project's content to read its deployed @version tag,
+       * compares against the catalog version, and updates the UI.
+       */
+      async function checkProjectVersion(scriptId, catalogId) {
+        try {
+          const project = await apiFetch(
+            `${APPS_SCRIPT_API}/projects/${scriptId}/content`
+          )
+          const codeFile = (project.files || []).find((f) => f.name === 'code')
+          const deployedVersion = parseDeployedVersion(
+            codeFile ? codeFile.source : ''
+          )
+          const catalogEntry = SCRIPT_CATALOG.find((s) => s.id === catalogId)
+          const latestVersion = catalogEntry ? catalogEntry.version : null
+          const needsUpdate =
+            deployedVersion !== latestVersion && latestVersion != null
+
+          scriptVersions.set(catalogId, {
+            deployedVersion,
+            latestVersion,
+            needsUpdate,
+          })
+
+          // Update the badge in Step 2
+          renderScriptList()
+
+          // Update the config card header and Update button
+          const safeId = escapeHtml(scriptId)
+          const versionEl = document.getElementById('version-info-' + safeId)
+          if (versionEl) {
+            versionEl.innerHTML = needsUpdate
+              ? `<span style="color:#c5221f;font-size:12px;">v${escapeHtml(deployedVersion || '?')} → v${escapeHtml(latestVersion)}</span>`
+              : `<span style="color:#137333;font-size:12px;">v${escapeHtml(deployedVersion || latestVersion)} ✓</span>`
+          }
+          const updateBtn = document.getElementById('btn-update-' + safeId)
+          if (updateBtn) {
+            updateBtn.style.display = needsUpdate ? '' : 'none'
+          }
+        } catch {
+          // best-effort; version check is non-critical
         }
       }
 

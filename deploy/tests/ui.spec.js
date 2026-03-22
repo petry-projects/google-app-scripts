@@ -59,7 +59,7 @@ async function mockSuccessfulDeploy(page) {
     await route.fulfill({
       status: 200,
       contentType: 'text/plain',
-      body: '// mock script source\nfunction main() {}',
+      body: '// @version 1.0.0\n// mock script source\nfunction main() {}',
     })
   })
 
@@ -83,7 +83,11 @@ async function mockSuccessfulDeploy(page) {
           files: [
             { name: 'appsscript', type: 'JSON', source: '{}' },
             { name: 'config', type: 'SERVER_JS', source: '// config' },
-            { name: 'code', type: 'SERVER_JS', source: '// code' },
+            {
+              name: 'code',
+              type: 'SERVER_JS',
+              source: '// @version 1.0.0\n// code',
+            },
           ],
         }),
       })
@@ -256,6 +260,116 @@ test.describe('deploy index.html', () => {
     // Default mock returns empty files array
     await page.waitForTimeout(500)
     await expect(page.locator('#step3-card')).toBeHidden()
+  })
+
+  test('shows Update available badge when deployed version is outdated', async ({
+    page,
+  }) => {
+    // Drive returns a project; content has old version
+    await page.route(
+      'https://www.googleapis.com/drive/v3/files**',
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            files: [
+              {
+                id: 'old-version-id',
+                name: 'Petry-Projects \u2013 Gmail to Drive By Labels',
+              },
+            ],
+          }),
+        })
+      }
+    )
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      if (url.includes('/content')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            files: [
+              {
+                name: 'code',
+                type: 'SERVER_JS',
+                source: '// @version 0.9.0\nfunction main() {}',
+              },
+            ],
+          }),
+        })
+      } else if (url.includes('/projects/')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ scriptId: 'old-version-id' }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+    // Wait for version check to complete
+    await expect(
+      page.locator('.deploy-badge:has-text("Update available")')
+    ).toBeVisible({ timeout: 10000 })
+    // Update button should be visible in Step 3 card
+    await expect(page.locator('#btn-update-old-version-id')).toBeVisible()
+  })
+
+  test('shows Deployed badge when version is current', async ({ page }) => {
+    await page.route(
+      'https://www.googleapis.com/drive/v3/files**',
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            files: [
+              {
+                id: 'current-id',
+                name: 'Petry-Projects \u2013 Gmail to Drive By Labels',
+              },
+            ],
+          }),
+        })
+      }
+    )
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      if (url.includes('/content')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            files: [
+              {
+                name: 'code',
+                type: 'SERVER_JS',
+                source: '// @version 1.0.0\nfunction main() {}',
+              },
+            ],
+          }),
+        })
+      } else if (url.includes('/projects/')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ scriptId: 'current-id' }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+    await expect(
+      page.locator('.deploy-badge:has-text("Deployed")')
+    ).toBeVisible({ timeout: 10000 })
+    // Update button should be hidden
+    await expect(page.locator('#btn-update-current-id')).toBeHidden()
   })
 
   // ── Step 2 structure ──────────────────────────────────────────────────────
