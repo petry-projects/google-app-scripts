@@ -492,12 +492,18 @@
 
       // ── Google Picker ─────────────────────────────────────────────────────────────
 
+      // Google Picker view IDs — lowercase strings match the Picker API constants.
       const PICKER_VIEW_ID = {
-        DOCS: 'DOCUMENTS',
-        FOLDERS: 'FOLDERS',
-        SPREADSHEETS: 'SPREADSHEETS',
+        DOCUMENTS: 'documents',
+        FOLDERS: 'folders',
+        SPREADSHEETS: 'spreadsheets',
       }
 
+      /**
+       * Opens the Google Drive Picker for the given viewId.
+       * Calls callback({ id, name }) when the user picks a resource.
+       * Always opens in list view with folder navigation enabled.
+       */
       function openPicker(viewId, callback) {
         if (typeof gapi === 'undefined') {
           alert(
@@ -520,6 +526,8 @@
             view.setSelectFolderEnabled(true)
           }
 
+          // Add a Shared Drives view so the left-side navigation panel
+          // appears (it only renders when there are multiple views).
           const sharedView = new google.picker.DocsView(viewId)
           sharedView.setIncludeFolders(true)
           sharedView.setEnableDrives(true)
@@ -973,7 +981,7 @@
             '<input type="text" class="cfg-field" data-key="docId" id="cfg-docId-' +
             scriptId +
             '" placeholder="Paste Doc ID or click Browse" style="flex:1" />' +
-            '<button type="button" class="btn btn-outline" onclick="browseForFile(\'DOCUMENTS\', \'cfg-docId-' +
+            '<button type="button" class="btn btn-outline" onclick="browseForFile(\'documents\', \'cfg-docId-' +
             scriptId +
             '\')" style="white-space:nowrap">Browse</button>' +
             '</div>' +
@@ -985,7 +993,7 @@
             '<input type="text" class="cfg-field" data-key="folderId" id="cfg-folderId-' +
             scriptId +
             '" placeholder="Paste Folder ID or click Browse" style="flex:1" />' +
-            '<button type="button" class="btn btn-outline" onclick="browseForFile(\'FOLDERS\', \'cfg-folderId-' +
+            '<button type="button" class="btn btn-outline" onclick="browseForFile(\'folders\', \'cfg-folderId-' +
             scriptId +
             '\')" style="white-space:nowrap">Browse</button>' +
             '</div>' +
@@ -1031,7 +1039,7 @@
             '<input type="text" class="cfg-field" data-key="spreadsheetId" id="cfg-spreadsheetId-' +
             scriptId +
             '" placeholder="Paste Spreadsheet ID or click Browse" style="flex:1" />' +
-            '<button type="button" class="btn btn-outline" onclick="browseForFile(\'SPREADSHEETS\', \'cfg-spreadsheetId-' +
+            '<button type="button" class="btn btn-outline" onclick="browseForFile(\'spreadsheets\', \'cfg-spreadsheetId-' +
             scriptId +
             '\')" style="white-space:nowrap">Browse</button>' +
             '</div>' +
