@@ -109,6 +109,7 @@ function createDocument(id = 'doc1') {
   const paragraphs = []
   return {
     id,
+    getId: () => id,
     getBody: () => ({
       appendParagraph: (text) => {
         const para = {
@@ -127,6 +128,9 @@ function createDocument(id = 'doc1') {
         }
         paragraphs.push(para)
         return para
+      },
+      clear: () => {
+        paragraphs.length = 0
       },
       getParagraphs: () => paragraphs.slice(),
       getNumChildren: () => paragraphs.length,
@@ -183,8 +187,10 @@ function createDocument(id = 'doc1') {
 
 function createGmailApp() {
   const labels = new Map()
+  const sentEmails = []
   return {
     __labels: labels,
+    __sentEmails: sentEmails,
     getUserLabelByName: (name) => labels.get(name) || null,
     createLabel: (name) => {
       if (labels.has(name)) return labels.get(name)
@@ -192,6 +198,7 @@ function createGmailApp() {
       labels.set(name, l)
       return l
     },
+    sendEmail: (to, subject, body) => sentEmails.push({ to, subject, body }),
     // Helpers for tests
     __addThreadWithLabels: (labelNames, messages) => {
       const thread = createThread(messages || [])
@@ -208,6 +215,7 @@ function createGmailApp() {
     // Reset
     __reset: () => {
       labels.clear()
+      sentEmails.length = 0
       threadIdCounter = 0
     },
   }
@@ -222,6 +230,7 @@ function createCalendarEvent({
   description = '',
   location = '',
   attendees = [],
+  allDay = false,
 } = {}) {
   return {
     getId: () => id,
@@ -231,14 +240,18 @@ function createCalendarEvent({
     getDescription: () => description,
     getLocation: () => location,
     getGuestList: () => (attendees || []).map((a) => ({ getEmail: () => a })),
+    isAllDayEvent: () => allDay,
   }
 }
 
-function createCalendar(id = 'primary') {
+function createCalendar(id = 'primary', name) {
+  const calName = name || id
   const events = []
   return {
     id,
     __events: events,
+    getId: () => id,
+    getName: () => calName,
     getEvents: (start, end) =>
       events.filter(
         (e) => e.getStartTime() >= start && e.getStartTime() <= end
@@ -403,13 +416,20 @@ function installGlobals(globals) {
   const calendar = createCalendar()
   const spreadsheet = createSpreadsheet()
   const properties = createPropertiesService()
+  const calendars = [calendar]
 
   globals.GmailApp = gmail
   globals.DriveApp = drive
   globals.DocumentApp = docs
   globals.CalendarApp = {
     getDefaultCalendar: () => calendar,
-    getCalendarById: (id) => calendar,
+    getCalendarById: (id) => calendars.find((c) => c.id === id) || calendar,
+    getAllCalendars: () => calendars.slice(),
+    __addCalendar: (cal) => calendars.push(cal),
+    __resetCalendars: () => {
+      calendars.length = 0
+      calendars.push(calendar)
+    },
   }
   globals.SpreadsheetApp = {
     openById: (id) => spreadsheet,
@@ -438,6 +458,9 @@ function resetAll(globals) {
     globals.__mocks.calendar.__reset()
     globals.__mocks.spreadsheet.__reset()
     globals.__mocks.properties.__reset()
+    if (globals.CalendarApp && globals.CalendarApp.__resetCalendars) {
+      globals.CalendarApp.__resetCalendars()
+    }
   }
 }
 
@@ -447,4 +470,5 @@ module.exports = {
   createMessage,
   createBlob,
   createCalendarEvent,
+  createCalendar,
 }

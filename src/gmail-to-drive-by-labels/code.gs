@@ -1,3 +1,4 @@
+// @version 1.0.0
 /**
  * Main function to trigger the processing of emails.
  * Reads settings from Config.gs
