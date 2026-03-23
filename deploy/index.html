@@ -425,12 +425,17 @@
       const OAUTH_CLIENT_ID =
         '873060687431-smmudbpd5rlogt0r7immp0u3tdqb2t3p.apps.googleusercontent.com'
 
-      // Required OAuth scopes: Apps Script projects + Calendar (for calendar picker)
-      // + email (for default recipient) + Drive metadata (to detect existing projects).
+      // Required OAuth scopes:
+      //   script.projects  — create, read, and update Apps Script projects
+      //   drive.readonly   — detect existing projects + browse via Picker API
+      //   gmail.labels     — list Gmail labels for config dropdowns
+      //   calendar.readonly — list calendars for config dropdowns
+      //   email            — get user's email for default recipient
       const OAUTH_SCOPE =
         'https://www.googleapis.com/auth/script.projects ' +
+        'https://www.googleapis.com/auth/drive.readonly ' +
+        'https://www.googleapis.com/auth/gmail.labels ' +
         'https://www.googleapis.com/auth/calendar.readonly ' +
-        'https://www.googleapis.com/auth/drive ' +
         'email'
 
       // Script catalog — mirrors src/deploy/index.js getScriptCatalog().
@@ -574,6 +579,7 @@
       let accessToken = null
       let userCalendars = [] // populated after sign-in
       let userEmail = '' // populated after sign-in
+      let userGmailLabels = [] // populated after sign-in
       // catalogId → { scriptId, title } for verified existing deployments
       const deployedScripts = new Map()
 
@@ -765,6 +771,24 @@
         }
       }
 
+      async function fetchGmailLabels() {
+        if (!accessToken) return
+        try {
+          const res = await fetch(
+            'https://gmail.googleapis.com/gmail/v1/users/me/labels',
+            { headers: { Authorization: `Bearer ${accessToken}` } }
+          )
+          if (!res.ok) return
+          const data = await res.json()
+          userGmailLabels = (data.labels || [])
+            .filter((l) => l.type === 'user')
+            .map((l) => l.name)
+            .sort()
+        } catch {
+          // best-effort
+        }
+      }
+
       // ── Step 3 – Post-deploy configuration UI ───────────────────────────────────
 
       function toggleFrequencyFields() {
@@ -808,8 +832,6 @@
                         id="btn-update-${safeId}" style="display:none;background:#fff8e1;border-color:#f9a825;color:#e37400;">Update</button>
                 <button class="btn btn-outline" onclick="toggleConfigForm('${safeId}', '${safeCatalogId}')"
                         id="btn-configure-${safeId}">Configure</button>
-                <button class="btn btn-outline" onclick="deleteScript('${safeId}', '${safeCatalogId}')"
-                        id="btn-delete-${safeId}" style="color:#c5221f;border-color:#f5c6cb;">Delete</button>
               </div>
             </div>
             <div id="config-form-${safeId}" style="display:none;margin-top:16px;border-top:1px solid #dadce0;padding-top:16px;">
@@ -966,14 +988,44 @@
             catalogId +
             '\')">Save Configuration</button>'
         } else if (catalogId === 'gmail-to-drive-by-labels') {
+          let triggerLabelHtml, processedLabelHtml
+          if (userGmailLabels.length > 0) {
+            const opts = userGmailLabels
+              .map(
+                (l) =>
+                  '<option value="' +
+                  escapeHtml(l) +
+                  '">' +
+                  escapeHtml(l) +
+                  '</option>'
+              )
+              .join('')
+            triggerLabelHtml =
+              '<select class="cfg-field" data-key="triggerLabel">' +
+              '<option value="">— Select label —</option>' +
+              opts +
+              '</select>'
+            processedLabelHtml =
+              '<select class="cfg-field" data-key="processedLabel">' +
+              '<option value="">— Select label —</option>' +
+              opts +
+              '</select>'
+          } else {
+            triggerLabelHtml =
+              '<input type="text" class="cfg-field" data-key="triggerLabel" placeholder="e.g. receipts" />'
+            processedLabelHtml =
+              '<input type="text" class="cfg-field" data-key="processedLabel" placeholder="e.g. receipts-archived" />'
+          }
           container.innerHTML =
             '<div class="field-group">' +
             '<label>Trigger Gmail Label</label>' +
-            '<input type="text" class="cfg-field" data-key="triggerLabel" placeholder="e.g. receipts" />' +
+            triggerLabelHtml +
+            '<div class="field-help">Emails with this label will be processed.</div>' +
             '</div>' +
             '<div class="field-group">' +
             '<label>Processed Gmail Label</label>' +
-            '<input type="text" class="cfg-field" data-key="processedLabel" placeholder="e.g. receipts-archived" />' +
+            processedLabelHtml +
+            '<div class="field-help">After processing, emails are moved to this label.</div>' +
             '</div>' +
             '<div class="field-group">' +
             '<label>Google Doc ID (for email text)</label>' +
@@ -1515,6 +1567,7 @@
             // Fetch user data and detect existing deployments in parallel
             fetchUserEmail()
             fetchUserCalendars()
+            fetchGmailLabels()
             loadExistingDeployments()
             setDeployEnabled()
           },

@@ -156,6 +156,22 @@ test.describe('deploy index.html', () => {
       }
     })
 
+    // Mock Gmail API (separate domain)
+    await page.route('https://gmail.googleapis.com/**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          labels: [
+            { name: 'receipts', type: 'user' },
+            { name: 'receipts-archived', type: 'user' },
+            { name: 'invoices', type: 'user' },
+            { name: 'INBOX', type: 'system' },
+          ],
+        }),
+      })
+    })
+
     // Inject the synchronous GIS mock before page scripts run
     await page.addInitScript(injectGisMock)
 
@@ -624,17 +640,18 @@ test.describe('deploy index.html', () => {
     await page.locator('#btn-configure-mock-project-id-abc').click()
 
     const form = page.locator('#config-form-mock-project-id-abc')
-    await expect(form.locator('input[data-key="triggerLabel"]')).toBeVisible()
-    await expect(form.locator('input[data-key="processedLabel"]')).toBeVisible()
-    await expect(form.locator('input[data-key="docId"]')).toBeVisible()
-    await expect(form.locator('input[data-key="folderId"]')).toBeVisible()
+    // Labels are dropdowns (populated from Gmail API mock)
+    await expect(form.locator('[data-key="triggerLabel"]')).toBeVisible()
+    await expect(form.locator('[data-key="processedLabel"]')).toBeVisible()
+    await expect(form.locator('[data-key="docId"]')).toBeVisible()
+    await expect(form.locator('[data-key="folderId"]')).toBeVisible()
 
-    await form.locator('input[data-key="triggerLabel"]').fill('receipts')
+    await form.locator('[data-key="triggerLabel"]').selectOption('receipts')
     await form
-      .locator('input[data-key="processedLabel"]')
-      .fill('receipts-archived')
-    await form.locator('input[data-key="docId"]').fill('doc-abc')
-    await form.locator('input[data-key="folderId"]').fill('folder-xyz')
+      .locator('[data-key="processedLabel"]')
+      .selectOption('receipts-archived')
+    await form.locator('[data-key="docId"]').fill('doc-abc')
+    await form.locator('[data-key="folderId"]').fill('folder-xyz')
     await form.locator('.btn-primary').click()
     await expect(form.locator('.btn-primary')).toContainText('Saved')
   })
