@@ -95,7 +95,7 @@ function detectConflicts(eventTuples) {
  * @returns {string}
  */
 function formatConflictWarning(conflicts, formatTime) {
-  if (!conflicts?.length) return ''
+  if (!conflicts || !conflicts.length) return ''
   return conflicts
     .map((c) => {
       const aLabel = c.a.calendarName
@@ -122,7 +122,7 @@ function formatConflictWarning(conflicts, formatTime) {
 function groupEventsByDay(events, getDateKey) {
   const map = new Map()
   for (const item of events) {
-    const evt = item?.event ?? item
+    const evt = item && item.event ? item.event : item
     const key = getDateKey(evt.getStartTime())
     if (!map.has(key)) map.set(key, [])
     map.get(key).push(item)
@@ -213,7 +213,7 @@ function formatBriefing(title, groupedEvents, formatTime) {
     sections.push(dayLabel)
 
     // Detect if items are tuples or plain events
-    const isTuple = items.length > 0 && items[0]?.event
+    const isTuple = items.length > 0 && items[0] && items[0].event
     const tuples = isTuple
       ? items
       : items.map((e) => ({ event: e, calendarName: null }))
@@ -249,7 +249,7 @@ function formatBriefing(title, groupedEvents, formatTime) {
  * @param {string} body - The full briefing text
  */
 function emailBriefing(gmailApp, recipients, subject, body) {
-  if (!recipients?.length) return
+  if (!recipients || !recipients.length) return
   for (const recipient of recipients) {
     gmailApp.sendEmail(recipient, subject, body)
   }
@@ -266,7 +266,7 @@ function emailBriefing(gmailApp, recipients, subject, body) {
  */
 function shouldRunNow(config, now, lastRunMs) {
   const hour = now.getHours()
-  const scheduleHour = config.scheduleHour ?? 7
+  const scheduleHour = config.scheduleHour != null ? config.scheduleHour : 7
 
   if (hour !== scheduleHour) return false
 
@@ -312,7 +312,7 @@ function generateBriefingForConfig(
   getDateKey,
   formatTime
 ) {
-  if (!config.emailRecipients?.length) {
+  if (!config.emailRecipients || !config.emailRecipients.length) {
     throw new Error('emailRecipients is required')
   }
 

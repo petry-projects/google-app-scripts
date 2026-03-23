@@ -5,8 +5,17 @@ global.Session = {
 
 global.Utilities = {
   formatDate: (date, tz, format) => {
-    // Simple deterministic formatting for tests
     const d = new Date(date)
+    if (format === 'yyyy-MM-dd') {
+      return d.toISOString().slice(0, 10)
+    }
+    if (format === 'h:mm a') {
+      const h = d.getUTCHours()
+      const m = d.getUTCMinutes()
+      const ampm = h >= 12 ? 'PM' : 'AM'
+      const h12 = h % 12 || 12
+      return `${h12}:${String(m).padStart(2, '0')} ${ampm}`
+    }
     return d.toISOString()
   },
   // Provide a simple sleep stub used in code

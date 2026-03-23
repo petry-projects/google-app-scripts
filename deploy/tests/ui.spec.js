@@ -7,7 +7,6 @@
  * External dependencies are fully mocked:
  *   - Google Identity Services (GIS) script blocked via page.route() and
  *     replaced with a synchronous mock injected via addInitScript.
- *   - Google APIs (gapi / Drive Picker) script blocked and replaced with mock.
  *   - GitHub raw file requests intercepted via page.route().
  *   - Apps Script REST API requests intercepted via page.route().
  */
@@ -21,7 +20,7 @@ const PAGE_URL = `file://${path.resolve(__dirname, '..', 'index.html')}`
 
 /**
  * Injected into the browser before any page scripts run.
- * Sets window.google.accounts.oauth2 with a synchronous stub.
+ * Replaces google.accounts.oauth2 with a synchronous stub.
  *
  * Modes (controlled via window.__authMode):
  *   'success' – immediately calls callback with a fake access_token
@@ -31,137 +30,36 @@ function injectGisMock() {
   window.__authMode = 'success'
   window.__clientIdUsed = null
 
-  // Use || {} so this is safe to call before or after injectGapiMock.
-  window.google = window.google || {}
-  window.google.accounts = {
-    oauth2: {
-      initTokenClient(config) {
-        window.__clientIdUsed = config.client_id
-        return {
-          requestAccessToken() {
-            if (window.__authMode === 'success') {
-              config.callback({ access_token: 'mock-access-token-xyz' })
-            } else {
-              config.callback({ error: 'access_denied' })
-            }
-          },
-        }
-      },
-    },
-  }
-}
-
-// ── gapi / Drive Picker mock ──────────────────────────────────────────────────
-
-/**
- * Injected after injectGisMock.
- * Provides window.gapi and window.google.picker stubs so that
- * openPicker() and the config panel work without real Google APIs.
- */
-function injectGapiMock() {
-  window.__pickerOpened = false
-  window.__pickerViewId = null
-  window.__pickerCallback = null
-
-  // gapi.load immediately invokes the callback (picker module "loaded")
-  window.gapi = {
-    load(module, callback) {
-      if (typeof callback === 'function') callback()
-    },
-    client: {
-      drive: {
-        files: {
-          get({ fileId }) {
-            return Promise.resolve({
-              result: { name: 'Folder for ' + fileId },
-            })
-          },
+  window.google = {
+    accounts: {
+      oauth2: {
+        initTokenClient(config) {
+          window.__clientIdUsed = config.client_id
+          return {
+            requestAccessToken() {
+              if (window.__authMode === 'success') {
+                config.callback({ access_token: 'mock-access-token-xyz' })
+              } else {
+                config.callback({ error: 'access_denied' })
+              }
+            },
+          }
         },
       },
-    },
-  }
-
-  // Use || {} so this is safe to call before or after injectGisMock.
-  window.google = window.google || {}
-  window.google.picker = {
-    ViewId: {
-      DOCUMENTS: 'documents',
-      FOLDERS: 'folders',
-      SPREADSHEETS: 'spreadsheets',
-    },
-    Response: {
-      ACTION: 'action',
-      DOCUMENTS: 'docs',
-    },
-    Action: {
-      PICKED: 'picked',
-    },
-    Document: {
-      ID: 'id',
-      NAME: 'name',
-    },
-    Feature: {
-      SUPPORT_DRIVES: 'supportDrives',
-    },
-    DocsViewMode: {
-      LIST: 'list',
-      GRID: 'grid',
-    },
-    DocsView: class {
-      constructor(viewId) {
-        window.__pickerViewId = viewId
-      }
-      setSelectFolderEnabled() {
-        return this
-      }
-      setIncludeFolders() {
-        return this
-      }
-      setParent() {
-        return this
-      }
-      setEnableDrives() {
-        return this
-      }
-      setMode() {
-        return this
-      }
-    },
-    PickerBuilder: class {
-      addView() {
-        return this
-      }
-      enableFeature() {
-        return this
-      }
-      setOAuthToken() {
-        return this
-      }
-      setCallback(cb) {
-        window.__pickerCallback = cb
-        return this
-      }
-      build() {
-        return {
-          setVisible(v) {
-            if (v) window.__pickerOpened = true
-          },
-        }
-      }
     },
   }
 }
 
 // ── Route helpers ─────────────────────────────────────────────────────────────
 
-/** Sets up routes for a complete, successful deploy + configure flow. */
+/** Sets up routes for a complete, successful deploy flow. */
 async function mockSuccessfulDeploy(page) {
   // GitHub raw source files
   await page.route('https://raw.githubusercontent.com/**', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'text/plain',
-      body: '// mock script source\nfunction main() {}',
+      body: '// @version 1.0.0\n// mock script source\nfunction main() {}',
     })
   })
 
@@ -177,14 +75,19 @@ async function mockSuccessfulDeploy(page) {
         body: JSON.stringify({ scriptId: 'mock-project-id-abc' }),
       })
     } else if (method === 'GET' && url.includes('/content')) {
+      // Return project content for saveConfig GET request
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
           files: [
             { name: 'appsscript', type: 'JSON', source: '{}' },
-            { name: 'code', type: 'SERVER_JS', source: '// code' },
             { name: 'config', type: 'SERVER_JS', source: '// config' },
+            {
+              name: 'code',
+              type: 'SERVER_JS',
+              source: '// @version 1.0.0\n// code',
+            },
           ],
         }),
       })
@@ -194,55 +97,17 @@ async function mockSuccessfulDeploy(page) {
         contentType: 'application/json',
         body: JSON.stringify({}),
       })
-    } else if (method === 'GET' && url.includes('/deployments')) {
+    } else if (method === 'GET' && url.includes('/projects/')) {
+      // GET project metadata (for idempotency check)
+      const scriptId = url.split('/projects/')[1].split('/')[0]
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({
-          deployments: [{ deploymentId: 'deploy-1' }],
-        }),
-      })
-    } else if (method === 'GET' && /\/projects\/[^/]+$/.test(url)) {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          scriptId: 'mock-project-id-abc',
-          title: 'Mock Project',
-        }),
+        body: JSON.stringify({ scriptId, title: 'Mock Project' }),
       })
     } else {
       await route.continue()
     }
-  })
-
-  // Gmail labels API
-  await page.route('https://gmail.googleapis.com/**', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        labels: [
-          { id: 'Label_1', name: 'inbox' },
-          { id: 'Label_2', name: 'archive' },
-          { id: 'Label_3', name: 'work' },
-        ],
-      }),
-    })
-  })
-
-  // Calendar list API
-  await page.route('https://www.googleapis.com/calendar/**', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        items: [
-          { id: 'primary', summary: 'Primary Calendar' },
-          { id: 'work@example.com', summary: 'Work' },
-        ],
-      }),
-    })
   })
 }
 
@@ -255,20 +120,60 @@ async function signIn(page) {
 
 test.describe('deploy index.html', () => {
   test.beforeEach(async ({ page }) => {
-    // Block external scripts so they cannot overwrite our mocks
+    // Block the real GIS script so it cannot overwrite our mock
     await page.route('https://accounts.google.com/**', (route) => route.abort())
-    await page.route('https://apis.google.com/**', (route) => route.abort())
-    // Abort Gmail / Calendar by default; individual tests may override.
-    await page.route('https://gmail.googleapis.com/**', (route) =>
-      route.abort()
-    )
-    await page.route('https://www.googleapis.com/calendar/**', (route) =>
-      route.abort()
-    )
 
-    // Inject mocks before page scripts run (order matters: GIS first, then gapi)
+    // Mock Google APIs (Calendar + userinfo + Drive)
+    await page.route('https://www.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      if (url.includes('calendarList')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            items: [
+              { id: 'primary@gmail.com', summary: 'Primary', primary: true },
+              { id: 'work@group.calendar', summary: 'Work' },
+              { id: 'family@group.calendar', summary: 'Family' },
+            ],
+          }),
+        })
+      } else if (url.includes('userinfo')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ email: 'testuser@gmail.com' }),
+        })
+      } else if (url.includes('drive/v3/files')) {
+        // Default: no existing projects found
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ files: [] }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+
+    // Mock Gmail API (separate domain)
+    await page.route('https://gmail.googleapis.com/**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          labels: [
+            { name: 'receipts', type: 'user' },
+            { name: 'receipts-archived', type: 'user' },
+            { name: 'invoices', type: 'user' },
+            { name: 'INBOX', type: 'system' },
+          ],
+        }),
+      })
+    })
+
+    // Inject the synchronous GIS mock before page scripts run
     await page.addInitScript(injectGisMock)
-    await page.addInitScript(injectGapiMock)
 
     await page.goto(PAGE_URL)
   })
@@ -284,11 +189,24 @@ test.describe('deploy index.html', () => {
     await expect(page.locator('header p')).toContainText('Deploy a script')
   })
 
-  test('renders two numbered step badges', async ({ page }) => {
+  test('Step 2 is hidden before sign-in', async ({ page }) => {
+    await expect(page.locator('#step2-card')).toBeHidden()
+  })
+
+  test('Step 2 appears after sign-in', async ({ page }) => {
+    await signIn(page)
+    await expect(page.locator('#step2-card')).toBeVisible()
+  })
+
+  test('renders step badges including hidden steps', async ({ page }) => {
     const badges = page.locator('.step-badge')
-    await expect(badges).toHaveCount(2)
+    // All 3 badges exist in the DOM
+    await expect(badges).toHaveCount(3)
     await expect(badges.nth(0)).toHaveText('1')
     await expect(badges.nth(1)).toHaveText('2')
+    await expect(badges.nth(2)).toHaveText('3')
+    // Only Steps 1 and 2 are visible; Step 3 badge is inside hidden card
+    await expect(page.locator('#step3-card')).toBeHidden()
   })
 
   test('renders sign-in button', async ({ page }) => {
@@ -298,28 +216,212 @@ test.describe('deploy index.html', () => {
     )
   })
 
+  // ── Step 3 hidden on load ─────────────────────────────────────────────────
+
+  test('Step 3 card is hidden on page load', async ({ page }) => {
+    await expect(page.locator('#step3-card')).toBeHidden()
+    // Verify it uses display:none
+    const display = await page
+      .locator('#step3-card')
+      .evaluate((el) => el.style.display)
+    expect(display).toBe('none')
+  })
+
+  test('Step 3 appears after sign-in when projects exist in Google Drive', async ({
+    page,
+  }) => {
+    // Override the default Drive API mock to return existing projects
+    await page.route(
+      'https://www.googleapis.com/drive/v3/files**',
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            files: [
+              {
+                id: 'drive-gmail-123',
+                name: 'Petry-Projects \u2013 Gmail to Drive By Labels',
+              },
+              {
+                id: 'drive-sheets-456',
+                name: 'Petry-Projects \u2013 Calendar to Sheets',
+              },
+              {
+                id: 'drive-briefing-789',
+                name: 'Petry-Projects \u2013 Calendar to Briefing Doc',
+              },
+            ],
+          }),
+        })
+      }
+    )
+
+    await signIn(page)
+    // Wait for loadExistingDeployments (Drive API) to complete
+    await expect(page.locator('#step3-card')).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('#btn-configure-drive-gmail-123')).toBeVisible()
+    await expect(page.locator('#btn-configure-drive-sheets-456')).toBeVisible()
+    await expect(
+      page.locator('#btn-configure-drive-briefing-789')
+    ).toBeVisible()
+    // Step 2 should show 3 "Deployed" badges
+    await expect(page.locator('.deploy-badge')).toHaveCount(3)
+  })
+
+  test('Step 3 stays hidden after sign-in when no projects in Drive', async ({
+    page,
+  }) => {
+    await signIn(page)
+    // Default mock returns empty files array
+    await page.waitForTimeout(500)
+    await expect(page.locator('#step3-card')).toBeHidden()
+  })
+
+  test('shows Update available badge when deployed version is outdated', async ({
+    page,
+  }) => {
+    // Drive returns a project; content has old version
+    await page.route(
+      'https://www.googleapis.com/drive/v3/files**',
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            files: [
+              {
+                id: 'old-version-id',
+                name: 'Petry-Projects \u2013 Gmail to Drive By Labels',
+              },
+            ],
+          }),
+        })
+      }
+    )
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      if (url.includes('/content')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            files: [
+              {
+                name: 'code',
+                type: 'SERVER_JS',
+                source: '// @version 0.9.0\nfunction main() {}',
+              },
+            ],
+          }),
+        })
+      } else if (url.includes('/projects/')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ scriptId: 'old-version-id' }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+    // Wait for version check to complete
+    await expect(
+      page.locator('.deploy-badge:has-text("Update available")')
+    ).toBeVisible({ timeout: 10000 })
+    // Update button should be visible in Step 3 card
+    await expect(page.locator('#btn-update-old-version-id')).toBeVisible()
+  })
+
+  test('shows Deployed badge when version is current', async ({ page }) => {
+    await page.route(
+      'https://www.googleapis.com/drive/v3/files**',
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            files: [
+              {
+                id: 'current-id',
+                name: 'Petry-Projects \u2013 Gmail to Drive By Labels',
+              },
+            ],
+          }),
+        })
+      }
+    )
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      if (url.includes('/content')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            files: [
+              {
+                name: 'code',
+                type: 'SERVER_JS',
+                source: '// @version 1.0.0\nfunction main() {}',
+              },
+            ],
+          }),
+        })
+      } else if (url.includes('/projects/')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ scriptId: 'current-id' }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+    await expect(
+      page.locator('.deploy-badge:has-text("Deployed")')
+    ).toBeVisible({ timeout: 10000 })
+    // Update button should be hidden
+    await expect(page.locator('#btn-update-current-id')).toBeHidden()
+  })
+
+  // ── Step 2 structure ──────────────────────────────────────────────────────
+
+  test('Step 2 deploy button is inside the Step 2 card', async ({ page }) => {
+    await signIn(page)
+    const step2Card = page.locator('#step2-card')
+    await expect(step2Card.locator('#btn-deploy')).toBeVisible()
+    await expect(step2Card.locator('h2')).toContainText('Choose scripts')
+  })
+
   // ── renderScriptList ────────────────────────────────────────────────────────
 
-  test('script list is populated on page load', async ({ page }) => {
+  test('script list is populated after sign-in', async ({ page }) => {
+    await signIn(page)
     const checkboxes = page.locator('#script-list input[type="checkbox"]')
-    await expect(checkboxes).toHaveCount(2)
+    await expect(checkboxes).toHaveCount(3)
   })
 
   test('script list shows Gmail to Drive By Labels option', async ({
     page,
   }) => {
+    await signIn(page)
     await expect(
       page.locator('#script-list input[value="gmail-to-drive-by-labels"]')
-    ).toBeAttached()
+    ).toBeVisible()
     await expect(page.locator('#script-list')).toContainText(
       'Gmail to Drive By Labels'
     )
   })
 
   test('script list shows Calendar to Sheets option', async ({ page }) => {
+    await signIn(page)
     await expect(
       page.locator('#script-list input[value="calendar-to-sheets"]')
-    ).toBeAttached()
+    ).toBeVisible()
     await expect(page.locator('#script-list')).toContainText(
       'Calendar to Sheets'
     )
@@ -386,22 +488,21 @@ test.describe('deploy index.html', () => {
   test('handleDeploy shows error when called without an access token', async ({
     page,
   }) => {
-    // Programmatically select a script and force-enable the button without
-    // signing in (which would show the deploy section and set an access token).
+    // Force-show Step 2 and enable button without signing in
     await page.evaluate(() => {
-      const cb = document.querySelector(
-        '#script-list input[value="gmail-to-drive-by-labels"]'
-      )
-      if (cb) cb.checked = true
+      document.getElementById('step2-card').style.display = ''
       document.getElementById('btn-deploy').disabled = false
     })
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
     await page.evaluate(() => window.handleDeploy())
     await expect(page.locator('.status-error')).toContainText('sign in first')
   })
 
   // ── handleDeploy – success flow ─────────────────────────────────────────────
 
-  test('handleDeploy success shows link to the new Apps Script project', async ({
+  test('handleDeploy success shows status-ok after deploy', async ({
     page,
   }) => {
     await mockSuccessfulDeploy(page)
@@ -412,14 +513,6 @@ test.describe('deploy index.html', () => {
     await page.locator('#btn-deploy').click()
 
     await expect(page.locator('.status-ok')).toBeVisible()
-    await expect(page.locator('.result-link')).toHaveAttribute(
-      'href',
-      'https://script.google.com/d/mock-project-id-abc/edit'
-    )
-    await expect(page.locator('.result-link')).toHaveAttribute(
-      'target',
-      '_blank'
-    )
   })
 
   test('handleDeploy success shows the script name in the message', async ({
@@ -436,6 +529,248 @@ test.describe('deploy index.html', () => {
     )
   })
 
+  test('handleDeploy success shows link to the new Apps Script project in Step 3', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+
+    await expect(page.locator('.status-ok')).toBeVisible()
+    // Result link appears in Step 3 card
+    const step3Link = page.locator('#step3-card .result-link')
+    await expect(step3Link).toHaveAttribute(
+      'href',
+      'https://script.google.com/d/mock-project-id-abc/edit'
+    )
+    await expect(step3Link).toHaveAttribute('target', '_blank')
+  })
+
+  test('Step 3 appears after successful deploy with Configure buttons', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    await expect(page.locator('#step3-card')).toBeVisible()
+    await expect(
+      page.locator('#btn-configure-mock-project-id-abc')
+    ).toBeVisible()
+  })
+
+  test('Step 3 shows a card for each deployed script', async ({ page }) => {
+    let projectIdCounter = 0
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        projectIdCounter++
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ scriptId: `project-${projectIdCounter}` }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({}),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    // Two configure buttons — one per deployed script
+    await expect(page.locator('#btn-configure-project-1')).toBeVisible()
+    await expect(page.locator('#btn-configure-project-2')).toBeVisible()
+  })
+
+  test('Configure button toggles config form visibility', async ({ page }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    const configForm = page.locator('#config-form-mock-project-id-abc')
+    // Config form is hidden initially
+    await expect(configForm).toBeHidden()
+
+    // Click Configure to expand
+    await page.locator('#btn-configure-mock-project-id-abc').click()
+    await expect(configForm).toBeVisible()
+
+    // Click again to collapse
+    await page.locator('#btn-configure-mock-project-id-abc').click()
+    await expect(configForm).toBeHidden()
+  })
+
+  test('gmail-to-drive config form renders all fields and saves', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+    await page.locator('#btn-configure-mock-project-id-abc').click()
+
+    const form = page.locator('#config-form-mock-project-id-abc')
+    // Labels are dropdowns (populated from Gmail API mock)
+    await expect(form.locator('[data-key="triggerLabel"]')).toBeVisible()
+    await expect(form.locator('[data-key="processedLabel"]')).toBeVisible()
+    await expect(form.locator('[data-key="docId"]')).toBeVisible()
+    await expect(form.locator('[data-key="folderId"]')).toBeVisible()
+
+    await form.locator('[data-key="triggerLabel"]').selectOption('receipts')
+    await form
+      .locator('[data-key="processedLabel"]')
+      .selectOption('receipts-archived')
+    await form.locator('[data-key="docId"]').fill('doc-abc')
+    await form.locator('[data-key="folderId"]').fill('folder-xyz')
+    await form.locator('.btn-primary').click()
+    await expect(form.locator('.btn-primary')).toContainText('Saved')
+  })
+
+  test('calendar-to-sheets config form renders all fields and saves', async ({
+    page,
+  }) => {
+    let projectIdCounter = 0
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        projectIdCounter++
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ scriptId: `sheets-proj-${projectIdCounter}` }),
+        })
+      } else if (method === 'GET' && url.includes('/content')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            files: [{ name: 'config', type: 'SERVER_JS', source: '// config' }],
+          }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        await route.fulfill({ status: 200, body: '{}' })
+      } else if (method === 'GET' && url.includes('/projects/')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ scriptId: 'sheets-proj-1' }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+    await signIn(page)
+    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    const configBtn = page.locator('[id^="btn-configure-sheets"]')
+    await configBtn.click()
+
+    const form = page.locator('[id^="config-form-sheets"]')
+    await expect(form.locator('[data-key="calendarId"]')).toBeVisible()
+    await expect(form.locator('input[data-key="spreadsheetId"]')).toBeVisible()
+    await expect(form.locator('input[data-key="sheetName"]')).toBeVisible()
+
+    await form.locator('input[data-key="spreadsheetId"]').fill('ss-123')
+    await form.locator('.btn-primary').click()
+    await expect(form.locator('.btn-primary')).toContainText('Saved')
+  })
+
+  test('calendar-to-briefing-doc config form renders all fields and saves', async ({
+    page,
+  }) => {
+    let projectIdCounter = 0
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'POST' && url.endsWith('/projects')) {
+        projectIdCounter++
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            scriptId: `briefing-proj-${projectIdCounter}`,
+          }),
+        })
+      } else if (method === 'GET' && url.includes('/content')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            files: [{ name: 'config', type: 'SERVER_JS', source: '// config' }],
+          }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        await route.fulfill({ status: 200, body: '{}' })
+      } else if (method === 'GET' && url.includes('/projects/')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ scriptId: 'briefing-proj-1' }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="calendar-to-briefing-doc"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    const configBtn = page.locator('[id^="btn-configure-briefing"]')
+    await configBtn.click()
+
+    const form = page.locator('[id^="config-form-briefing"]')
+    await expect(form.locator('[data-key="email"]')).toBeVisible()
+    await expect(form.locator('[data-key="subject"]')).toBeVisible()
+    await expect(form.locator('[data-key="frequency"]')).toBeVisible()
+    await expect(form.locator('[data-key="lookaheadDays"]')).toBeVisible()
+
+    await form.locator('[data-key="email"]').fill('user@test.com')
+    await form.locator('.btn-primary').click()
+    await expect(form.locator('.btn-primary')).toContainText('Saved')
+  })
+
   test('handleDeploy renders a per-script card with Deployed successfully', async ({
     page,
   }) => {
@@ -446,77 +781,10 @@ test.describe('deploy index.html', () => {
       .click()
     await page.locator('#btn-deploy').click()
     await page.waitForSelector('.status-ok')
-    // Each project gets its own card showing "Deployed successfully"
-    const card = page.locator('.result-link').first().locator('..')
-    await expect(card).toContainText('Deployed successfully')
-  })
-
-  test('handleDeploy shows setup CTA when setup has not been confirmed', async ({
-    page,
-  }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('.status-ok')
-    // CTA box should be visible with numbered steps and the confirm button
-    await expect(page.locator('[id^="setup-cta-"]')).toBeVisible()
-    await expect(page.locator('[id^="setup-cta-"]')).toContainText(
-      'One more step'
+    // Status area shows "Deployed successfully" per project
+    await expect(page.locator('.status-ok')).toContainText(
+      'Deployed successfully'
     )
-    await expect(
-      page.locator('button:has-text("Done — I ran setup()")')
-    ).toBeVisible()
-  })
-
-  test('clicking confirm button replaces CTA with collapsible trigger-review link', async ({
-    page,
-  }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('[id^="setup-cta-"]')
-    await page.locator('button:has-text("Done — I ran setup()")').click()
-    await expect(page.locator('[id^="setup-done-"]')).toBeVisible()
-    await expect(page.locator('[id^="setup-done-"]')).toContainText(
-      'previously enabled the hourly trigger'
-    )
-    await expect(page.locator('[id^="setup-done-"]')).toContainText(
-      'Click here to review instructions'
-    )
-    await expect(page.locator('[id^="setup-cta-"]')).toHaveCount(0)
-  })
-
-  test('handleDeploy shows collapsible trigger-review when setup already confirmed', async ({
-    page,
-  }) => {
-    // Pre-seed setup confirmation in localStorage so the CTA is skipped
-    await mockSuccessfulDeploy(page)
-    await page.evaluate(() => {
-      localStorage.setItem(
-        'gas_copilot_setup_done',
-        JSON.stringify({ 'mock-project-id-abc': true })
-      )
-    })
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('.status-ok')
-    await expect(page.locator('[id^="setup-done-"]')).toBeVisible()
-    await expect(page.locator('[id^="setup-done-"]')).toContainText(
-      'previously enabled the hourly trigger'
-    )
-    await expect(page.locator('[id^="setup-done-"]')).toContainText(
-      'Click here to review instructions'
-    )
-    await expect(page.locator('[id^="setup-cta-"]')).toHaveCount(0)
   })
 
   test('deploy button resets to "Deploy to my account" after successful deploy', async ({
@@ -530,9 +798,24 @@ test.describe('deploy index.html', () => {
     await expect(page.locator('#btn-deploy')).toHaveText('Deploy to my account')
   })
 
+  test('deploy button shows "Re-deploy" when a deployed script is re-checked', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+    // Script list re-rendered with "Deployed" badge; re-check the script
+    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
+    await expect(page.locator('#btn-deploy')).toHaveText(
+      'Re-deploy to my account'
+    )
+  })
+
   // ── fetchScriptFiles – URL construction ─────────────────────────────────────
 
-  test('fetchScriptFiles fetches only code.gs from the correct GitHub URL', async ({
+  test('fetchScriptFiles fetches code.gs and config.gs from the correct GitHub URL', async ({
     page,
   }) => {
     const capturedUrls = []
@@ -566,7 +849,7 @@ test.describe('deploy index.html', () => {
     ).toBe(true)
     expect(
       capturedUrls.some((u) => u.includes('gmail-to-drive-by-labels/config.gs'))
-    ).toBe(false)
+    ).toBe(true)
   })
 
   test('handleDeploy includes appsscript manifest in content upload', async ({
@@ -684,7 +967,7 @@ test.describe('deploy index.html', () => {
     expect(setupFile.source).toContain('everyHours(1)')
   })
 
-  test('handleDeploy success shows manual trigger setup instruction', async ({
+  test('handleDeploy success shows configure instructions in status', async ({
     page,
   }) => {
     await mockSuccessfulDeploy(page)
@@ -693,9 +976,8 @@ test.describe('deploy index.html', () => {
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
     await page.locator('#btn-deploy').click()
-    await expect(page.locator('.status-ok')).toContainText('setup()')
     await expect(page.locator('.status-ok')).toContainText(
-      'activate the hourly trigger'
+      'configure each script'
     )
   })
 
@@ -745,9 +1027,6 @@ test.describe('deploy index.html', () => {
     })
 
     await signIn(page)
-    // Prior deployments without a valid config.gs → renderConfigSection falls
-    // back to showing the deploy section. No need to click "Show deployment
-    // options" — the section is already visible.
     await page
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
@@ -756,160 +1035,10 @@ test.describe('deploy index.html', () => {
 
     expect(verifiedExisting).toBe(true)
     expect(projectCreated).toBe(false)
-    await expect(page.locator('.result-link')).toHaveAttribute(
+    await expect(page.locator('#step3-card .result-link')).toHaveAttribute(
       'href',
       'https://script.google.com/d/existing-script-id/edit'
     )
-  })
-
-  test('handleDeploy does not overwrite config.gs when redeploying an existing project', async ({
-    page,
-  }) => {
-    await page.evaluate(() => {
-      localStorage.setItem(
-        'gas_copilot_deployed',
-        JSON.stringify({
-          'gmail-to-drive-by-labels\nPetry-Projects – Gmail to Drive By Labels':
-            'existing-script-id',
-        })
-      )
-    })
-
-    let uploadBody = null
-    const savedConfigSource =
-      'function getProcessConfig() { return [{ triggerLabel: "my-label", processedLabel: "done", docId: "doc1", folderId: "folder1", batchSize: 250 }]; }\n'
-
-    await page.route('https://raw.githubusercontent.com/**', async (route) => {
-      await route.fulfill({ status: 200, body: '// code' })
-    })
-    await page.route('https://script.googleapis.com/**', async (route) => {
-      const url = route.request().url()
-      const method = route.request().method()
-      if (
-        method === 'GET' &&
-        url.includes('/projects/existing-script-id') &&
-        !url.includes('/content')
-      ) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({
-            scriptId: 'existing-script-id',
-            title: 'Petry-Projects – Gmail to Drive By Labels',
-          }),
-        })
-      } else if (
-        method === 'GET' &&
-        url.includes('/projects/existing-script-id/content')
-      ) {
-        // Return the user's previously-saved config.gs.
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({
-            files: [
-              { name: 'code', type: 'SERVER_JS', source: '// user code' },
-              {
-                name: 'config',
-                type: 'SERVER_JS',
-                source: savedConfigSource,
-              },
-            ],
-          }),
-        })
-      } else if (method === 'PUT' && url.includes('/content')) {
-        uploadBody = JSON.parse(route.request().postData())
-        await route.fulfill({ status: 200, body: '{}' })
-      } else {
-        await route.continue()
-      }
-    })
-
-    await signIn(page)
-    await page.locator('#btn-toggle-deploy').click()
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('.status-ok')
-
-    expect(uploadBody).not.toBeNull()
-    // config.gs must be included with the USER'S saved source (not the inline empty default).
-    const configFile = uploadBody.files.find((f) => f.name === 'config')
-    expect(configFile).toBeDefined()
-    expect(configFile.source).toBe(savedConfigSource)
-    // code.gs must still be uploaded (fresh from GitHub).
-    const codeFile = uploadBody.files.find((f) => f.name === 'code')
-    expect(codeFile).toBeDefined()
-  })
-
-  test('handleDeploy uses inline empty config when project has no existing config', async ({
-    page,
-  }) => {
-    await page.evaluate(() => {
-      localStorage.setItem(
-        'gas_copilot_deployed',
-        JSON.stringify({
-          'gmail-to-drive-by-labels\nPetry-Projects – Gmail to Drive By Labels':
-            'existing-no-config-id',
-        })
-      )
-    })
-
-    let uploadBody = null
-
-    await page.route('https://raw.githubusercontent.com/**', async (route) => {
-      await route.fulfill({ status: 200, body: '// code' })
-    })
-    await page.route('https://script.googleapis.com/**', async (route) => {
-      const url = route.request().url()
-      const method = route.request().method()
-      if (
-        method === 'GET' &&
-        url.includes('/projects/existing-no-config-id') &&
-        !url.includes('/content')
-      ) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({
-            scriptId: 'existing-no-config-id',
-            title: 'Petry-Projects – Gmail to Drive By Labels',
-          }),
-        })
-      } else if (
-        method === 'GET' &&
-        url.includes('/projects/existing-no-config-id/content')
-      ) {
-        // Project exists but has no config.gs yet.
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({
-            files: [{ name: 'code', type: 'SERVER_JS', source: '// code' }],
-          }),
-        })
-      } else if (method === 'PUT' && url.includes('/content')) {
-        uploadBody = JSON.parse(route.request().postData())
-        await route.fulfill({ status: 200, body: '{}' })
-      } else {
-        await route.continue()
-      }
-    })
-
-    await signIn(page)
-    // Project has no config.gs → renderConfigSection falls back to deploy section; no need to click "Show deployment options".
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('.status-ok')
-
-    expect(uploadBody).not.toBeNull()
-    // config.gs must be included — using the inline empty config since none existed.
-    const configFile = uploadBody.files.find((f) => f.name === 'config')
-    expect(configFile).toBeDefined()
-    // Inline empty config must contain the getProcessConfig function.
-    expect(configFile.source).toContain('function getProcessConfig()')
-    expect(configFile.source).toContain('return []')
-    // Must include a commented-out example.
-    expect(configFile.source).toContain("triggerLabel: 'my-label'")
   })
 
   test('handleDeploy creates new project if stored project was deleted', async ({
@@ -953,7 +1082,6 @@ test.describe('deploy index.html', () => {
     })
 
     await signIn(page)
-    // Deleted project → renderConfigSection falls back to deploy section; no need to click "Show deployment options".
     await page
       .locator('#script-list input[value="gmail-to-drive-by-labels"]')
       .click()
@@ -961,7 +1089,7 @@ test.describe('deploy index.html', () => {
     await page.waitForSelector('.status-ok')
 
     expect(projectCreated).toBe(true)
-    await expect(page.locator('.result-link')).toHaveAttribute(
+    await expect(page.locator('#step3-card .result-link')).toHaveAttribute(
       'href',
       'https://script.google.com/d/new-fallback-id/edit'
     )
@@ -1189,7 +1317,7 @@ test.describe('deploy index.html', () => {
   test('script list uses checkboxes not radio buttons', async ({ page }) => {
     await expect(
       page.locator('#script-list input[type="checkbox"]')
-    ).toHaveCount(2)
+    ).toHaveCount(3)
     await expect(page.locator('#script-list input[type="radio"]')).toHaveCount(
       0
     )
@@ -1277,7 +1405,7 @@ test.describe('deploy index.html', () => {
     expect(createProjectCallCount).toBe(2)
   })
 
-  test('deploying multiple scripts shows a result link for each', async ({
+  test('deploying multiple scripts shows a result link for each in Step 3', async ({
     page,
   }) => {
     let projectIdCounter = 0
@@ -1313,13 +1441,14 @@ test.describe('deploy index.html', () => {
     await page.locator('#btn-deploy').click()
     await page.waitForSelector('.status-ok')
 
-    const links = page.locator('.result-link')
-    await expect(links).toHaveCount(2)
-    await expect(links.nth(0)).toHaveAttribute(
+    // Links in Step 3 cards
+    const step3Links = page.locator('#step3-card .result-link')
+    await expect(step3Links).toHaveCount(2)
+    await expect(step3Links.nth(0)).toHaveAttribute(
       'href',
       'https://script.google.com/d/project-1/edit'
     )
-    await expect(links.nth(1)).toHaveAttribute(
+    await expect(step3Links.nth(1)).toHaveAttribute(
       'href',
       'https://script.google.com/d/project-2/edit'
     )
@@ -1368,6 +1497,69 @@ test.describe('deploy index.html', () => {
     expect(capturedTitles).toContain('Petry-Projects – Calendar to Sheets')
   })
 
+  // ── Step 3 – Post-deploy configuration ──────────────────────────────────────
+
+  test('confirmSetupDone replaces setup section with trigger activated message', async ({
+    page,
+  }) => {
+    await mockSuccessfulDeploy(page)
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    // Click Configure to expand the form
+    await page.locator('#btn-configure-mock-project-id-abc').click()
+
+    // Click Save Configuration
+    await page.locator('#config-form-mock-project-id-abc .btn-primary').click()
+
+    // Wait for setup section to become visible
+    await expect(
+      page.locator('#setup-section-mock-project-id-abc')
+    ).toBeVisible()
+
+    // Click the "Done — I ran setup()" button
+    await page
+      .locator('#setup-section-mock-project-id-abc button:has-text("Done")')
+      .click()
+
+    // Verify it now shows "Trigger previously activated"
+    await expect(
+      page.locator('#setup-section-mock-project-id-abc')
+    ).toContainText('Trigger previously activated')
+  })
+
+  test('handleDeploy shows trigger already activated when setup previously confirmed', async ({
+    page,
+  }) => {
+    // Pre-seed setup confirmation in localStorage so the CTA is skipped
+    await mockSuccessfulDeploy(page)
+    await page.evaluate(() => {
+      localStorage.setItem(
+        'gas_copilot_setup_done',
+        JSON.stringify({ 'mock-project-id-abc': true })
+      )
+    })
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-ok')
+
+    // Click Configure to open form, then Save to trigger showSetupCta
+    await page.locator('#btn-configure-mock-project-id-abc').click()
+    await page.locator('#config-form-mock-project-id-abc .btn-primary').click()
+
+    // Since setup was already confirmed, it should show "previously activated"
+    await expect(
+      page.locator('#setup-section-mock-project-id-abc')
+    ).toContainText('Trigger previously activated')
+  })
+
   test('single-script deploy uses Petry-Projects prefix for project title', async ({
     page,
   }) => {
@@ -1407,1961 +1599,15 @@ test.describe('deploy index.html', () => {
     expect(capturedTitle).toBe('Petry-Projects – Gmail to Drive By Labels')
   })
 
-  // ── Step 3: Configure ───────────────────────────────────────────────────────
-
-  test('Step 3 card appears after successful deployment', async ({ page }) => {
+  test('briefing doc deploy success shows deployed status', async ({
+    page,
+  }) => {
     await mockSuccessfulDeploy(page)
     await signIn(page)
     await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .locator('#script-list input[value="calendar-to-briefing-doc"]')
       .click()
     await page.locator('#btn-deploy').click()
-    await page.waitForSelector('.status-ok')
-    // Step 3 card should be in the DOM
-    await expect(page.locator('#step3-card')).toBeVisible()
-    await expect(page.locator('#step3-card')).toContainText('Configure scripts')
-  })
-
-  test('Step 3 card shows step badge with number 3', async ({ page }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-    await expect(page.locator('#step3-card .step-badge')).toHaveText('3')
-  })
-
-  test('Step 3 shows a config panel for gmail-to-drive-by-labels', async ({
-    page,
-  }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-    await expect(page.locator('#step3-card')).toContainText(
-      'Gmail to Drive By Labels'
-    )
-    await expect(page.locator('[id^="config-panel-"]')).toHaveCount(1)
-  })
-
-  test('Step 3 shows a config panel for calendar-to-sheets', async ({
-    page,
-  }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-    await expect(page.locator('#step3-card')).toContainText(
-      'Calendar to Sheets'
-    )
-    await expect(page.locator('[id^="config-panel-"]')).toHaveCount(1)
-  })
-
-  test('Step 3 shows two config panels when both scripts are deployed', async ({
-    page,
-  }) => {
-    let counter = 0
-    await page.route('https://raw.githubusercontent.com/**', async (route) => {
-      await route.fulfill({ status: 200, body: '// code' })
-    })
-    await page.route('https://script.googleapis.com/**', async (route) => {
-      const url = route.request().url()
-      const method = route.request().method()
-      if (method === 'POST' && url.endsWith('/projects')) {
-        counter++
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({ scriptId: `id-${counter}` }),
-        })
-      } else if (url.includes('/content')) {
-        await route.fulfill({ status: 200, body: '{}' })
-      } else {
-        await route.continue()
-      }
-    })
-    await page.route('https://gmail.googleapis.com/**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        body: JSON.stringify({ labels: [] }),
-      })
-    })
-    await page.route(
-      'https://www.googleapis.com/calendar/**',
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({ items: [] }),
-        })
-      }
-    )
-
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-
-    await expect(page.locator('[id^="config-panel-"]')).toHaveCount(2)
-  })
-
-  test('Gmail labels populate the trigger and processed label dropdowns', async ({
-    page,
-  }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-
-    // Wait for a config row to appear (labels loaded)
-    await page.waitForSelector('.config-row')
-
-    // Trigger label dropdown should contain the mocked labels
-    const triggerSelect = page
-      .locator('.config-row [name="triggerLabel"]')
-      .first()
-    await expect(triggerSelect).toContainText('inbox')
-    await expect(triggerSelect).toContainText('archive')
-    await expect(triggerSelect).toContainText('work')
-
-    // Processed label dropdown should also be populated
-    const processedSelect = page
-      .locator('.config-row [name="processedLabel"]')
-      .first()
-    await expect(processedSelect).toContainText('inbox')
-  })
-
-  test('Calendar list populates the calendar dropdown', async ({ page }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-
-    await page.waitForSelector('.config-row')
-
-    const calSelect = page.locator('.config-row [name="calendarId"]').first()
-    await expect(calSelect).toContainText('Primary Calendar')
-    await expect(calSelect).toContainText('Work')
-  })
-
-  test('initial config row is added automatically after deploy', async ({
-    page,
-  }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-    await page.waitForSelector('.config-row')
-
-    await expect(page.locator('.config-row')).toHaveCount(1)
-  })
-
-  test('clicking Add entry adds a new config row for gmail-to-drive-by-labels', async ({
-    page,
-  }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-    await page.waitForSelector('.config-row')
-
-    await page.locator('[id^="add-btn-"]').first().click()
-    await expect(page.locator('.config-row')).toHaveCount(2)
-  })
-
-  test('clicking Remove deletes the config row', async ({ page }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-    await page.waitForSelector('.config-row')
-
-    // Add a second row so there is one left after removal
-    await page.locator('[id^="add-btn-"]').first().click()
-    await expect(page.locator('.config-row')).toHaveCount(2)
-
-    // Remove the first row
-    await page.locator('.btn-danger').first().click()
-    await expect(page.locator('.config-row')).toHaveCount(1)
-  })
-
-  test('Step 3 shows Save Configuration button', async ({ page }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-
-    await expect(
-      page.locator('button:has-text("Save Configuration")')
-    ).toBeVisible()
-  })
-
-  test('Save Configuration calls GET content then PUT content on Apps Script API', async ({
-    page,
-  }) => {
-    const apiCalls = []
-    await page.route('https://raw.githubusercontent.com/**', async (route) => {
-      await route.fulfill({ status: 200, body: '// code' })
-    })
-    await page.route('https://script.googleapis.com/**', async (route) => {
-      const url = route.request().url()
-      const method = route.request().method()
-      apiCalls.push({ method, url })
-      if (method === 'POST' && url.endsWith('/projects')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({ scriptId: 'proj-abc' }),
-        })
-      } else if (method === 'GET' && url.includes('/content')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({
-            files: [
-              { name: 'appsscript', type: 'JSON', source: '{}' },
-              { name: 'code', type: 'SERVER_JS', source: '// code' },
-              { name: 'config', type: 'SERVER_JS', source: '// old config' },
-            ],
-          }),
-        })
-      } else if (method === 'PUT' && url.includes('/content')) {
-        await route.fulfill({ status: 200, body: '{}' })
-      } else {
-        await route.continue()
-      }
-    })
-    await page.route('https://gmail.googleapis.com/**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        body: JSON.stringify({ labels: [{ id: 'L1', name: 'mylabel' }] }),
-      })
-    })
-
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-    await page.waitForSelector('.config-row')
-
-    // Fill all required fields before saving.
-    await page
-      .locator('.config-row [name="triggerLabel"]')
-      .first()
-      .selectOption('mylabel')
-    await page
-      .locator('.config-row [name="processedLabel"]')
-      .first()
-      .selectOption('mylabel')
-    await page.evaluate(() => {
-      document.querySelector('[name="docId"]').value = 'doc-id-1'
-      document.querySelector('[name="folderId"]').value = 'folder-id-1'
-    })
-
-    await page.locator('button:has-text("Save Configuration")').click()
-    await page.waitForSelector('[id^="save-status-"]:has-text("saved")')
-
-    const contentGetCalls = apiCalls.filter(
-      (c) => c.method === 'GET' && c.url.includes('/projects/proj-abc/content')
-    )
-    const contentPutCalls = apiCalls.filter(
-      (c) => c.method === 'PUT' && c.url.includes('/projects/proj-abc/content')
-    )
-    expect(contentGetCalls.length).toBeGreaterThanOrEqual(1)
-    expect(contentPutCalls.length).toBeGreaterThanOrEqual(1)
-  })
-
-  test('Save Configuration writes new config.gs and keeps other files', async ({
-    page,
-  }) => {
-    let lastPutBody = null
-    await page.route('https://raw.githubusercontent.com/**', async (route) => {
-      await route.fulfill({ status: 200, body: '// code' })
-    })
-    await page.route('https://script.googleapis.com/**', async (route) => {
-      const url = route.request().url()
-      const method = route.request().method()
-      if (method === 'POST' && url.endsWith('/projects')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({ scriptId: 'proj-xyz' }),
-        })
-      } else if (method === 'GET' && url.includes('/content')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({
-            files: [
-              { name: 'appsscript', type: 'JSON', source: '{}' },
-              { name: 'code', type: 'SERVER_JS', source: '// code' },
-              { name: 'config', type: 'SERVER_JS', source: '// old' },
-            ],
-          }),
-        })
-      } else if (method === 'PUT' && url.includes('/content')) {
-        lastPutBody = JSON.parse(route.request().postData())
-        await route.fulfill({ status: 200, body: '{}' })
-      } else {
-        await route.continue()
-      }
-    })
-    await page.route('https://gmail.googleapis.com/**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        body: JSON.stringify({ labels: [{ id: 'L1', name: 'work' }] }),
-      })
-    })
-
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-    await page.waitForSelector('.config-row')
-
-    // Select a label value and fill all required fields, then click Save
-    await page
-      .locator('.config-row [name="triggerLabel"]')
-      .first()
-      .selectOption('work')
-    await page
-      .locator('.config-row [name="processedLabel"]')
-      .first()
-      .selectOption('work')
-    await page.evaluate(() => {
-      document.querySelector('[name="docId"]').value = 'doc-id-1'
-      document.querySelector('[name="folderId"]').value = 'folder-id-1'
-    })
-    await page.locator('button:has-text("Save Configuration")').click()
-    await page.waitForSelector('[id^="save-status-"]:has-text("saved")')
-
-    expect(lastPutBody).not.toBeNull()
-    // appsscript and code files must be preserved
-    expect(lastPutBody.files.find((f) => f.name === 'appsscript')).toBeDefined()
-    expect(lastPutBody.files.find((f) => f.name === 'code')).toBeDefined()
-    // config file must be the new one
-    const configFile = lastPutBody.files.find((f) => f.name === 'config')
-    expect(configFile).toBeDefined()
-    expect(configFile.source).toContain('getProcessConfig')
-    expect(configFile.source).toContain('"work"')
-    // old config source must be replaced
-    expect(configFile.source).not.toContain('// old')
-  })
-
-  test('Save Configuration for calendar-to-sheets writes SYNC_CONFIGS', async ({
-    page,
-  }) => {
-    let lastPutBody = null
-    await page.route('https://raw.githubusercontent.com/**', async (route) => {
-      await route.fulfill({ status: 200, body: '// code' })
-    })
-    await page.route('https://script.googleapis.com/**', async (route) => {
-      const url = route.request().url()
-      const method = route.request().method()
-      if (method === 'POST' && url.endsWith('/projects')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({ scriptId: 'cal-proj' }),
-        })
-      } else if (method === 'GET' && url.includes('/content')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({
-            files: [{ name: 'config', type: 'SERVER_JS', source: '// old' }],
-          }),
-        })
-      } else if (method === 'PUT' && url.includes('/content')) {
-        lastPutBody = JSON.parse(route.request().postData())
-        await route.fulfill({ status: 200, body: '{}' })
-      } else {
-        await route.continue()
-      }
-    })
-    await page.route(
-      'https://www.googleapis.com/calendar/**',
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({
-            items: [{ id: 'primary', summary: 'Primary' }],
-          }),
-        })
-      }
-    )
-
-    await signIn(page)
-    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-    await page.waitForSelector('.config-row')
-
-    await page
-      .locator('.config-row [name="calendarId"]')
-      .first()
-      .selectOption('primary')
-    await page.evaluate(() => {
-      document.querySelector('[name="spreadsheetId"]').value = 'sheet-id-1'
-    })
-    await page.locator('button:has-text("Save Configuration")').click()
-    await page.waitForSelector('[id^="save-status-"]:has-text("saved")')
-
-    expect(lastPutBody).not.toBeNull()
-    const configFile = lastPutBody.files.find((f) => f.name === 'config')
-    expect(configFile).toBeDefined()
-    expect(configFile.source).toContain('SYNC_CONFIGS')
-    expect(configFile.source).toContain('"primary"')
-  })
-
-  test('Save Configuration shows success message on success', async ({
-    page,
-  }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-    await page.waitForSelector('.config-row')
-
-    // Fill all required fields before saving.
-    await page
-      .locator('.config-row [name="triggerLabel"]')
-      .first()
-      .selectOption('inbox')
-    await page
-      .locator('.config-row [name="processedLabel"]')
-      .first()
-      .selectOption('archive')
-    await page.evaluate(() => {
-      document.querySelector('[name="docId"]').value = 'doc-id-1'
-      document.querySelector('[name="folderId"]').value = 'folder-id-1'
-    })
-
-    await page.locator('button:has-text("Save Configuration")').click()
-    await page.waitForSelector('[id^="save-status-"]:has-text("saved")')
-
-    await expect(page.locator('[id^="save-status-"]').first()).toContainText(
-      'Configuration saved'
-    )
-  })
-
-  test('Save Configuration shows 3-step verification sequence', async ({
-    page,
-  }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-    await page.waitForSelector('.config-row')
-
-    await page
-      .locator('.config-row [name="triggerLabel"]')
-      .first()
-      .selectOption('inbox')
-    await page
-      .locator('.config-row [name="processedLabel"]')
-      .first()
-      .selectOption('archive')
-    await page.evaluate(() => {
-      document.querySelector('[name="docId"]').value = 'doc-id-1'
-      document.querySelector('[name="folderId"]').value = 'folder-id-1'
-    })
-
-    await page.locator('button:has-text("Save Configuration")').click()
-    await page.waitForSelector('.verification-checks')
-
-    const status = page.locator('[id^="save-status-"]').first()
-    await expect(status).toContainText('Configuration saved')
-    await expect(status).toContainText('Trigger active')
-    await expect(status).toContainText('Script accessible')
-  })
-
-  test('Save Configuration shows celebratory confirmation for fresh deploy', async ({
-    page,
-  }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-    await page.waitForSelector('.config-row')
-
-    await page
-      .locator('.config-row [name="triggerLabel"]')
-      .first()
-      .selectOption('inbox')
-    await page
-      .locator('.config-row [name="processedLabel"]')
-      .first()
-      .selectOption('archive')
-    await page.evaluate(() => {
-      document.querySelector('[name="docId"]').value = 'doc-id-1'
-      document.querySelector('[name="folderId"]').value = 'folder-id-1'
-    })
-
-    await page.locator('button:has-text("Save Configuration")').click()
-    await page.waitForSelector('.save-celebration')
-
-    const celebration = page.locator('.save-celebration')
-    await expect(celebration).toContainText('Your automation is live!')
-  })
-
-  test('Save Configuration shows trigger inconclusive when deployments API fails', async ({
-    page,
-  }) => {
-    await page.route('https://raw.githubusercontent.com/**', async (route) => {
-      await route.fulfill({ status: 200, body: '// code' })
-    })
-    await page.route('https://script.googleapis.com/**', async (route) => {
-      const url = route.request().url()
-      const method = route.request().method()
-      if (method === 'POST' && url.endsWith('/projects')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({ scriptId: 'proj-abc' }),
-        })
-      } else if (method === 'GET' && url.includes('/content')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({
-            files: [{ name: 'config', type: 'SERVER_JS', source: '// config' }],
-          }),
-        })
-      } else if (method === 'PUT' && url.includes('/content')) {
-        await route.fulfill({ status: 200, body: '{}' })
-      } else if (method === 'GET' && url.includes('/deployments')) {
-        await route.fulfill({
-          status: 403,
-          body: '{"error":{"message":"forbidden"}}',
-        })
-      } else if (method === 'GET' && /\/projects\/[^/]+$/.test(url)) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({ scriptId: 'proj-abc' }),
-        })
-      } else {
-        await route.continue()
-      }
-    })
-    await page.route('https://gmail.googleapis.com/**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        body: JSON.stringify({
-          labels: [
-            { id: 'L1', name: 'inbox' },
-            { id: 'L2', name: 'archive' },
-          ],
-        }),
-      })
-    })
-
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('.config-row')
-
-    await page
-      .locator('.config-row [name="triggerLabel"]')
-      .first()
-      .selectOption('inbox')
-    await page
-      .locator('.config-row [name="processedLabel"]')
-      .first()
-      .selectOption('archive')
-    await page.evaluate(() => {
-      document.querySelector('[name="docId"]').value = 'doc-id-1'
-      document.querySelector('[name="folderId"]').value = 'folder-id-1'
-    })
-
-    await page.locator('button:has-text("Save Configuration")').click()
-    await page.waitForSelector('.verification-checks')
-
-    const status = page.locator('[id^="save-status-"]').first()
-    await expect(status).toContainText('Configuration saved')
-    // Trigger should be inconclusive (⚠️) since deployments API returned 403
-    await expect(status).toContainText('Trigger status')
-    await expect(status).toContainText('Script accessible')
-  })
-
-  test('Save Configuration moves focus to status element after save', async ({
-    page,
-  }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-    await page.waitForSelector('.config-row')
-
-    await page
-      .locator('.config-row [name="triggerLabel"]')
-      .first()
-      .selectOption('inbox')
-    await page
-      .locator('.config-row [name="processedLabel"]')
-      .first()
-      .selectOption('archive')
-    await page.evaluate(() => {
-      document.querySelector('[name="docId"]').value = 'doc-id-1'
-      document.querySelector('[name="folderId"]').value = 'folder-id-1'
-    })
-
-    await page.locator('button:has-text("Save Configuration")').click()
-    await page.waitForSelector('.save-celebration')
-
-    // After save, focus should be on the save-status element.
-    const focusedId = await page.evaluate(
-      () => document.activeElement?.id || ''
-    )
-    expect(focusedId).toMatch(/^save-status-/)
-  })
-
-  test('Save Configuration shows updated message on second save', async ({
-    page,
-  }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-    await page.waitForSelector('.config-row')
-
-    await page
-      .locator('.config-row [name="triggerLabel"]')
-      .first()
-      .selectOption('inbox')
-    await page
-      .locator('.config-row [name="processedLabel"]')
-      .first()
-      .selectOption('archive')
-    await page.evaluate(() => {
-      document.querySelector('[name="docId"]').value = 'doc-id-1'
-      document.querySelector('[name="folderId"]').value = 'folder-id-1'
-    })
-
-    // First save — fresh deploy
-    await page.locator('button:has-text("Save Configuration")').click()
-    await page.waitForSelector('.save-celebration')
-    await expect(page.locator('.save-celebration')).toContainText(
-      'Your automation is live!'
-    )
-
-    // Second save — edit
-    await page.locator('button:has-text("Save Configuration")').click()
-    await page.waitForSelector('.save-celebration')
-    await expect(page.locator('.save-celebration')).toContainText(
-      'Your automation is updated and running.'
-    )
-  })
-
-  test('Save Configuration shows error message on failure', async ({
-    page,
-  }) => {
-    await page.route('https://raw.githubusercontent.com/**', async (route) => {
-      await route.fulfill({ status: 200, body: '// code' })
-    })
-    await page.route('https://script.googleapis.com/**', async (route) => {
-      const url = route.request().url()
-      const method = route.request().method()
-      if (method === 'POST' && url.endsWith('/projects')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({ scriptId: 'err-proj' }),
-        })
-      } else if (method === 'PUT' && url.includes('/content')) {
-        await route.fulfill({ status: 200, body: '{}' })
-      } else if (method === 'GET' && url.includes('/content')) {
-        await route.fulfill({
-          status: 403,
-          contentType: 'application/json',
-          body: JSON.stringify({ error: { message: 'Permission denied' } }),
-        })
-      } else {
-        await route.continue()
-      }
-    })
-    await page.route('https://gmail.googleapis.com/**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        body: JSON.stringify({ labels: [{ id: 'L1', name: 'inbox' }] }),
-      })
-    })
-
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-    await page.waitForSelector('.config-row')
-
-    // Fill all required fields so validation passes and the API call is made.
-    await page
-      .locator('.config-row [name="triggerLabel"]')
-      .first()
-      .selectOption('inbox')
-    await page
-      .locator('.config-row [name="processedLabel"]')
-      .first()
-      .selectOption('inbox')
-    await page.evaluate(() => {
-      document.querySelector('[name="docId"]').value = 'doc-id-1'
-      document.querySelector('[name="folderId"]').value = 'folder-id-1'
-    })
-
-    await page.locator('button:has-text("Save Configuration")').click()
-    await page.waitForSelector(
-      '[id^="save-status-"]:has-text("Permission denied")'
-    )
-
-    await expect(page.locator('[id^="save-status-"]').first()).toContainText(
-      'Permission denied'
-    )
-  })
-
-  test('Save Configuration shows validation error for gmail when required fields are missing', async ({
-    page,
-  }) => {
-    await page.route('https://raw.githubusercontent.com/**', async (route) => {
-      await route.fulfill({ status: 200, body: '// code' })
-    })
-    await page.route('https://script.googleapis.com/**', async (route) => {
-      const url = route.request().url()
-      const method = route.request().method()
-      if (method === 'POST' && url.endsWith('/projects')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({ scriptId: 'val-proj' }),
-        })
-      } else if (method === 'PUT' && url.includes('/content')) {
-        await route.fulfill({ status: 200, body: '{}' })
-      } else {
-        await route.continue()
-      }
-    })
-    await page.route('https://gmail.googleapis.com/**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        body: JSON.stringify({ labels: [{ id: 'L1', name: 'inbox' }] }),
-      })
-    })
-
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-    await page.waitForSelector('.config-row')
-
-    // Attempt to save without filling any required fields.
-    await page.locator('button:has-text("Save Configuration")').click()
-
-    await expect(page.locator('[id^="save-status-"]').first()).toContainText(
-      'trigger label, processed label, destination Doc, and destination Folder'
-    )
-  })
-
-  test('Save Configuration shows validation error for calendar when required fields are missing', async ({
-    page,
-  }) => {
-    await page.route('https://raw.githubusercontent.com/**', async (route) => {
-      await route.fulfill({ status: 200, body: '// code' })
-    })
-    await page.route('https://script.googleapis.com/**', async (route) => {
-      const url = route.request().url()
-      const method = route.request().method()
-      if (method === 'POST' && url.endsWith('/projects')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({ scriptId: 'val-cal-proj' }),
-        })
-      } else if (method === 'PUT' && url.includes('/content')) {
-        await route.fulfill({ status: 200, body: '{}' })
-      } else {
-        await route.continue()
-      }
-    })
-    await page.route(
-      'https://www.googleapis.com/calendar/**',
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({
-            items: [{ id: 'primary', summary: 'Primary Calendar' }],
-          }),
-        })
-      }
-    )
-
-    await signIn(page)
-    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-    await page.waitForSelector('.config-row')
-
-    // Select a calendar but leave spreadsheet empty.
-    await page
-      .locator('.config-row [name="calendarId"]')
-      .first()
-      .selectOption('primary')
-
-    // Attempt to save without a spreadsheet.
-    await page.locator('button:has-text("Save Configuration")').click()
-
-    await expect(page.locator('[id^="save-status-"]').first()).toContainText(
-      'calendar and a spreadsheet'
-    )
-  })
-
-  test('Save Configuration shows error when gmail config has 0 entries', async ({
-    page,
-  }) => {
-    await page.route('https://raw.githubusercontent.com/**', async (route) => {
-      await route.fulfill({ status: 200, body: '// code' })
-    })
-    await page.route('https://script.googleapis.com/**', async (route) => {
-      const url = route.request().url()
-      const method = route.request().method()
-      if (method === 'POST' && url.endsWith('/projects')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({ scriptId: 'zero-entry-gmail' }),
-        })
-      } else if (method === 'PUT' && url.includes('/content')) {
-        await route.fulfill({ status: 200, body: '{}' })
-      } else {
-        await route.continue()
-      }
-    })
-    await page.route('https://gmail.googleapis.com/**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        body: JSON.stringify({ labels: [{ id: 'L1', name: 'inbox' }] }),
-      })
-    })
-
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-    await page.waitForSelector('.config-row')
-
-    // Remove the only config row so there are 0 entries.
-    await page.locator('.btn-danger').first().click()
-    await expect(page.locator('.config-row')).toHaveCount(0)
-
-    // Attempt to save with 0 entries.
-    await page.locator('button:has-text("Save Configuration")').click()
-
-    await expect(page.locator('[id^="save-status-"]').first()).toContainText(
-      'Please add at least one configuration entry before saving.'
-    )
-  })
-
-  test('Save Configuration shows error when calendar config has 0 entries', async ({
-    page,
-  }) => {
-    await page.route('https://raw.githubusercontent.com/**', async (route) => {
-      await route.fulfill({ status: 200, body: '// code' })
-    })
-    await page.route('https://script.googleapis.com/**', async (route) => {
-      const url = route.request().url()
-      const method = route.request().method()
-      if (method === 'POST' && url.endsWith('/projects')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({ scriptId: 'zero-entry-cal' }),
-        })
-      } else if (method === 'PUT' && url.includes('/content')) {
-        await route.fulfill({ status: 200, body: '{}' })
-      } else {
-        await route.continue()
-      }
-    })
-    await page.route(
-      'https://www.googleapis.com/calendar/**',
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({
-            items: [{ id: 'primary', summary: 'Primary Calendar' }],
-          }),
-        })
-      }
-    )
-
-    await signIn(page)
-    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-    await page.waitForSelector('.config-row')
-
-    // Remove the only config row so there are 0 entries.
-    await page.locator('.btn-danger').first().click()
-    await expect(page.locator('.config-row')).toHaveCount(0)
-
-    // Attempt to save with 0 entries.
-    await page.locator('button:has-text("Save Configuration")').click()
-
-    await expect(page.locator('[id^="save-status-"]').first()).toContainText(
-      'Please add at least one configuration entry before saving.'
-    )
-  })
-
-  test('Save Configuration button is marked saving and disabled during in-progress save', async ({
-    page,
-  }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-    await page.waitForSelector('.config-row')
-
-    // Fill all required fields so the save proceeds past validation.
-    await page
-      .locator('.config-row [name="triggerLabel"]')
-      .first()
-      .selectOption('inbox')
-    await page
-      .locator('.config-row [name="processedLabel"]')
-      .first()
-      .selectOption('archive')
-    await page.evaluate(() => {
-      document.querySelector('[name="docId"]').value = 'doc-id-1'
-      document.querySelector('[name="folderId"]').value = 'folder-id-1'
-    })
-
-    // Override the PUT to hang indefinitely so we can observe mid-save state.
-    await page.route('https://script.googleapis.com/**', async (route) => {
-      if (route.request().method() === 'PUT') {
-        // Never resolve — keeps the save in-flight for the duration of the test.
-        await new Promise(() => {})
-      } else {
-        await route.continue()
-      }
-    })
-
-    const saveBtn = page.locator('[id^="save-btn-"]').first()
-
-    // Click save — handleSaveConfig sets dataset.saving and disabled synchronously
-    // before the first await, so we can read them immediately via evaluate.
-    await saveBtn.click()
-
-    const { saving, disabled } = await page.evaluate(() => {
-      const btn = document.querySelector('[id^="save-btn-"]')
-      return {
-        saving: btn.dataset.saving,
-        disabled: btn.disabled,
-      }
-    })
-
-    expect(saving).toBe('true')
-    expect(disabled).toBe(true)
-  })
-
-  test('returning user with 404 project sees friendly error not raw API message', async ({
-    page,
-  }) => {
-    // Simulate a returning user with two deployments:
-    // - calendar-to-sheets loads fine (verifiedCount will be 1)
-    // - gmail-to-drive-by-labels project content returns 404
-    // The bad project's panel should show a friendly message, not the raw API error.
-    await page.evaluate((key) => {
-      localStorage.setItem(
-        key,
-        JSON.stringify({
-          'gmail-to-drive-by-labels\nPetry-Projects – Gmail to Drive by Labels':
-            'proj-404-gmail',
-          'calendar-to-sheets\nPetry-Projects – Calendar to Sheets':
-            'proj-ok-cal',
-        })
-      )
-    }, 'gas_copilot_deployed')
-
-    await page.route('https://raw.githubusercontent.com/**', async (route) => {
-      await route.fulfill({ status: 200, body: '// code' })
-    })
-    await page.route('https://script.googleapis.com/**', async (route) => {
-      const url = route.request().url()
-      const method = route.request().method()
-      if (
-        method === 'GET' &&
-        url.includes('/projects/proj-404-gmail/content')
-      ) {
-        // Project content returns 404 "Requested entity was not found."
-        await route.fulfill({
-          status: 404,
-          body: JSON.stringify({
-            error: { message: 'Requested entity was not found.' },
-          }),
-        })
-      } else if (
-        method === 'GET' &&
-        url.includes('/projects/proj-ok-cal/content')
-      ) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({
-            files: [
-              {
-                name: 'config',
-                type: 'SERVER_JS',
-                source: 'var SYNC_CONFIGS = [];',
-              },
-            ],
-          }),
-        })
-      } else {
-        await route.continue()
-      }
-    })
-    await page.route(
-      'https://www.googleapis.com/calendar/**',
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({
-            items: [{ id: 'primary', summary: 'Primary Calendar' }],
-          }),
-        })
-      }
-    )
-
-    await signIn(page)
-    await page.waitForSelector('#step3-card')
-
-    // The bad gmail project panel should show the friendly error, NOT the raw API message.
-    const gmailPanel = page.locator('#config-panel-proj-404-gmail')
-    await expect(gmailPanel).toContainText(
-      'This script project could not be found.'
-    )
-    await expect(gmailPanel).not.toContainText('Requested entity was not found')
-
-    // The good calendar project should still load correctly.
-    await expect(page.locator('#config-panel-proj-ok-cal')).toBeVisible()
-    await expect(page.locator('#config-panel-proj-ok-cal')).toContainText(
-      'Primary Calendar'
-    )
-  })
-
-  test('buildGmailConfigSource generates correct config.gs source', async ({
-    page,
-  }) => {
-    const source = await page.evaluate(() => {
-      return window.buildGmailConfigSource([
-        {
-          triggerLabel: 'my-label',
-          processedLabel: 'archived',
-          docId: 'doc123',
-          folderId: 'folder456',
-          batchSize: '100',
-        },
-      ])
-    })
-    expect(source).toContain('function getProcessConfig()')
-    expect(source).toContain('"my-label"')
-    expect(source).toContain('"archived"')
-    expect(source).toContain('"doc123"')
-    expect(source).toContain('"folder456"')
-    expect(source).toContain('100')
-  })
-
-  test('buildGmailConfigSource uses default batchSize of 250 when not provided', async ({
-    page,
-  }) => {
-    const source = await page.evaluate(() => {
-      return window.buildGmailConfigSource([
-        {
-          triggerLabel: 'lbl',
-          processedLabel: 'done',
-          docId: 'd',
-          folderId: 'f',
-          batchSize: '',
-        },
-      ])
-    })
-    expect(source).toContain('250')
-  })
-
-  test('buildGmailConfigSource treats batchSize of 0 as default 250', async ({
-    page,
-  }) => {
-    const source = await page.evaluate(() => {
-      return window.buildGmailConfigSource([
-        {
-          triggerLabel: 'lbl',
-          processedLabel: 'done',
-          docId: 'd',
-          folderId: 'f',
-          batchSize: '0',
-        },
-      ])
-    })
-    expect(source).toContain('250')
-    expect(source).not.toContain('batchSize: 0')
-  })
-
-  test('buildCalendarConfigSource generates correct config.gs source', async ({
-    page,
-  }) => {
-    const source = await page.evaluate(() => {
-      return window.buildCalendarConfigSource([
-        {
-          calendarId: 'cal@example.com',
-          spreadsheetId: 'sheet789',
-          sheetName: 'MySheet',
-        },
-      ])
-    })
-    expect(source).toContain('SYNC_CONFIGS')
-    expect(source).toContain('"cal@example.com"')
-    expect(source).toContain('"sheet789"')
-    expect(source).toContain('"MySheet"')
-  })
-
-  test('buildCalendarConfigSource uses Sheet1 as default sheetName', async ({
-    page,
-  }) => {
-    const source = await page.evaluate(() => {
-      return window.buildCalendarConfigSource([
-        {
-          calendarId: 'c',
-          spreadsheetId: 's',
-          sheetName: '',
-        },
-      ])
-    })
-    expect(source).toContain('"Sheet1"')
-  })
-
-  test('buildEmptyGmailConfigSource generates empty config.gs with commented example', async ({
-    page,
-  }) => {
-    const source = await page.evaluate(() => {
-      return window.buildEmptyGmailConfigSource()
-    })
-    // Must define getProcessConfig returning an empty array.
-    expect(source).toContain('function getProcessConfig()')
-    expect(source).toContain('return []')
-    // Must include a commented-out example (not live code).
-    expect(source).toContain("triggerLabel: 'my-label'")
-    expect(source).toContain("docId: 'GOOGLE_DOC_ID'")
-    // Must NOT have any live (uncommented) entries — exclude lines starting with //.
-    expect(source).not.toMatch(/^\s*[^/\s].*triggerLabel:/m)
-    expect(source).not.toMatch(/^\s*[^/\s].*docId:/m)
-  })
-
-  test('buildEmptyCalendarConfigSource generates empty config.gs with commented example', async ({
-    page,
-  }) => {
-    const source = await page.evaluate(() => {
-      return window.buildEmptyCalendarConfigSource()
-    })
-    // Must define SYNC_CONFIGS as an empty array.
-    expect(source).toContain('var SYNC_CONFIGS = []')
-    // Must include a commented-out example (not live code).
-    expect(source).toContain('// var SYNC_CONFIGS = [')
-    expect(source).toContain("spreadsheetId: 'aSpreadsheetId'")
-    // Must NOT have any live (uncommented) entries — exclude lines starting with //.
-    expect(source).not.toMatch(/^\s*[^/\s].*spreadsheetId:/m)
-    expect(source).not.toMatch(/^\s*[^/\s].*calendarId:/m)
-  })
-
-  test('Step 3 is not shown before deployment', async ({ page }) => {
-    await expect(page.locator('#step3-card')).toHaveCount(0)
-    await expect(page.locator('#config-area')).toBeAttached()
-    await expect(page.locator('#config-area')).toBeEmpty()
-  })
-
-  test('re-deploying replaces previous Step 3 card', async ({ page }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-
-    // After first deploy the section collapses; re-expand to deploy again.
-    await page.locator('#btn-toggle-deploy').click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('.status-ok')
-
-    // Should still be exactly one Step 3 card
-    await expect(page.locator('#step3-card')).toHaveCount(1)
-  })
-
-  // ── Select all ──────────────────────────────────────────────────────────────
-
-  test('Select all button is present in script list', async ({ page }) => {
-    await signIn(page)
-    await expect(page.locator('#btn-select-all')).toBeVisible()
-    await expect(page.locator('#btn-select-all')).toHaveText('Select all')
-  })
-
-  test('Select all checks all script checkboxes', async ({ page }) => {
-    await signIn(page)
-    await page.locator('#btn-select-all').click()
-    const checkboxes = page.locator('input[name="script"]')
-    for (const checkbox of await checkboxes.all()) {
-      await expect(checkbox).toBeChecked()
-    }
-  })
-
-  test('Select all button label becomes "Deselect all" when all checked', async ({
-    page,
-  }) => {
-    await signIn(page)
-    await page.locator('#btn-select-all').click()
-    await expect(page.locator('#btn-select-all')).toHaveText('Deselect all')
-  })
-
-  test('Deselect all unchecks all script checkboxes', async ({ page }) => {
-    await signIn(page)
-    // First check all
-    await page.locator('#btn-select-all').click()
-    // Then deselect all
-    await page.locator('#btn-select-all').click()
-    const checkboxes = page.locator('input[name="script"]')
-    for (const checkbox of await checkboxes.all()) {
-      await expect(checkbox).not.toBeChecked()
-    }
-  })
-
-  test('Select all enables deploy button after sign-in', async ({ page }) => {
-    await signIn(page)
-    await page.locator('#btn-select-all').click()
-    await expect(page.locator('#btn-deploy')).toBeEnabled()
-  })
-
-  test('Select all label updates when individual checkboxes are toggled', async ({
-    page,
-  }) => {
-    await signIn(page)
-    // Select all then uncheck one — label should revert to "Select all"
-    await page.locator('#btn-select-all').click()
-    await expect(page.locator('#btn-select-all')).toHaveText('Deselect all')
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await expect(page.locator('#btn-select-all')).toHaveText('Select all')
-  })
-
-  // ── Auto-set sheet name from calendar name ──────────────────────────────────
-
-  test('selecting a calendar auto-fills the sheet name input', async ({
-    page,
-  }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-    await page.waitForSelector('.config-row')
-
-    const calSelect = page.locator('.config-row [name="calendarId"]').first()
-    await calSelect.selectOption('work@example.com')
-
-    const sheetName = page.locator('.config-row [name="sheetName"]').first()
-    await expect(sheetName).toHaveValue('Work')
-  })
-
-  test('auto-fill does not overwrite sheet name when calendar is deselected', async ({
-    page,
-  }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-    await page.waitForSelector('.config-row')
-
-    // Selecting "— select —" (empty value) should not change the sheet name
-    const calSelect = page.locator('.config-row [name="calendarId"]').first()
-    await calSelect.selectOption('primary')
-    const sheetName = page.locator('.config-row [name="sheetName"]').first()
-    await expect(sheetName).toHaveValue('Primary Calendar')
-
-    // Selecting empty should not reset
-    await calSelect.selectOption('')
-    await expect(sheetName).toHaveValue('Primary Calendar')
-  })
-
-  // ── Step 3 appears on sign-in if previously deployed ───────────────────────
-
-  test('Step 3 appears automatically on sign-in when projects were already deployed', async ({
-    page,
-  }) => {
-    // Pre-seed localStorage with a previously deployed project
-    await page.evaluate((key) => {
-      localStorage.setItem(
-        key,
-        JSON.stringify({
-          'calendar-to-sheets\nPetry-Projects – Calendar to Sheets':
-            'existing-proj-id',
-        })
-      )
-    }, 'gas_copilot_deployed')
-
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-
-    // Step 3 should appear without clicking Deploy
-    await page.waitForSelector('#step3-card')
-    await expect(page.locator('#step3-card')).toBeVisible()
-  })
-
-  test('Step 3 deduplicates multiple localStorage entries for the same script', async ({
-    page,
-  }) => {
-    // Pre-seed localStorage with duplicate entries for the same catalogId
-    // (different titles from multiple deploys)
-    await page.evaluate((key) => {
-      localStorage.setItem(
-        key,
-        JSON.stringify({
-          'calendar-to-sheets\nFirst Deploy': 'stale-proj-id',
-          'calendar-to-sheets\nSecond Deploy': 'latest-proj-id',
-          'gmail-to-drive-by-labels\nFirst Gmail': 'gmail-proj-id',
-        })
-      )
-    }, 'gas_copilot_deployed')
-
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page.waitForSelector('#step3-card')
-
-    // Should show exactly 2 config panels (one per catalogId), not 3
-    const panels = page.locator('.config-panel')
-    await expect(panels).toHaveCount(2)
-  })
-
-  test('Step 3 pre-populates calendar rows from existing config.gs', async ({
-    page,
-  }) => {
-    // Pre-seed localStorage
-    await page.evaluate((key) => {
-      localStorage.setItem(
-        key,
-        JSON.stringify({
-          'calendar-to-sheets\nPetry-Projects – Calendar to Sheets':
-            'existing-proj-id',
-        })
-      )
-    }, 'gas_copilot_deployed')
-
-    // Return an existing config.gs with a known SYNC_CONFIGS
-    await page.route('https://raw.githubusercontent.com/**', async (route) => {
-      await route.fulfill({ status: 200, body: '// code' })
-    })
-    await page.route('https://script.googleapis.com/**', async (route) => {
-      const url = route.request().url()
-      const method = route.request().method()
-      if (
-        method === 'GET' &&
-        url.includes('/projects/existing-proj-id/content')
-      ) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({
-            files: [
-              {
-                name: 'config',
-                type: 'SERVER_JS',
-                source:
-                  'var SYNC_CONFIGS = [{ spreadsheetId: "sheet-abc", sheetName: "MySheet", calendarId: "primary" }];\n',
-              },
-            ],
-          }),
-        })
-      } else {
-        await route.continue()
-      }
-    })
-    await page.route(
-      'https://www.googleapis.com/calendar/**',
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({
-            items: [{ id: 'primary', summary: 'Primary Calendar' }],
-          }),
-        })
-      }
-    )
-
-    await signIn(page)
-    await page.waitForSelector('#step3-card')
-    await page.waitForSelector('.config-row')
-
-    // The existing entry should be pre-populated
-    const calSelect = page.locator('.config-row [name="calendarId"]').first()
-    await expect(calSelect).toHaveValue('primary')
-
-    // Sheet name is derived from the calendar name, not from the stored value
-    const sheetNameInput = page
-      .locator('.config-row [name="sheetName"]')
-      .first()
-    await expect(sheetNameInput).toHaveValue('Primary Calendar')
-  })
-
-  test('parseCalendarConfig correctly parses SYNC_CONFIGS source', async ({
-    page,
-  }) => {
-    const entries = await page.evaluate(() => {
-      return window.parseCalendarConfig(
-        'var SYNC_CONFIGS = [{ spreadsheetId: "s1", sheetName: "Sh", calendarId: "c1" }];\n'
-      )
-    })
-    expect(entries).toEqual([
-      { spreadsheetId: 's1', sheetName: 'Sh', calendarId: 'c1' },
-    ])
-  })
-
-  test('parseCalendarConfig returns empty array for the default empty config (no sample entries)', async ({
-    page,
-  }) => {
-    // This is the content generated by buildEmptyCalendarConfigSource() and
-    // deployed to Apps Script on first deploy. It must parse to an empty array
-    // so that no sample config boxes appear in the UI.
-    const source = [
-      '// Calendar to Sheets configuration.',
-      '// Supports multiple calendar-to-sheet mappings.',
-      '// Use the web-based deploy tool to configure entries, or edit directly below.',
-      '//',
-      '// Example (do not uncomment — edit var SYNC_CONFIGS below instead):',
-      '// var SYNC_CONFIGS = [',
-      "//   { spreadsheetId: 'aSpreadsheetId', sheetName: 'Sheet1', calendarId: 'aCalendarId' },",
-      "//   { spreadsheetId: 'anotherSpreadsheetId', sheetName: 'Sheet2', calendarId: 'anotherCalendarId' },",
-      '// ]',
-      '',
-      'var SYNC_CONFIGS = []',
-    ].join('\n')
-    const entries = await page.evaluate((src) => {
-      return window.parseCalendarConfig(src)
-    }, source)
-    expect(entries).toEqual([])
-  })
-
-  test('parseGmailConfig correctly parses getProcessConfig source', async ({
-    page,
-  }) => {
-    const entries = await page.evaluate(() => {
-      return window.parseGmailConfig(
-        'function getProcessConfig() { return [{ triggerLabel: "t", processedLabel: "p", docId: "d", folderId: "f", batchSize: 50 }]; }\n'
-      )
-    })
-    expect(entries).toEqual([
-      {
-        triggerLabel: 't',
-        processedLabel: 'p',
-        docId: 'd',
-        folderId: 'f',
-        batchSize: 50,
-      },
-    ])
-  })
-
-  test('parseGmailConfig returns empty array for the default empty config (no sample entries)', async ({
-    page,
-  }) => {
-    // This is the content generated by buildEmptyGmailConfigSource() and
-    // deployed to Apps Script on first deploy. It must parse to an empty array
-    // so that no sample config boxes appear in the UI.
-    const source = [
-      '// --- CONFIGURATION SECTION ---',
-      '',
-      '// This function returns the configuration array.',
-      '// Use the web-based deploy tool to configure entries, or edit the return value below.',
-      '//',
-      '// Example (do not uncomment — edit the return [] below instead):',
-      '// function getProcessConfig() {',
-      '//   return [',
-      '//     {',
-      "//       triggerLabel: 'my-label',",
-      "//       processedLabel: 'my-label-archived',",
-      "//       docId: 'GOOGLE_DOC_ID', // Text goes here",
-      "//       folderId: 'DRIVE_FOLDER_ID', // Attachments go here",
-      '//       batchSize: 250, // Optional: threads per batch (default: 250)',
-      '//     },',
-      '//   ]',
-      '// }',
-      'function getProcessConfig() {',
-      '  return []',
-      '}',
-    ].join('\n')
-    const entries = await page.evaluate((src) => {
-      return window.parseGmailConfig(src)
-    }, source)
-    expect(entries).toEqual([])
-  })
-
-  // ── No blank row when existing configs loaded ───────────────────────────────
-
-  test('one blank config row is shown after a fresh deploy for first-time setup', async ({
-    page,
-  }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page.locator('#script-list input[value="calendar-to-sheets"]').click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-
-    // Fresh deploy (loadExisting: false) → one blank row for first-time setup
-    await page.waitForSelector('.config-row')
-    await expect(page.locator('.config-row')).toHaveCount(1)
-    // "+ Add entry" button must be visible for first-time setup
-    await expect(page.locator('[id^="add-btn-"]').first()).toBeVisible()
-  })
-
-  test('no blank row after sign-in when config.gs has only empty/default entries', async ({
-    page,
-  }) => {
-    await page.evaluate((key) => {
-      localStorage.setItem(
-        key,
-        JSON.stringify({
-          'calendar-to-sheets\nPetry-Projects – Calendar to Sheets':
-            'proj-empty',
-        })
-      )
-    }, 'gas_copilot_deployed')
-
-    // Serve a config.gs with empty SYNC_CONFIGS (the new default)
-    await page.route('https://raw.githubusercontent.com/**', async (route) => {
-      await route.fulfill({ status: 200, body: '// code' })
-    })
-    await page.route('https://script.googleapis.com/**', async (route) => {
-      const url = route.request().url()
-      const method = route.request().method()
-      if (method === 'GET' && url.includes('/projects/proj-empty/content')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({
-            files: [
-              {
-                name: 'config',
-                type: 'SERVER_JS',
-                source: 'var SYNC_CONFIGS = [];',
-              },
-            ],
-          }),
-        })
-      } else {
-        await route.continue()
-      }
-    })
-    await page.route(
-      'https://www.googleapis.com/calendar/**',
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({
-            items: [{ id: 'primary', summary: 'Primary Calendar' }],
-          }),
-        })
-      }
-    )
-
-    await signIn(page)
-    await page.waitForSelector('#step3-card')
-    await page.waitForSelector('.config-row')
-
-    // Empty SYNC_CONFIGS → no existing entries → one blank row is shown for first-time setup
-    await expect(page.locator('.config-row')).toHaveCount(1)
-    // "+ Add entry" button must be visible for first-time setup
-    await expect(page.locator('[id^="add-btn-"]').first()).toBeVisible()
-  })
-
-  test('existing real configs are shown without a blank row', async ({
-    page,
-  }) => {
-    await page.evaluate((key) => {
-      localStorage.setItem(
-        key,
-        JSON.stringify({
-          'calendar-to-sheets\nPetry-Projects – Calendar to Sheets':
-            'proj-real',
-        })
-      )
-    }, 'gas_copilot_deployed')
-
-    await page.route('https://raw.githubusercontent.com/**', async (route) => {
-      await route.fulfill({ status: 200, body: '// code' })
-    })
-    await page.route('https://script.googleapis.com/**', async (route) => {
-      const url = route.request().url()
-      const method = route.request().method()
-      if (method === 'GET' && url.includes('/projects/proj-real/content')) {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({
-            files: [
-              {
-                name: 'config',
-                type: 'SERVER_JS',
-                source:
-                  'var SYNC_CONFIGS = [{ spreadsheetId: "s1", sheetName: "MySheet", calendarId: "primary" }];',
-              },
-            ],
-          }),
-        })
-      } else {
-        await route.continue()
-      }
-    })
-    await page.route(
-      'https://www.googleapis.com/calendar/**',
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({
-            items: [{ id: 'primary', summary: 'Primary Calendar' }],
-          }),
-        })
-      }
-    )
-
-    await signIn(page)
-    await page.waitForSelector('#step3-card')
-    await page.waitForSelector('.config-row')
-
-    // Exactly the 1 real row — no additional blank row
-    await expect(page.locator('.config-row')).toHaveCount(1)
-    // "+ Add entry" button must be visible — user can add more entries
-    await expect(page.locator('[id^="add-btn-"]').first()).toBeVisible()
-  })
-
-  // ── Deploy section visibility ─────────────────────────────────────────────────
-
-  test('deploy card is hidden before sign-in', async ({ page }) => {
-    await expect(page.locator('#deploy-card')).not.toBeVisible()
-  })
-
-  test('deploy section is shown after sign-in with no prior deployments', async ({
-    page,
-  }) => {
-    await expect(page.locator('#deploy-card')).not.toBeVisible()
-    await signIn(page)
-    await expect(page.locator('#deploy-section')).toBeVisible()
-    await expect(page.locator('#btn-toggle-deploy')).toBeVisible()
-    // Configure section should not appear until after a deploy
-    await expect(page.locator('#step3-card')).not.toBeAttached()
-  })
-
-  test('deploy section collapses after any scripts are deployed', async ({
-    page,
-  }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    // Deploy only one script
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-
-    // Deploy body collapses but card header stays visible
-    await expect(page.locator('#deploy-section')).not.toBeVisible()
-    await expect(page.locator('#deploy-card')).toBeVisible()
-    await expect(page.locator('#btn-toggle-deploy')).toBeVisible()
-  })
-
-  test('deploy section collapses after both scripts are deployed', async ({
-    page,
-  }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    // Select all scripts and deploy
-    await page.locator('#btn-select-all').click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-
-    // Deploy body hidden, header visible
-    await expect(page.locator('#deploy-section')).not.toBeVisible()
-    await expect(page.locator('#deploy-card')).toBeVisible()
-  })
-
-  test('clicking toggle button expands and collapses the deploy section', async ({
-    page,
-  }) => {
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page.locator('#btn-select-all').click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('#step3-card')
-    await expect(page.locator('#deploy-section')).not.toBeVisible()
-
-    // Expand
-    await page.locator('#btn-toggle-deploy').click()
-    await expect(page.locator('#deploy-section')).toBeVisible()
-    await expect(page.locator('#btn-toggle-deploy')).toContainText('Collapse')
-
-    // Collapse again
-    await page.locator('#btn-toggle-deploy').click()
-    await expect(page.locator('#deploy-section')).not.toBeVisible()
-    await expect(page.locator('#btn-toggle-deploy')).toContainText('Expand')
-  })
-
-  test('deploy section collapses on sign-in when scripts already deployed', async ({
-    page,
-  }) => {
-    // Pre-seed localStorage with BOTH scripts deployed
-    await page.evaluate((key) => {
-      localStorage.setItem(
-        key,
-        JSON.stringify({
-          'gmail-to-drive-by-labels\nPetry-Projects – Gmail to Drive':
-            'proj-gmail',
-          'calendar-to-sheets\nPetry-Projects – Calendar to Sheets': 'proj-cal',
-        })
-      )
-    }, 'gas_copilot_deployed')
-
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page.waitForSelector('#step3-card')
-
-    // Card header visible, body collapsed
-    await expect(page.locator('#deploy-section')).not.toBeVisible()
-    await expect(page.locator('#deploy-card')).toBeVisible()
-  })
-
-  test('deploy section collapses on sign-in when only one script was previously deployed', async ({
-    page,
-  }) => {
-    // Pre-seed localStorage with only ONE script deployed
-    await page.evaluate((key) => {
-      localStorage.setItem(
-        key,
-        JSON.stringify({
-          'gmail-to-drive-by-labels\nPetry-Projects – Gmail to Drive':
-            'proj-gmail',
-        })
-      )
-    }, 'gas_copilot_deployed')
-
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-    await page.waitForSelector('#step3-card')
-
-    // Any prior deployment → deploy body collapsed, card header visible
-    await expect(page.locator('#deploy-section')).not.toBeVisible()
-    await expect(page.locator('#deploy-card')).toBeVisible()
-  })
-
-  test('Step 2 shows deployed badge for previously deployed scripts', async ({
-    page,
-  }) => {
-    // Pre-seed localStorage with one script deployed
-    await page.evaluate((key) => {
-      localStorage.setItem(
-        key,
-        JSON.stringify({
-          'gmail-to-drive-by-labels\nPetry-Projects – Gmail to Drive':
-            'proj-gmail',
-        })
-      )
-    }, 'gas_copilot_deployed')
-
-    await mockSuccessfulDeploy(page)
-    await signIn(page)
-
-    // Expand Step 2 to see the script list
-    await page.locator('#btn-toggle-deploy').click()
-
-    // Gmail script should show "Deployed" badge
-    const gmailLabel = page.locator(
-      'label[for="script-gmail-to-drive-by-labels"]'
-    )
-    await expect(gmailLabel.locator('.deployed-badge')).toBeVisible()
-    await expect(gmailLabel.locator('.deployed-badge')).toHaveText('Deployed')
-
-    // Calendar script should NOT show badge
-    const calLabel = page.locator('label[for="script-calendar-to-sheets"]')
-    await expect(calLabel.locator('.deployed-badge')).not.toBeAttached()
-  })
-
-  // ── Step 2 gating: Step 3 must not appear without a valid deployment ──────────
-
-  test('returning user with no config.gs in their project sees deploy section, not Step 3', async ({
-    page,
-  }) => {
-    // Simulate a returning user whose project was only partially deployed
-    // (project exists but config.gs was never uploaded — e.g. the upload failed).
-    await page.evaluate((key) => {
-      localStorage.setItem(
-        key,
-        JSON.stringify({
-          'calendar-to-sheets\nPetry-Projects – Calendar to Sheets':
-            'proj-no-config',
-        })
-      )
-    }, 'gas_copilot_deployed')
-
-    await page.route('https://raw.githubusercontent.com/**', async (route) => {
-      await route.fulfill({ status: 200, body: '// code' })
-    })
-    await page.route('https://script.googleapis.com/**', async (route) => {
-      const url = route.request().url()
-      const method = route.request().method()
-      if (
-        method === 'GET' &&
-        url.includes('/projects/proj-no-config/content')
-      ) {
-        // Project exists but has no config.gs — only code.gs is present.
-        await route.fulfill({
-          status: 200,
-          body: JSON.stringify({
-            files: [{ name: 'code', type: 'SERVER_JS', source: '// code' }],
-          }),
-        })
-      } else {
-        await route.continue()
-      }
-    })
-
-    await signIn(page)
-
-    // Step 3 must NOT appear — config.gs was never deployed.
-    await expect(page.locator('#step3-card')).not.toBeAttached()
-    // Deploy section must be visible so the user can re-deploy.
-    await expect(page.locator('#deploy-section')).toBeVisible()
-  })
-
-  test('returning user whose project API returns 404 sees deploy section, not Step 3', async ({
-    page,
-  }) => {
-    // Simulate a returning user whose project was deleted from Apps Script
-    // (localStorage has an entry but the project no longer exists).
-    await page.evaluate((key) => {
-      localStorage.setItem(
-        key,
-        JSON.stringify({
-          'calendar-to-sheets\nPetry-Projects – Calendar to Sheets':
-            'proj-deleted',
-        })
-      )
-    }, 'gas_copilot_deployed')
-
-    await page.route('https://raw.githubusercontent.com/**', async (route) => {
-      await route.fulfill({ status: 200, body: '// code' })
-    })
-    await page.route('https://script.googleapis.com/**', async (route) => {
-      const url = route.request().url()
-      const method = route.request().method()
-      if (method === 'GET' && url.includes('/projects/proj-deleted/content')) {
-        // Project no longer exists.
-        await route.fulfill({
-          status: 404,
-          body: JSON.stringify({ error: { message: 'Not found' } }),
-        })
-      } else {
-        await route.continue()
-      }
-    })
-
-    await signIn(page)
-
-    // Step 3 must NOT appear — the project is gone.
-    await expect(page.locator('#step3-card')).not.toBeAttached()
-    // Deploy section must be visible so the user can re-deploy.
-    await expect(page.locator('#deploy-section')).toBeVisible()
-  })
-
-  // ── Picker auto-fill ──────────────────────────────────────────────────────
-
-  test('picking a doc auto-fills empty folder field with parent folder', async ({
-    page,
-  }) => {
-    await mockSuccessfulDeploy(page)
-    await page.route('https://gmail.googleapis.com/**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        body: JSON.stringify({ labels: [{ id: 'L1', name: 'mylabel' }] }),
-      })
-    })
-
-    await signIn(page)
-    await page
-      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
-      .click()
-    await page.locator('#btn-deploy').click()
-    await page.waitForSelector('.config-row')
-
-    // Verify folder field is initially empty
-    const folderId = await page.evaluate(
-      () => document.querySelector('[name="folderId"]').value
-    )
-    expect(folderId).toBe('')
-
-    // Click "Pick Doc" to open the picker (sets __pickerCallback)
-    await page.locator('button:has-text("Pick Doc")').click()
-
-    // Simulate picker returning a doc with a parentId
-    await page.evaluate(() => {
-      window.__pickerCallback({
-        action: 'picked',
-        docs: [{ id: 'doc-123', name: 'My Doc', parentId: 'parent-folder-1' }],
-      })
-    })
-
-    // Doc field should be set
-    const docId = await page.evaluate(
-      () => document.querySelector('[name="docId"]').value
-    )
-    expect(docId).toBe('doc-123')
-
-    // Folder field should be auto-filled with the parent folder ID
-    const autoFolderId = await page.evaluate(
-      () => document.querySelector('[name="folderId"]').value
-    )
-    expect(autoFolderId).toBe('parent-folder-1')
-
-    // Folder name should be fetched from Drive API mock
-    await expect(page.locator('[id^="folder-name-"]').first()).toHaveText(
-      'Folder for parent-folder-1'
-    )
+    await expect(page.locator('.status-ok')).toContainText('deployed')
   })
 })
