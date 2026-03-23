@@ -1,7 +1,7 @@
 name: Dependabot auto-merge
 
 on:
-  pull_request:
+  pull_request_target:
     branches:
       - main
 
@@ -20,16 +20,19 @@ jobs:
         with:
           github-token: '${{ secrets.GITHUB_TOKEN }}'
 
-      - name: Enable auto-merge for patch, minor, and indirect updates
+      - name: Generate app token
+        if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor' || steps.metadata.outputs.dependency-type == 'indirect'
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Approve and auto-merge
         if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor' || steps.metadata.outputs.dependency-type == 'indirect'
         run: |
-          # Enable auto-merge to handle future check completions
-          gh pr merge --auto --squash "$PR_URL"
-          # If all required checks are already passing, merge immediately since
-          # auto-merge only triggers on subsequent check completions, not existing ones
-          if [ "$(gh pr view "$PR_URL" --json mergeable --jq '.mergeable')" = "true" ]; then
-            gh pr merge --squash "$PR_URL"
-          fi
+          gh pr review --approve "$PR_URL"
+          gh pr merge --squash --admin "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
