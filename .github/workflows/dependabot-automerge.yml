@@ -20,17 +20,19 @@ jobs:
         with:
           github-token: '${{ secrets.GITHUB_TOKEN }}'
 
-      - name: Approve and auto-merge patch, minor, and indirect updates
+      - name: Generate app token
+        if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor' || steps.metadata.outputs.dependency-type == 'indirect'
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Approve and auto-merge
         if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor' || steps.metadata.outputs.dependency-type == 'indirect'
         run: |
-          # Approve the PR to satisfy any review requirements
           gh pr review --approve "$PR_URL"
-          # Enable auto-merge — requires a token whose actor can bypass
-          # the repository ruleset. GITHUB_TOKEN (github-actions[bot],
-          # integration 15368) is NOT in the ruleset bypass list, so
-          # auto-merge silently stalls. GH_ADMIN_PAT from a repo admin
-          # merges as that user, who has RepositoryRole bypass.
           gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GH_ADMIN_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
