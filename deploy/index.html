@@ -882,15 +882,15 @@
           safeSelectId +
           '" placeholder="e.g. Projects/receipts" style="flex:1;padding:8px 10px;border:1px solid #dadce0;border-radius:4px;font-size:14px;" />' +
           '<button type="button" class="btn btn-primary" style="padding:8px 14px;font-size:13px;" ' +
-          "onclick=\"window.handleCreateLabel('" +
+          'onclick="window.handleCreateLabel(\'' +
           safeSelectId +
           "', '" +
           safeContainerId +
-          "')\">Create</button>" +
+          '\')">Create</button>' +
           '<button type="button" class="btn btn-outline" style="padding:8px 14px;font-size:13px;" ' +
-          "onclick=\"window.hideNewLabelInput('" +
+          'onclick="window.hideNewLabelInput(\'' +
           safeContainerId +
-          "')\">Cancel</button>" +
+          '\')">Cancel</button>' +
           '</div>' +
           '<div id="new-label-error-' +
           safeSelectId +
@@ -1162,11 +1162,11 @@
               opts +
               '</select>' +
               '<button type="button" class="btn btn-outline" style="white-space:nowrap;padding:8px 12px;font-size:13px;" ' +
-              "onclick=\"window.showNewLabelInput('new-label-trigger-" +
+              'onclick="window.showNewLabelInput(\'new-label-trigger-' +
               escapeHtml(scriptId) +
               "', '" +
               escapeHtml(triggerSelectId) +
-              "')\">+ New Label</button>" +
+              '\')">+ New Label</button>' +
               '</div>' +
               '<div id="new-label-trigger-' +
               escapeHtml(scriptId) +
@@ -1180,11 +1180,11 @@
               opts +
               '</select>' +
               '<button type="button" class="btn btn-outline" style="white-space:nowrap;padding:8px 12px;font-size:13px;" ' +
-              "onclick=\"window.showNewLabelInput('new-label-processed-" +
+              'onclick="window.showNewLabelInput(\'new-label-processed-' +
               escapeHtml(scriptId) +
               "', '" +
               escapeHtml(processedSelectId) +
-              "')\">+ New Label</button>" +
+              '\')">+ New Label</button>' +
               '</div>' +
               '<div id="new-label-processed-' +
               escapeHtml(scriptId) +
@@ -1196,11 +1196,11 @@
               escapeHtml(triggerSelectId) +
               '" placeholder="e.g. receipts" style="flex:1" />' +
               '<button type="button" class="btn btn-outline" style="white-space:nowrap;padding:8px 12px;font-size:13px;" ' +
-              "onclick=\"window.showNewLabelInput('new-label-trigger-" +
+              'onclick="window.showNewLabelInput(\'new-label-trigger-' +
               escapeHtml(scriptId) +
               "', '" +
               escapeHtml(triggerSelectId) +
-              "')\">+ New Label</button>" +
+              '\')">+ New Label</button>' +
               '</div>' +
               '<div id="new-label-trigger-' +
               escapeHtml(scriptId) +
@@ -1211,11 +1211,11 @@
               escapeHtml(processedSelectId) +
               '" placeholder="e.g. receipts-archived" style="flex:1" />' +
               '<button type="button" class="btn btn-outline" style="white-space:nowrap;padding:8px 12px;font-size:13px;" ' +
-              "onclick=\"window.showNewLabelInput('new-label-processed-" +
+              'onclick="window.showNewLabelInput(\'new-label-processed-' +
               escapeHtml(scriptId) +
               "', '" +
               escapeHtml(processedSelectId) +
-              "')\">+ New Label</button>" +
+              '\')">+ New Label</button>' +
               '</div>' +
               '<div id="new-label-processed-' +
               escapeHtml(scriptId) +
