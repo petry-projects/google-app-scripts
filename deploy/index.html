@@ -794,7 +794,9 @@
        */
       async function createGmailLabel(labelName, targetSelectId) {
         if (!accessToken) {
-          throw new Error('Please sign in again — your session may have expired.')
+          throw new Error(
+            'Please sign in again — your session may have expired.'
+          )
         }
         if (!labelName) return null
 
