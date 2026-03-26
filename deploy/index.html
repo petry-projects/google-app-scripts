@@ -793,41 +793,41 @@
        * list.  Returns the created label name on success, or null on failure.
        */
       async function createGmailLabel(labelName, targetSelectId) {
-        if (!accessToken || !labelName) return null
-        try {
-          const res = await fetch(
-            'https://gmail.googleapis.com/gmail/v1/users/me/labels',
-            {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ name: labelName }),
-            }
-          )
-          if (!res.ok) {
-            const text = await res.text()
-            let msg = `Failed to create label (${res.status})`
-            if (res.status === 409 || text.toLowerCase().includes('already')) {
-              msg = `Label "${labelName}" already exists`
-            }
-            throw new Error(msg)
-          }
-          const created = await res.json()
-
-          // Refresh the cached label list
-          await fetchGmailLabels()
-
-          // Auto-select the new label in the target dropdown
-          if (targetSelectId) {
-            refreshLabelDropdown(targetSelectId, created.name)
-          }
-
-          return created.name
-        } catch (err) {
-          throw err
+        if (!accessToken) {
+          throw new Error('Please sign in again — your session may have expired.')
         }
+        if (!labelName) return null
+
+        const res = await fetch(
+          'https://gmail.googleapis.com/gmail/v1/users/me/labels',
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ name: labelName }),
+          }
+        )
+        if (!res.ok) {
+          const text = await res.text()
+          let msg = `Failed to create label (${res.status})`
+          if (res.status === 409 || text.toLowerCase().includes('already')) {
+            msg = `Label "${labelName}" already exists`
+          }
+          throw new Error(msg)
+        }
+        const created = await res.json()
+
+        // Refresh the cached label list
+        await fetchGmailLabels()
+
+        // Auto-select the new label in the target dropdown
+        if (targetSelectId) {
+          refreshLabelDropdown(targetSelectId, created.name)
+        }
+
+        return created.name
       }
 
       /**
