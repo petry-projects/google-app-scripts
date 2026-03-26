@@ -8,6 +8,7 @@ const {
   createProject,
   updateProjectContent,
   deployScript,
+  createGmailLabel,
 } = require('../index')
 
 // ---------------------------------------------------------------------------
@@ -438,8 +439,6 @@ describe('deployScript', () => {
 // ---------------------------------------------------------------------------
 // createGmailLabel
 // ---------------------------------------------------------------------------
-
-const { createGmailLabel } = require('../index')
 
 describe('createGmailLabel', () => {
   test('calls the Gmail labels endpoint with correct method and body', async () => {

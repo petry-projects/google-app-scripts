@@ -789,8 +789,13 @@
       }
 
       /**
-       * Creates a new Gmail label via the API and refreshes the cached label
-       * list.  Returns the created label name on success, or null on failure.
+       * Creates a new Gmail label via the Gmail API, refreshes the cached
+       * label list, and auto-selects it in the target dropdown.
+       *
+       * @param {string} labelName - Label to create (supports nested, e.g. "Projects/receipts").
+       * @param {string} [targetSelectId] - ID of the <select> to refresh and auto-select.
+       * @returns {Promise<string>} The created label name.
+       * @throws {Error} On expired session, missing input, or API failure.
        */
       async function createGmailLabel(labelName, targetSelectId) {
         if (!accessToken) {
@@ -798,7 +803,9 @@
             'Please sign in again — your session may have expired.'
           )
         }
-        if (!labelName) return null
+        if (!labelName) {
+          throw new Error('Label name is required.')
+        }
 
         const res = await fetch(
           'https://gmail.googleapis.com/gmail/v1/users/me/labels',
@@ -856,42 +863,49 @@
 
       /**
        * Shows the inline "new label" input next to a label dropdown.
+       * Exposed as window.showNewLabelInput for use by inline onclick handlers.
        */
       function showNewLabelInput(containerId, selectId) {
         const container = document.getElementById(containerId)
         if (!container) return
+        const safeSelectId = escapeHtml(selectId)
+        const safeContainerId = escapeHtml(containerId)
         container.innerHTML =
           '<div style="display:flex;gap:8px;align-items:center;">' +
           '<input type="text" id="new-label-input-' +
-          selectId +
+          safeSelectId +
           '" placeholder="e.g. Projects/receipts" style="flex:1;padding:8px 10px;border:1px solid #dadce0;border-radius:4px;font-size:14px;" />' +
           '<button type="button" class="btn btn-primary" style="padding:8px 14px;font-size:13px;" ' +
-          'onclick="handleCreateLabel(\'' +
-          selectId +
+          "onclick=\"window.handleCreateLabel('" +
+          safeSelectId +
           "', '" +
-          containerId +
-          '\')">Create</button>' +
+          safeContainerId +
+          "')\">Create</button>" +
           '<button type="button" class="btn btn-outline" style="padding:8px 14px;font-size:13px;" ' +
-          'onclick="hideNewLabelInput(\'' +
-          containerId +
-          '\')">Cancel</button>' +
+          "onclick=\"window.hideNewLabelInput('" +
+          safeContainerId +
+          "')\">Cancel</button>" +
           '</div>' +
           '<div id="new-label-error-' +
-          selectId +
+          safeSelectId +
           '" style="color:#c5221f;font-size:12px;margin-top:4px;"></div>'
         document.getElementById('new-label-input-' + selectId).focus()
       }
+      window.showNewLabelInput = showNewLabelInput
 
       /**
        * Hides the inline "new label" input, restoring the container to empty.
+       * Exposed as window.hideNewLabelInput for use by inline onclick handlers.
        */
       function hideNewLabelInput(containerId) {
         const container = document.getElementById(containerId)
         if (container) container.innerHTML = ''
       }
+      window.hideNewLabelInput = hideNewLabelInput
 
       /**
        * Handles the "Create" button click in the new-label inline form.
+       * Exposed as window.handleCreateLabel for use by inline onclick handlers.
        */
       async function handleCreateLabel(selectId, containerId) {
         const input = document.getElementById('new-label-input-' + selectId)
@@ -918,6 +932,7 @@
           btns.forEach((b) => (b.disabled = false))
         }
       }
+      window.handleCreateLabel = handleCreateLabel
 
       // ── Step 3 – Post-deploy configuration UI ───────────────────────────────────
 
@@ -1135,38 +1150,38 @@
             triggerLabelHtml =
               '<div style="display:flex;gap:8px;align-items:center;">' +
               '<select class="cfg-field" data-key="triggerLabel" id="' +
-              triggerSelectId +
+              escapeHtml(triggerSelectId) +
               '" style="flex:1">' +
               '<option value="">— Select label —</option>' +
               opts +
               '</select>' +
               '<button type="button" class="btn btn-outline" style="white-space:nowrap;padding:8px 12px;font-size:13px;" ' +
-              'onclick="showNewLabelInput(\'new-label-trigger-' +
-              scriptId +
+              "onclick=\"window.showNewLabelInput('new-label-trigger-" +
+              escapeHtml(scriptId) +
               "', '" +
-              triggerSelectId +
-              '\')">+ New Label</button>' +
+              escapeHtml(triggerSelectId) +
+              "')\">+ New Label</button>" +
               '</div>' +
               '<div id="new-label-trigger-' +
-              scriptId +
+              escapeHtml(scriptId) +
               '" style="margin-top:8px;"></div>'
             processedLabelHtml =
               '<div style="display:flex;gap:8px;align-items:center;">' +
               '<select class="cfg-field" data-key="processedLabel" id="' +
-              processedSelectId +
+              escapeHtml(processedSelectId) +
               '" style="flex:1">' +
               '<option value="">— Select label —</option>' +
               opts +
               '</select>' +
               '<button type="button" class="btn btn-outline" style="white-space:nowrap;padding:8px 12px;font-size:13px;" ' +
-              'onclick="showNewLabelInput(\'new-label-processed-' +
-              scriptId +
+              "onclick=\"window.showNewLabelInput('new-label-processed-" +
+              escapeHtml(scriptId) +
               "', '" +
-              processedSelectId +
-              '\')">+ New Label</button>' +
+              escapeHtml(processedSelectId) +
+              "')\">+ New Label</button>" +
               '</div>' +
               '<div id="new-label-processed-' +
-              scriptId +
+              escapeHtml(scriptId) +
               '" style="margin-top:8px;"></div>'
           } else {
             triggerLabelHtml =
