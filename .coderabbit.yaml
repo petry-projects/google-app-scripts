@@ -8,16 +8,16 @@ reviews:
     base_branches:
       - main
   path_filters:
-    - "!_bmad/**"
-    - "!_bmad-output/**"
-    - "!.claude/**"
+    - '!_bmad/**'
+    - '!_bmad-output/**'
+    - '!.claude/**'
   path_instructions:
-    - path: "**/*.js"
+    - path: '**/*.js'
       instructions: >
         Focus on JavaScript best practices, error handling,
         and security considerations. Flag any potential issues with
         external API calls or data validation.
-    - path: "**/*.gs"
+    - path: '**/*.gs'
       instructions: >
         This is Google Apps Script code. Focus on proper use of
         Google services APIs, error handling, and security considerations.
