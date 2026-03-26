@@ -844,8 +844,14 @@
        * optionally selecting the given value.
        */
       function refreshLabelDropdown(selectId, selectedValue) {
-        const selectEl = document.getElementById(selectId)
-        if (!selectEl || selectEl.tagName !== 'SELECT') return
+        const el = document.getElementById(selectId)
+        if (!el) return
+        // If the target is a text input, just set its value
+        if (el.tagName === 'INPUT') {
+          el.value = selectedValue || ''
+          return
+        }
+        if (el.tagName !== 'SELECT') return
         const opts = userGmailLabels
           .map(
             (l) =>
@@ -858,7 +864,7 @@
               '</option>'
           )
           .join('')
-        selectEl.innerHTML = '<option value="">— Select label —</option>' + opts
+        el.innerHTML = '<option value="">— Select label —</option>' + opts
       }
 
       /**
@@ -1185,9 +1191,35 @@
               '" style="margin-top:8px;"></div>'
           } else {
             triggerLabelHtml =
-              '<input type="text" class="cfg-field" data-key="triggerLabel" placeholder="e.g. receipts" />'
+              '<div style="display:flex;gap:8px;align-items:center;">' +
+              '<input type="text" class="cfg-field" data-key="triggerLabel" id="' +
+              escapeHtml(triggerSelectId) +
+              '" placeholder="e.g. receipts" style="flex:1" />' +
+              '<button type="button" class="btn btn-outline" style="white-space:nowrap;padding:8px 12px;font-size:13px;" ' +
+              "onclick=\"window.showNewLabelInput('new-label-trigger-" +
+              escapeHtml(scriptId) +
+              "', '" +
+              escapeHtml(triggerSelectId) +
+              "')\">+ New Label</button>" +
+              '</div>' +
+              '<div id="new-label-trigger-' +
+              escapeHtml(scriptId) +
+              '" style="margin-top:8px;"></div>'
             processedLabelHtml =
-              '<input type="text" class="cfg-field" data-key="processedLabel" placeholder="e.g. receipts-archived" />'
+              '<div style="display:flex;gap:8px;align-items:center;">' +
+              '<input type="text" class="cfg-field" data-key="processedLabel" id="' +
+              escapeHtml(processedSelectId) +
+              '" placeholder="e.g. receipts-archived" style="flex:1" />' +
+              '<button type="button" class="btn btn-outline" style="white-space:nowrap;padding:8px 12px;font-size:13px;" ' +
+              "onclick=\"window.showNewLabelInput('new-label-processed-" +
+              escapeHtml(scriptId) +
+              "', '" +
+              escapeHtml(processedSelectId) +
+              "')\">+ New Label</button>" +
+              '</div>' +
+              '<div id="new-label-processed-' +
+              escapeHtml(scriptId) +
+              '" style="margin-top:8px;"></div>'
           }
           container.innerHTML =
             '<div class="field-group">' +
