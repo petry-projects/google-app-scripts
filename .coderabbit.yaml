@@ -5,6 +5,12 @@ reviews:
   auto_review:
     enabled: true
     drafts: false
+    base_branches:
+      - main
+  path_filters:
+    - '!_bmad/**'
+    - '!_bmad-output/**'
+    - '!.claude/**'
   path_instructions:
     - path: '**/*.js'
       instructions: >
