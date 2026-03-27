@@ -820,11 +820,16 @@
         )
         if (!res.ok) {
           const text = await res.text()
+          const isDuplicate =
+            res.status === 409 || text.toLowerCase().includes('already')
           let msg = `Failed to create label (${res.status})`
-          if (res.status === 409 || text.toLowerCase().includes('already')) {
-            msg = `Label "${escapeHtml(labelName)}" already exists`
+          if (isDuplicate) {
+            msg = `Label "${labelName}" already exists`
           }
-          throw new Error(msg)
+          const err = new Error(msg)
+          err.status = res.status
+          err.isDuplicate = isDuplicate
+          throw err
         }
         return res.json()
       }
@@ -927,23 +932,27 @@
           successEl.style.display = 'none'
         })
 
+        let isCreating = false
+
+        function closeModal(force) {
+          if (isCreating && !force) return
+          overlay.remove()
+          document.removeEventListener('keydown', onEsc)
+        }
+
         // Close on overlay click (but not modal body)
         overlay.addEventListener('click', function (e) {
-          if (e.target === overlay) overlay.remove()
+          if (e.target === overlay) closeModal()
         })
 
         // Close on Escape
         function onEsc(e) {
-          if (e.key === 'Escape') {
-            overlay.remove()
-            document.removeEventListener('keydown', onEsc)
-          }
+          if (e.key === 'Escape') closeModal()
         }
         document.addEventListener('keydown', onEsc)
 
         cancelBtn.addEventListener('click', function () {
-          overlay.remove()
-          document.removeEventListener('keydown', onEsc)
+          closeModal()
         })
 
         // Create both labels
@@ -952,6 +961,7 @@
           if (!name) return
           const archivedName = name + '-archived'
 
+          isCreating = true
           input.disabled = true
           createBtn.disabled = true
           cancelBtn.disabled = true
@@ -960,15 +970,26 @@
           successEl.style.display = 'none'
 
           try {
-            // Create trigger label
-            await createGmailLabel(name)
+            // Create trigger label (treat 409/duplicate as success)
+            try {
+              await createGmailLabel(name)
+            } catch (err) {
+              if (!err.isDuplicate) throw err
+            }
+            if (!userGmailLabels.includes(name)) userGmailLabels.push(name)
             previewTrigger.innerHTML =
               '<span style="color:#137333;">\u2705 ' +
               escapeHtml(name) +
               ' — created</span>'
 
-            // Create archived label
-            await createGmailLabel(archivedName)
+            // Create archived label (treat 409/duplicate as success)
+            try {
+              await createGmailLabel(archivedName)
+            } catch (err) {
+              if (!err.isDuplicate) throw err
+            }
+            if (!userGmailLabels.includes(archivedName))
+              userGmailLabels.push(archivedName)
             previewProcessed.innerHTML =
               '<span style="color:#137333;">\u2705 ' +
               escapeHtml(archivedName) +
@@ -986,8 +1007,7 @@
 
             // Auto-close after a short delay
             setTimeout(function () {
-              overlay.remove()
-              document.removeEventListener('keydown', onEsc)
+              closeModal(true)
             }, 1200)
           } catch (err) {
             errorEl.textContent = err.message
@@ -996,6 +1016,8 @@
             createBtn.disabled = false
             cancelBtn.disabled = false
             createBtn.textContent = 'Create Labels'
+          } finally {
+            isCreating = false
           }
         })
 
