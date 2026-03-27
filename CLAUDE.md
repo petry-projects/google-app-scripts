@@ -5,8 +5,7 @@ This file provides Claude Code-specific instructions. For comprehensive agent gu
 ## Quick Reference
 
 - **Install:** `npm install`
-- **Test:** `npm test`
-- **Coverage:** `npm test -- --coverage`
+- **Test (includes coverage):** `npm test`
 - **Lint + format check:** `npm run check`
 - **Format:** `npx prettier --write .`
 
@@ -17,7 +16,7 @@ This file provides Claude Code-specific instructions. For comprehensive agent gu
 3. **Avoid coverage-ignore comments and `.skip()`** — only use in rare, unavoidable cases (per AGENTS.md) with clear justification
 4. **GAS testing pattern** — extract logic to `src/index.js` with `module.exports`, inject GAS services as parameters
 5. **Always run** `npx prettier --write .` before committing — pre-commit hooks don't run in agent sessions
-6. **Always run** `npm run check` and `npm test -- --coverage` before committing
+6. **Always run** `npm run check` (lint + format) and `npm test` (tests + coverage) before committing
 
 ## Architecture
 
