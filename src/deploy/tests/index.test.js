@@ -8,6 +8,7 @@ const {
   createProject,
   updateProjectContent,
   deployScript,
+  createGmailLabel,
 } = require('../index')
 
 // ---------------------------------------------------------------------------
@@ -432,6 +433,90 @@ describe('deployScript', () => {
     await expect(
       deployScript(fetchFn, 'token', 'Title', files)
     ).rejects.toThrow('Failed to update project content')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// createGmailLabel
+// ---------------------------------------------------------------------------
+
+describe('createGmailLabel', () => {
+  test('calls the Gmail labels endpoint with correct method and body', async () => {
+    const responseBody = { id: 'Label_42', name: 'Projects/receipts' }
+    const fetchFn = makeFetch(200, responseBody)
+
+    const result = await createGmailLabel(
+      fetchFn,
+      'token-abc',
+      'Projects/receipts'
+    )
+
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    const [url, opts] = fetchFn.mock.calls[0]
+    expect(url).toBe('https://gmail.googleapis.com/gmail/v1/users/me/labels')
+    expect(opts.method).toBe('POST')
+    expect(opts.headers.Authorization).toBe('Bearer token-abc')
+    expect(opts.headers['Content-Type']).toBe('application/json')
+    expect(JSON.parse(opts.body)).toEqual({ name: 'Projects/receipts' })
+    expect(result).toEqual(responseBody)
+  })
+
+  test('returns label object with id and name on success', async () => {
+    const fetchFn = makeFetch(200, { id: 'Label_1', name: 'my-label' })
+    const result = await createGmailLabel(fetchFn, 'token', 'my-label')
+    expect(result.id).toBe('Label_1')
+    expect(result.name).toBe('my-label')
+  })
+
+  test('throws when fetchFn is not a function', async () => {
+    await expect(createGmailLabel(null, 'token', 'label')).rejects.toThrow(
+      'fetchFn must be a function'
+    )
+  })
+
+  test('throws when accessToken is missing', async () => {
+    await expect(createGmailLabel(jest.fn(), '', 'label')).rejects.toThrow(
+      'accessToken is required'
+    )
+  })
+
+  test('throws when accessToken is null', async () => {
+    await expect(createGmailLabel(jest.fn(), null, 'label')).rejects.toThrow(
+      'accessToken is required'
+    )
+  })
+
+  test('throws when labelName is missing', async () => {
+    await expect(createGmailLabel(jest.fn(), 'token', '')).rejects.toThrow(
+      'labelName is required'
+    )
+  })
+
+  test('throws when labelName is null', async () => {
+    await expect(createGmailLabel(jest.fn(), 'token', null)).rejects.toThrow(
+      'labelName is required'
+    )
+  })
+
+  test('throws with error message on non-OK response', async () => {
+    const fetchFn = makeFetch(409, 'Label already exists')
+    await expect(
+      createGmailLabel(fetchFn, 'token', 'duplicate')
+    ).rejects.toThrow('Failed to create Gmail label: 409')
+  })
+
+  test('includes response body text in error message on failure', async () => {
+    const fetchFn = makeFetch(409, 'Label already exists')
+    await expect(
+      createGmailLabel(fetchFn, 'token', 'duplicate')
+    ).rejects.toThrow('Label already exists')
+  })
+
+  test('throws on server error', async () => {
+    const fetchFn = makeFetch(500, 'Internal Server Error')
+    await expect(createGmailLabel(fetchFn, 'token', 'label')).rejects.toThrow(
+      'Failed to create Gmail label: 500'
+    )
   })
 })
 
