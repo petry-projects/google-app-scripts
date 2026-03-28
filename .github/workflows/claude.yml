@@ -1,6 +1,6 @@
 name: Claude Code
 
-permissions: read-all
+permissions: {}
 
 on:
   pull_request:

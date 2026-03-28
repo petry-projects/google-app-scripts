@@ -1,6 +1,6 @@
 name: 'CodeQL'
 
-permissions: read-all
+permissions: {}
 
 on:
   push:

@@ -1,6 +1,6 @@
 name: Playwright UI Tests
 
-permissions: read-all
+permissions: {}
 
 on:
   push:

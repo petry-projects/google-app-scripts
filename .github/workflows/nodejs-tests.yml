@@ -1,6 +1,6 @@
 name: Node.js Tests
 
-permissions: read-all
+permissions: {}
 
 on:
   push:

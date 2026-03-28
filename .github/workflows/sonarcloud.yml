@@ -1,6 +1,6 @@
 name: SonarCloud Analysis
 
-permissions: read-all
+permissions: {}
 
 on:
   push:
