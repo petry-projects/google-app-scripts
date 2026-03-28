@@ -81,6 +81,7 @@ The Google Apps Script Productivity Suite is a collection of automation scripts 
 **Decision:** Each script uses a `config.gs` file with a function or variable returning an array of configuration objects.
 
 **Patterns:**
+
 - `getProcessConfig()` → array of label/doc/folder mappings (gmail-to-drive)
 - `SYNC_CONFIGS` → array of calendar/sheet mappings (calendar-to-sheets)
 - `BRIEFING_CONFIGS` → array of briefing settings (calendar-to-briefing-doc)
@@ -106,6 +107,7 @@ The Google Apps Script Productivity Suite is a collection of automation scripts 
 **Purpose:** Archive emails from Gmail labels into Google Docs (text) and Drive folders (attachments).
 
 **Key mechanisms:**
+
 - **Thread deduplication:** Embeds thread ID markers (`-----[THREAD:threadId]-----`) in document separators. Before processing, checks for existing thread content and removes it (idempotent reprocessing).
 - **Attachment deduplication:** MD5 hash-based content dedup. If a file with the same hash exists in the target folder, skips upload. If same name but different content, renames with numeric suffix.
 - **Prepend ordering:** Processes threads oldest-first with `insertParagraph(0, ...)` so newest content appears at the top of the document.
@@ -120,6 +122,7 @@ The Google Apps Script Productivity Suite is a collection of automation scripts 
 **Purpose:** Sync Google Calendar events into Google Sheets with upsert/delete semantics.
 
 **Key mechanisms:**
+
 - **Checkpoint system:** Uses PropertiesService to store sync tokens for incremental updates. Only fetches changed events since last sync.
 - **Upsert logic:** Maps event IDs to sheet rows. Updates existing rows on change, inserts new rows, deletes rows for cancelled events.
 - **Formula injection prevention:** `sanitizeValue()` prefixes cell values starting with `=`, `+`, `-`, `@` with a single quote to prevent spreadsheet formula injection.
@@ -134,6 +137,7 @@ The Google Apps Script Productivity Suite is a collection of automation scripts 
 **Purpose:** Generate weekly calendar briefing emails with conflict detection.
 
 **Key mechanisms:**
+
 - **Schedule-aware:** `shouldRunNow()` checks current day/hour against configuration to determine if briefing should be generated. Designed for hourly trigger.
 - **Multi-calendar support:** Can aggregate events from all calendars or specific ones, with exclusion list.
 - **Conflict detection:** `detectConflicts()` identifies overlapping events and generates warnings.
@@ -154,15 +158,16 @@ The Google Apps Script Productivity Suite is a collection of automation scripts 
 
 ## Testing Strategy
 
-| Layer | Tool | Scope | Coverage Target |
-|---|---|---|---|
-| Unit tests | Jest (ts-jest) | `src/*/src/index.js`, `src/gas-utils.js`, `gas-installer/src/index.js`, `src/deploy/index.js` | 100% lines, 95% statements/functions, 85% branches |
-| Integration tests | Jest | Full pipeline simulation with mocks | Included in unit coverage |
-| E2E tests | Playwright (Chromium) | `deploy/index.html`, `gas-installer/Index.html` | Functional coverage of OAuth, deploy, configure flows |
-| Static analysis | TypeScript (`noEmit`) | All `.js` and `.ts` files | Type safety without transpilation |
-| Security | CodeQL | JavaScript codebase | Automated vulnerability detection |
+| Layer             | Tool                  | Scope                                                                                         | Coverage Target                                       |
+| ----------------- | --------------------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| Unit tests        | Jest (ts-jest)        | `src/*/src/index.js`, `src/gas-utils.js`, `gas-installer/src/index.js`, `src/deploy/index.js` | 100% lines, 95% statements/functions, 85% branches    |
+| Integration tests | Jest                  | Full pipeline simulation with mocks                                                           | Included in unit coverage                             |
+| E2E tests         | Playwright (Chromium) | `deploy/index.html`, `gas-installer/Index.html`                                               | Functional coverage of OAuth, deploy, configure flows |
+| Static analysis   | TypeScript (`noEmit`) | All `.js` and `.ts` files                                                                     | Type safety without transpilation                     |
+| Security          | CodeQL                | JavaScript codebase                                                                           | Automated vulnerability detection                     |
 
 **Testing pattern for GAS code:**
+
 1. Extract logic from `code.gs` to `src/index.js`
 2. Accept GAS services as parameters (dependency injection)
 3. In tests, inject mocks from `test-utils/mocks.js`
@@ -171,6 +176,7 @@ The Google Apps Script Productivity Suite is a collection of automation scripts 
 ## Deployment Architecture
 
 **Primary:** Browser-based deployment via `deploy/index.html`
+
 1. User authenticates with Google Identity Services
 2. Page fetches script source files from GitHub (raw content URLs)
 3. Creates GAS project via Apps Script REST API
@@ -180,11 +186,13 @@ The Google Apps Script Productivity Suite is a collection of automation scripts 
 7. User sets up time-based triggers in the GAS editor
 
 **Legacy:** GAS-based installer web app (`gas-installer/`)
+
 - Deployed as a GAS web app
 - Fetches source from GitHub API, creates projects via Apps Script API
 - Simpler UI, fewer configuration options
 
 **CI/CD:** GitHub Actions
+
 - 6 workflows covering lint, test, coverage, E2E, security, and dependency management
 - Auto-fix formatting on same-repo PRs
 - Auto-merge minor/patch dependabot PRs

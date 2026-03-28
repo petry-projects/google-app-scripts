@@ -13,6 +13,7 @@ Scripts deploy into the **user's own Google Apps Script environment**. There is 
 **Tool:** `deploy/index.html` — static SPA served from GitHub Pages or locally.
 
 **Flow:**
+
 1. Open `deploy/index.html` in browser
 2. Sign in with Google (OAuth via Google Identity Services)
 3. Select script(s) to deploy
@@ -30,6 +31,7 @@ Scripts deploy into the **user's own Google Apps Script environment**. There is 
 | `calendar.readonly` | Read calendar list for dropdowns |
 
 **Features:**
+
 - Inline resource creation (create labels, docs, folders, spreadsheets without leaving page)
 - Multi-configuration support (multiple label/doc/folder sets per script)
 - Config persistence (loads existing config when re-opening)
@@ -53,11 +55,11 @@ A Google Apps Script web app that fetches source from GitHub and creates project
 
 After deployment, users must configure time-based triggers in the GAS editor:
 
-| Script | Trigger Function | Recommended Schedule |
-|---|---|---|
-| gmail-to-drive-by-labels | `storeEmailsAndAttachments` | Every 5-15 minutes |
-| calendar-to-sheets | `syncAllCalendarsToSheetsGAS` | Every 15-60 minutes |
-| calendar-to-briefing-doc | `generateWeeklyBriefing` | Every hour (schedule logic is internal) |
+| Script                   | Trigger Function              | Recommended Schedule                    |
+| ------------------------ | ----------------------------- | --------------------------------------- |
+| gmail-to-drive-by-labels | `storeEmailsAndAttachments`   | Every 5-15 minutes                      |
+| calendar-to-sheets       | `syncAllCalendarsToSheetsGAS` | Every 15-60 minutes                     |
+| calendar-to-briefing-doc | `generateWeeklyBriefing`      | Every hour (schedule logic is internal) |
 
 ### GCP Setup (Fork Maintainers Only)
 
@@ -103,6 +105,7 @@ PR opened/updated
 ## No Server Infrastructure
 
 This project has **no server-side deployment**. All code runs either:
+
 - In the user's Google Apps Script environment (production)
 - In the user's browser (deployment UI)
 - In GitHub Actions (CI/CD)

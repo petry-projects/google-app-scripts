@@ -18,11 +18,11 @@
 
 ### Script Catalog
 
-| Script | Purpose | GAS Entry Point |
-|---|---|---|
-| gmail-to-drive-by-labels | Archive Gmail → Google Doc + Drive folder | `storeEmailsAndAttachments()` |
-| calendar-to-sheets | Sync Calendar → Google Sheets | `syncAllCalendarsToSheetsGAS()` |
-| calendar-to-briefing-doc | Weekly calendar briefing → email | `generateWeeklyBriefing()` |
+| Script                   | Purpose                                   | GAS Entry Point                 |
+| ------------------------ | ----------------------------------------- | ------------------------------- |
+| gmail-to-drive-by-labels | Archive Gmail → Google Doc + Drive folder | `storeEmailsAndAttachments()`   |
+| calendar-to-sheets       | Sync Calendar → Google Sheets             | `syncAllCalendarsToSheetsGAS()` |
+| calendar-to-briefing-doc | Weekly calendar briefing → email          | `generateWeeklyBriefing()`      |
 
 ## Generated Documentation
 
@@ -44,16 +44,19 @@
 ## Getting Started
 
 ### For Development
+
 1. Clone the repository and run `npm install`
 2. Run tests: `npm test`
 3. Read the [Development Guide](./development-guide.md) for workflow and conventions
 
 ### For Deployment
+
 1. Open `deploy/index.html` in your browser
 2. Sign in with Google and deploy scripts to your account
 3. Read the [Deployment Guide](./deployment-guide.md) for full instructions
 
 ### For AI-Assisted Development
+
 1. Start with this index for project orientation
 2. Read [Architecture](./architecture.md) for system design decisions
 3. Read [Component Inventory](./component-inventory.md) for function-level detail

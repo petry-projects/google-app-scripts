@@ -25,17 +25,17 @@ No `.env` file is required for development. All configuration is in `config.gs` 
 
 ## Available Commands
 
-| Command | Description |
-|---|---|
-| `npm test` | Run all Jest unit tests (serial via `--runInBand`) |
-| `npm run test:e2e` | Run Playwright E2E tests (deploy UI + gas-installer UI) |
-| `npm run lint` | ESLint check on `src/` |
-| `npm run format` | Prettier auto-format all files |
-| `npm run check` | Prettier check + lint (CI validation) |
-| `npm run typecheck` | TypeScript type check (`noEmit`) |
-| `npx jest "<folder>/tests"` | Run tests for a specific script |
-| `npx jest --coverage` | Run tests with coverage report |
-| `node scripts/check-coverage.js` | Validate coverage meets thresholds |
+| Command                          | Description                                             |
+| -------------------------------- | ------------------------------------------------------- |
+| `npm test`                       | Run all Jest unit tests (serial via `--runInBand`)      |
+| `npm run test:e2e`               | Run Playwright E2E tests (deploy UI + gas-installer UI) |
+| `npm run lint`                   | ESLint check on `src/`                                  |
+| `npm run format`                 | Prettier auto-format all files                          |
+| `npm run check`                  | Prettier check + lint (CI validation)                   |
+| `npm run typecheck`              | TypeScript type check (`noEmit`)                        |
+| `npx jest "<folder>/tests"`      | Run tests for a specific script                         |
+| `npx jest --coverage`            | Run tests with coverage report                          |
+| `node scripts/check-coverage.js` | Validate coverage meets thresholds                      |
 
 ## Development Workflow
 
@@ -80,6 +80,7 @@ code.gs (GAS runtime)          src/index.js (Node.js testable)
 ```
 
 **In tests:**
+
 ```javascript
 // test-utils/setup.js installs global mocks automatically
 const { main } = require('../src/index.js')
@@ -110,6 +111,7 @@ E2E tests mock all external APIs via `page.route()` and `page.addInitScript()`. 
 - **Pre-commit hooks:** lint-staged (format + lint) + typecheck
 
 **Always run before committing:**
+
 ```bash
 npx prettier --write .
 npm run check
@@ -118,40 +120,42 @@ npm test -- --coverage
 
 ## Coverage Requirements
 
-| Metric | Threshold |
-|---|---|
-| Lines | 100% |
-| Statements | 95% |
-| Functions | 95% |
-| Branches | 85% |
+| Metric     | Threshold |
+| ---------- | --------- |
+| Lines      | 100%      |
+| Statements | 95%       |
+| Functions  | 95%       |
+| Branches   | 85%       |
 
 Coverage is enforced by:
+
 1. Jest config `coverageThreshold` in `jest.config.js`
 2. `scripts/check-coverage.js` in CI
 3. GitHub Actions `coverage.yml` workflow
 
 **Rules:**
+
 - No `istanbul ignore` / `c8 ignore` pragmas unless truly unavoidable
 - No `.skip()` on failing tests — fix them
 - No mock-based coverage inflation
 
 ## Git Hooks
 
-| Hook | Action |
-|---|---|
+| Hook         | Action                                                               |
+| ------------ | -------------------------------------------------------------------- |
 | `pre-commit` | `npx lint-staged` (format + lint staged files) + `npm run typecheck` |
-| `commit-msg` | `commitlint --edit` (enforce conventional commits) |
+| `commit-msg` | `commitlint --edit` (enforce conventional commits)                   |
 
 ## CI/CD Pipelines
 
-| Workflow | Trigger | Actions |
-|---|---|---|
-| `ci.yml` | Push to main, PRs | Lint, format check, typecheck, auto-fix on same-repo PRs |
-| `nodejs-tests.yml` | Push to main, PRs | Jest unit tests for all packages |
-| `playwright-tests.yml` | Push to main, PRs | Playwright E2E tests |
-| `coverage.yml` | Push to main, PRs | Coverage enforcement (100% lines) |
-| `codeql-analysis.yml` | Push to main, PRs | CodeQL security scanning |
-| `dependabot-automerge.yml` | Dependabot PRs | Auto-merge minor/patch updates |
+| Workflow                   | Trigger           | Actions                                                  |
+| -------------------------- | ----------------- | -------------------------------------------------------- |
+| `ci.yml`                   | Push to main, PRs | Lint, format check, typecheck, auto-fix on same-repo PRs |
+| `nodejs-tests.yml`         | Push to main, PRs | Jest unit tests for all packages                         |
+| `playwright-tests.yml`     | Push to main, PRs | Playwright E2E tests                                     |
+| `coverage.yml`             | Push to main, PRs | Coverage enforcement (100% lines)                        |
+| `codeql-analysis.yml`      | Push to main, PRs | CodeQL security scanning                                 |
+| `dependabot-automerge.yml` | Dependabot PRs    | Auto-merge minor/patch updates                           |
 
 ## Repository Conventions
 

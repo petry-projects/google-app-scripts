@@ -103,24 +103,24 @@ google-app-scripts/
 
 ## Critical Folders
 
-| Folder | Purpose |
-|---|---|
-| `src/` | All automation script source code — the core of the project |
+| Folder               | Purpose                                                       |
+| -------------------- | ------------------------------------------------------------- |
+| `src/`               | All automation script source code — the core of the project   |
 | `src/*/src/index.js` | Extracted testable logic for each script (Node.js compatible) |
-| `src/*/code.gs` | GAS-native entry points (run in Google's environment) |
-| `src/*/config.gs` | User configuration templates (populated by deploy UI) |
-| `deploy/` | Browser-based deployment and configuration UI |
-| `test-utils/` | Shared GAS mock infrastructure (critical for all tests) |
-| `.github/workflows/` | CI/CD pipeline definitions |
+| `src/*/code.gs`      | GAS-native entry points (run in Google's environment)         |
+| `src/*/config.gs`    | User configuration templates (populated by deploy UI)         |
+| `deploy/`            | Browser-based deployment and configuration UI                 |
+| `test-utils/`        | Shared GAS mock infrastructure (critical for all tests)       |
+| `.github/workflows/` | CI/CD pipeline definitions                                    |
 
 ## Entry Points
 
-| Entry Point | Context | Description |
-|---|---|---|
-| `src/gmail-to-drive-by-labels/code.gs:storeEmailsAndAttachments()` | GAS trigger | Main Gmail processing function |
-| `src/gmail-to-drive-by-labels/code.gs:rebuildAllDocs()` | GAS manual | Rebuild all documents from scratch |
-| `src/calendar-to-sheets/code.gs:syncAllCalendarsToSheetsGAS()` | GAS trigger | Sync all configured calendars |
-| `src/calendar-to-sheets/code.gs:fullResyncCalendarToSheetGAS()` | GAS manual | Full historical resync |
-| `src/calendar-to-briefing-doc/code.gs:generateWeeklyBriefing()` | GAS hourly trigger | Check schedule and generate briefing |
-| `deploy/index.html` | Browser | Deployment and configuration UI |
-| `gas-installer/Code.gs:doGet()` | GAS web app | Legacy installer web UI |
+| Entry Point                                                        | Context            | Description                          |
+| ------------------------------------------------------------------ | ------------------ | ------------------------------------ |
+| `src/gmail-to-drive-by-labels/code.gs:storeEmailsAndAttachments()` | GAS trigger        | Main Gmail processing function       |
+| `src/gmail-to-drive-by-labels/code.gs:rebuildAllDocs()`            | GAS manual         | Rebuild all documents from scratch   |
+| `src/calendar-to-sheets/code.gs:syncAllCalendarsToSheetsGAS()`     | GAS trigger        | Sync all configured calendars        |
+| `src/calendar-to-sheets/code.gs:fullResyncCalendarToSheetGAS()`    | GAS manual         | Full historical resync               |
+| `src/calendar-to-briefing-doc/code.gs:generateWeeklyBriefing()`    | GAS hourly trigger | Check schedule and generate briefing |
+| `deploy/index.html`                                                | Browser            | Deployment and configuration UI      |
+| `gas-installer/Code.gs:doGet()`                                    | GAS web app        | Legacy installer web UI              |
