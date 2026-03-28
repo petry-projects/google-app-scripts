@@ -23,16 +23,18 @@ Scripts deploy into the **user's own Google Apps Script environment**. There is 
 7. User sets up time-based triggers in GAS editor
 
 **OAuth Scopes Required:**
+
 | Scope | Purpose |
 |---|---|
 | `script.projects` | Create and update Apps Script projects |
-| `drive` | Drive Picker + inline resource creation |
-| `gmail.labels` | Read and create Gmail labels |
+| `drive.readonly` | Drive Picker to browse and select existing files/folders |
+| `gmail.labels` | Read existing Gmail labels and create new ones |
 | `calendar.readonly` | Read calendar list for dropdowns |
+| `email` | Identify the signed-in user |
 
 **Features:**
 
-- Inline resource creation (create labels, docs, folders, spreadsheets without leaving page)
+- Inline Gmail label creation directly from the configuration UI
 - Multi-configuration support (multiple label/doc/folder sets per script)
 - Config persistence (loads existing config when re-opening)
 - Version detection and in-place updates
@@ -80,12 +82,13 @@ If you fork this repository and want the browser deployment to work:
    - Type: Web application
    - Add authorized JavaScript origins (GitHub Pages URL or localhost)
    - Copy Client ID into `deploy/index.html` (`OAUTH_CLIENT_ID` constant)
+   - Ensure scopes match: `script.projects`, `drive.readonly`, `gmail.labels`, `calendar.readonly`, `email`
 
 ## CI/CD Pipeline
 
 CI runs automatically on push to `main` and on pull requests:
 
-```
+```text
 PR opened/updated
     │
     ├── ci.yml ──────── Lint, format, typecheck

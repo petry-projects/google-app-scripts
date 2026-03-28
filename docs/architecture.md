@@ -10,7 +10,7 @@ The Google Apps Script Productivity Suite is a collection of automation scripts 
 
 **Dual-runtime script collection with browser-based deployment layer.**
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                    User's Browser                            │
 │  ┌─────────────────────────────────────────────────────┐    │
@@ -108,7 +108,7 @@ The Google Apps Script Productivity Suite is a collection of automation scripts 
 
 **Key mechanisms:**
 
-- **Thread deduplication:** Embeds thread ID markers (`-----[THREAD:threadId]-----`) in document separators. Before processing, checks for existing thread content and removes it (idempotent reprocessing).
+- **Thread deduplication:** Embeds the thread ID in the message separator line `------------------------------[THREAD:<id>]` and uses a separate thread separator line `==============================`. Before processing, checks for existing thread content identified by these markers and removes it (idempotent reprocessing).
 - **Attachment deduplication:** MD5 hash-based content dedup. If a file with the same hash exists in the target folder, skips upload. If same name but different content, renames with numeric suffix.
 - **Prepend ordering:** Processes threads oldest-first with `insertParagraph(0, ...)` so newest content appears at the top of the document.
 - **Batch processing:** Configurable `batchSize` (default 250 threads) to handle GAS execution time limits.
@@ -149,7 +149,7 @@ The Google Apps Script Productivity Suite is a collection of automation scripts 
 
 ## Authentication & Security
 
-- **Deploy UI OAuth:** Uses Google Identity Services with scopes for `script.projects`, `drive`, `gmail.labels`, `calendar.readonly`
+- **Deploy UI OAuth:** Uses Google Identity Services with scopes for `script.projects`, `drive.readonly`, `gmail.labels`, `calendar.readonly`, `email`
 - **GAS runtime:** Scripts run with the deploying user's permissions — no separate auth
 - **No secrets in code:** Configuration values are written to `config.gs` in the user's GAS project, not stored in the repository
 - **Formula injection prevention:** Calendar-to-sheets sanitizes cell values
@@ -171,7 +171,7 @@ The Google Apps Script Productivity Suite is a collection of automation scripts 
 1. Extract logic from `code.gs` to `src/index.js`
 2. Accept GAS services as parameters (dependency injection)
 3. In tests, inject mocks from `test-utils/mocks.js`
-4. GAS `code.gs` files use guard: `if (typeof module !== 'undefined' && module.exports) { ... }`
+4. Some GAS `code.gs` files may use guard: `if (typeof module !== 'undefined' && module.exports) { ... }` (not all scripts include this)
 
 ## Deployment Architecture
 

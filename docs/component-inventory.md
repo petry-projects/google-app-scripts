@@ -6,36 +6,36 @@
 
 ### gmail-to-drive-by-labels
 
-| Function                                           | File                   | Type           | Description                                                     |
-| -------------------------------------------------- | ---------------------- | -------------- | --------------------------------------------------------------- |
-| `storeEmailsAndAttachments()`                      | code.gs                | GAS Entry      | Main trigger function — processes all configured label groups   |
-| `processLabelGroup(config)`                        | code.gs / src/index.js | Core           | Processes threads from one label, archives text + attachments   |
-| `processMessagesToDoc(messages, doc, folder, ...)` | src/index.js           | Core           | Processes array of messages, prepends to doc, saves attachments |
-| `processMessageToDoc(message, doc, folder, ...)`   | src/index.js           | Core           | Processes single message — cleans body, handles attachments     |
-| `removeExistingThread(doc, threadId)`              | src/index.js           | Core           | Removes prior thread content from doc (deduplication)           |
-| `rebuildAllDocs()`                                 | code.gs / src/index.js | GAS Entry      | Rebuilds all configured documents from processed threads        |
-| `rebuildDoc(config, ...)`                          | src/index.js           | Core           | Rebuilds single document with state tracking                    |
-| `sortThreadsByLastMessageDate(threads)`            | src/index.js           | Utility        | Sorts threads by most recent message date                       |
-| `getCleanBody(text)`                               | gas-utils.js           | Shared Utility | Strips quoted replies, legal footers, normalizes whitespace     |
-| `getFileHash(blob)`                                | gas-utils.js           | Shared Utility | MD5 hash for content-based attachment deduplication             |
-| `getProcessConfig()`                               | config.gs              | Config         | Returns array of label/doc/folder configuration objects         |
+| Function                                           | File                   | Type           | Description                                                                              |
+| -------------------------------------------------- | ---------------------- | -------------- | ---------------------------------------------------------------------------------------- |
+| `storeEmailsAndAttachments()`                      | code.gs                | GAS Entry      | Main trigger function — processes all configured label groups                            |
+| `processLabelGroup(config)`                        | code.gs / src/index.js | Core           | Processes threads from one label, archives text + attachments                            |
+| `processMessagesToDoc(messages, doc, folder, ...)` | src/index.js           | Core           | Processes array of messages, prepends to doc, saves attachments                          |
+| `processMessageToDoc(message, doc, folder, ...)`   | src/index.js           | Core           | Processes single message — cleans body, handles attachments                              |
+| `removeExistingThread(doc, threadId)`              | src/index.js           | Core           | Removes prior thread content from doc (deduplication)                                    |
+| `rebuildAllDocs()`                                 | code.gs / src/index.js | GAS Entry      | Rebuilds all configured documents from processed threads                                 |
+| `rebuildDoc(config, ...)`                          | src/index.js           | Core           | Rebuilds single document with state tracking                                             |
+| `sortThreadsByLastMessageDate(threads)`            | src/index.js           | Utility        | Sorts threads by last message date ascending (oldest-first) for prepend-based processing |
+| `getCleanBody(text)`                               | gas-utils.js           | Shared Utility | Strips quoted replies, legal footers, normalizes whitespace                              |
+| `getFileHash(blob)`                                | gas-utils.js           | Shared Utility | MD5 hash for content-based attachment deduplication                                      |
+| `getProcessConfig()`                               | config.gs              | Config         | Returns array of label/doc/folder configuration objects                                  |
 
 ### calendar-to-sheets
 
-| Function                                    | File         | Type      | Description                                      |
-| ------------------------------------------- | ------------ | --------- | ------------------------------------------------ |
-| `syncAllCalendarsToSheetsGAS()`             | code.gs      | GAS Entry | Syncs all configured calendar/sheet pairs        |
-| `syncCalendarToSheetGAS(configIndex)`       | code.gs      | GAS Entry | Syncs single calendar with chunking support      |
-| `fullResyncCalendarToSheetGAS(configIndex)` | code.gs      | GAS Entry | Clears checkpoint, full historical resync        |
-| `_syncCalendarToSheetGAS(config)`           | code.gs      | Core      | Core sync logic with checkpoint management       |
-| `syncCalendarToSheet(deps)`                 | src/index.js | Core      | Testable sync — upsert/delete event rows         |
-| `eventToRow(event)`                         | src/index.js | Utility   | Converts calendar event to spreadsheet row array |
-| `rowsToMap(rows)`                           | src/index.js | Utility   | Creates event ID → row index mapping             |
-| `rowsEqual(a, b)`                           | src/index.js | Utility   | Compares rows with type flexibility              |
-| `ensureHeader(sheet)`                       | src/index.js | Utility   | Ensures sheet has proper column headers          |
-| `sanitizeValue(value)`                      | src/index.js | Security  | Prevents formula injection in cell values        |
-| `getConfigs()` / `getConfig(index)`         | code.gs      | Config    | Configuration management with legacy support     |
-| `SYNC_CONFIGS`                              | config.gs    | Config    | Array of calendar/sheet mapping objects          |
+| Function                                    | File         | Type      | Description                                                                  |
+| ------------------------------------------- | ------------ | --------- | ---------------------------------------------------------------------------- |
+| `syncAllCalendarsToSheetsGAS()`             | code.gs      | GAS Entry | Syncs all configured calendar/sheet pairs                                    |
+| `syncCalendarToSheetGAS(startIso, endIso)`  | code.gs      | GAS Entry | Syncs calendars in the given date range with chunking support                |
+| `fullResyncCalendarToSheetGAS(configIndex)` | code.gs      | GAS Entry | Clears checkpoint, full historical resync                                    |
+| `_syncCalendarToSheetGAS(cfg, start, end)`  | code.gs      | Core      | Core sync logic for one config over a date range with checkpoint management  |
+| `syncCalendarToSheet(deps)`                 | src/index.js | Core      | Testable sync — upsert/delete event rows                                    |
+| `eventToRow(event)`                         | src/index.js | Utility   | Converts calendar event to spreadsheet row array                             |
+| `rowsToMap(rows)`                           | src/index.js | Utility   | Creates event ID → row index mapping                                        |
+| `rowsEqual(a, b)`                           | src/index.js | Utility   | Compares rows with type flexibility                                          |
+| `ensureHeader(sheet)`                       | src/index.js | Utility   | Ensures sheet has proper column headers                                      |
+| `sanitizeValue(value)`                      | src/index.js | Security  | Prevents formula injection in cell values                                    |
+| `getConfigs()` / `getConfig(index)`         | code.gs      | Config    | Configuration management with legacy support                                 |
+| `SYNC_CONFIGS`                              | config.gs    | Config    | Array of calendar/sheet mapping objects                                      |
 
 ### calendar-to-briefing-doc
 

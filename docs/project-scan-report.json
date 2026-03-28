@@ -7,8 +7,8 @@
   },
   "mode": "initial_scan",
   "scan_level": "exhaustive",
-  "project_root": "/Users/dj/repos/google-app-scripts",
-  "project_knowledge": "/Users/dj/repos/google-app-scripts/docs",
+  "project_root": ".",
+  "project_knowledge": "./docs",
   "completed_steps": [
     {
       "step": "step_1",

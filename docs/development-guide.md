@@ -66,7 +66,7 @@ No `.env` file is required for development. All configuration is in `config.gs` 
 
 GAS `.gs` files cannot be imported in Node.js. The project uses a dual-file pattern:
 
-```
+```text
 code.gs (GAS runtime)          src/index.js (Node.js testable)
 ┌─────────────────────┐        ┌──────────────────────────┐
 │ function main() {   │        │ function main(deps) {    │
@@ -120,12 +120,12 @@ npm test -- --coverage
 
 ## Coverage Requirements
 
-| Metric     | Threshold |
-| ---------- | --------- |
-| Lines      | 100%      |
-| Statements | 95%       |
-| Functions  | 95%       |
-| Branches   | 85%       |
+| Metric     | Threshold                                        |
+| ---------- | ------------------------------------------------ |
+| Lines      | 99% (Jest config) / 100% (CI check-coverage.js)  |
+| Statements | 95%                                              |
+| Functions  | 95%                                              |
+| Branches   | 85%                                              |
 
 Coverage is enforced by:
 
@@ -162,7 +162,7 @@ Coverage is enforced by:
 - Thread separators use 30 `=` signs (`==============================`)
 - Thread deduplication embeds Gmail thread ID: `------------------------------[THREAD:threadId]`
 - Prepend ordering: process oldest-first so newest appears at document top
-- `getCleanBody()` normalizes 3+ consecutive newlines → 2
+- `getCleanBody()` collapses 2+ consecutive newlines to a single newline
 - Always sort Gmail threads by last-message date before processing
 - Configuration uses arrays for multi-config support
 - File type convention: `.gs` for GAS runtime, `.js` for testable Node.js logic

@@ -4,10 +4,10 @@
 
 ## Directory Tree
 
-```
+```text
 google-app-scripts/
 ├── deploy/                              # Browser-based deployment UI
-│   ├── index.html                       # ★ Static SPA — OAuth, deploy, configure (2500+ lines)
+│   ├── index.html                       # ★ Static SPA — OAuth, deploy, configure (~2000 lines)
 │   └── tests/
 │       └── ui.spec.js                   # Playwright E2E tests for deploy UI
 │
@@ -31,13 +31,13 @@ google-app-scripts/
 │   │   ├── src/
 │   │   │   └── index.js                 # Testable logic (processMessagesToDoc, rebuildDoc, etc.)
 │   │   └── tests/
-│   │       ├── code.test.js             # Main function tests (649 lines)
+│   │       ├── code.test.js             # Main function tests
 │   │       ├── gas-utils.test.js         # Shared utility tests
-│   │       ├── integration.test.js       # Full pipeline integration tests (521 lines)
+│   │       ├── integration.test.js       # Full pipeline integration tests
 │   │       ├── mocks.integration.test.js # Mock infrastructure validation
 │   │       ├── prepend-behavior.test.js  # Document prepend ordering tests
-│   │       ├── rebuild.test.js           # Document rebuild tests (439 lines)
-│   │       ├── thread-deduplication.test.js  # Dedup logic tests (273 lines)
+│   │       ├── rebuild.test.js           # Document rebuild tests
+│   │       ├── thread-deduplication.test.js  # Dedup logic tests
 │   │       └── thread-ordering.test.js   # Thread sort order tests
 │   │
 │   ├── calendar-to-sheets/              # Script: Sync Google Calendar → Google Sheets
@@ -47,7 +47,7 @@ google-app-scripts/
 │   │   ├── src/
 │   │   │   └── index.js                 # Testable logic (syncCalendarToSheet, eventToRow, etc.)
 │   │   └── tests/
-│   │       └── index.test.js            # Unit tests (2278 lines)
+│   │       └── index.test.js            # Unit tests
 │   │
 │   ├── calendar-to-briefing-doc/        # Script: Weekly calendar briefing → email
 │   │   ├── code.gs                      # ★ GAS entry point (generateWeeklyBriefing)
@@ -56,15 +56,15 @@ google-app-scripts/
 │   │   ├── src/
 │   │   │   └── index.js                 # Testable logic (fetchEvents, detectConflicts, formatBriefing, etc.)
 │   │   └── tests/
-│   │       └── index.test.js            # Unit tests (1487 lines)
+│   │       └── index.test.js            # Unit tests
 │   │
 │   └── deploy/                          # Deployment utility module
 │       ├── index.js                     # Script catalog, GAS project creation, Gmail label API
 │       └── tests/
-│           └── index.test.js            # Unit tests (532 lines)
+│           └── index.test.js            # Unit tests
 │
 ├── test-utils/                          # Shared test infrastructure
-│   ├── mocks.js                         # ★ GAS global mocks (GmailApp, DriveApp, DocumentApp, etc. — 475 lines)
+│   ├── mocks.js                         # ★ GAS global mocks (GmailApp, DriveApp, DocumentApp, etc.)
 │   └── setup.js                         # Jest global setup (Session, Utilities, Logger stubs)
 │
 ├── scripts/
