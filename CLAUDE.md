@@ -1,4 +1,4 @@
-@https://raw.githubusercontent.com/petry-projects/.github/main/AGENTS.md
+@https://github.com/petry-projects/.github/blob/main/AGENTS.md
 @AGENTS.md
 
 > **Org-wide standards:** This project inherits shared development standards from [petry-projects/.github/AGENTS.md](https://github.com/petry-projects/.github/blob/main/AGENTS.md).
