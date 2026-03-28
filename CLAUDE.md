@@ -1,3 +1,5 @@
+@https://github.com/petry-projects/.github/blob/main/AGENTS.md
+
 # Google Apps Script — Claude Code Project Context
 
 This file provides Claude Code-specific instructions. For comprehensive agent guidelines (repo layout, setup, testing, code style, PR reviews), see [AGENTS.md](./AGENTS.md).

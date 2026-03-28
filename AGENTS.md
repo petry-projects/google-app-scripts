@@ -2,6 +2,8 @@
 
 This file follows the AGENTS.md conventions (see https://agents.md/) and provides short, agent-friendly instructions for working with this repository. It is intended to be machine- and human-readable so coding agents and contributors can discover how to build, test, and interact with this project.
 
+> **Organization standards:** This repo inherits shared standards from [petry-projects/.github/AGENTS.md](https://github.com/petry-projects/.github/blob/main/AGENTS.md). The sections below are project-specific.
+
 > **GitHub Copilot users:** `.github/copilot-instructions.md` points here as the single source of truth.
 
 ---
@@ -29,38 +31,16 @@ This file follows the AGENTS.md conventions (see https://agents.md/) and provide
 
 ---
 
-## Why AGENTS.md?
-
-AGENTS.md is for precise, agent-focused instructions that complement README files. Use it to document build steps, dev commands, test steps, and any non-obvious processes an automated tool should know.
-
----
-
-## Agent operation guidance (canonical guidance adapted)
-
-- Prefer interactive or dev commands when iterating (e.g., `npm run dev`) and avoid running production-only commands (e.g., `npm run build`) from an interactive agent session.
-- Keep dependencies and lockfiles in sync. If you update deps, update the lockfile and restart relevant dev/test processes.
-- Prefer small, focused commands for iterative work (run the specific tests you care about rather than the full suite when possible).
-- Document any project-specific dev/test/run commands and required environment variables/secrets in this file or in `<agent-folder>/README.md`.
-- Repository convention: place runnable Apps Script code in `code.gs` and configuration in `config.gs` within each script folder.
-
----
-
 ## Tests & CI (repo conventions)
 
-- **Follow Test-Driven Development (TDD): write tests before implementing features or bug fixes.** Add tests first and iterate until they pass; include the tests in the same PR as the implementation.
-- **Achieve and maintain excellent test coverage.** Minimum thresholds: 100% lines, 95% statements/functions, 85% branches. Verify locally with `npm test -- --coverage` (or `npx jest --coverage`) and ensure CI coverage meets these requirements. PRs that reduce coverage below these thresholds will be rejected.
-- **Iterate until all CI checks pass.** Before requesting review or marking a PR as ready:
+- **Coverage thresholds:** 100% lines, 95% statements/functions, 85% branches. Verify locally with `npm test -- --coverage` (or `npx jest --coverage`) and ensure CI coverage meets these requirements. PRs that reduce coverage below these thresholds will be rejected.
+- Before requesting review or marking a PR as ready:
   - Run `npm test` and ensure all tests pass locally
   - Run `npm test -- --coverage` and ensure coverage meets thresholds
   - Run `node scripts/check-coverage.js` to verify coverage requirements
-  - If any check fails in CI, investigate locally, fix the issue, and re-run all checks
-  - Continue iterating until all tests and checks pass both locally and in CI
-- Do **not** use coverage-ignore pragmas (for example, `/* istanbul ignore next */`, `/* c8 ignore next */`, or `// coverage ignore`) except in truly unavoidable cases (such as generated code or environment guards). When you must use them, add a brief comment explaining why and prefer improving tests instead.
-- **NEVER add coverage "ignore" comments (e.g., `/* istanbul ignore next */`) to artificially boost test coverage.** If code is truly difficult to test, adjust coverage thresholds or improve mocking strategies instead. Coverage ignore comments mask untested code and are not acceptable.
-- **NEVER use `.skip()` to avoid failing tests.** If tests fail, fix them. If functionality cannot be directly tested (e.g., GAS .gs files), extract testable logic to `src/index.js` with `module.exports` following the established pattern (see `processMessagesToDoc`, `sortThreadsByLastMessageDate`). Tests must import from the extracted module, not from .gs files.
 - Use Jest for unit tests. Unit tests MUST be fast, deterministic, and not access external networks.
 - Mock external services (Google Apps Script, HTTP calls) using `test-utils/` helpers where appropriate.
-- **NEVER** use `.skip()` to avoid failing tests. Extract testable logic to `src/index.js` with `module.exports`, accepting GAS services as parameters. Tests inject global mocks via wrapper functions.
+- Extract testable logic to `src/index.js` with `module.exports`, accepting GAS services as parameters. Tests inject global mocks via wrapper functions.
 - Integration tests are allowed but MUST be clearly marked (e.g., `@integration`) and skippable in CI.
 - The repository's `Node.js Tests` job runs package tests; ensure your package-level tests pass locally before opening a PR.
 
@@ -82,26 +62,12 @@ if (typeof module !== 'undefined' && module.exports) {
 
 ---
 
-## Pull request reviews
-
-- When addressing PR review comments, **always mark each resolved comment thread as Resolved** on GitHub after the fix is pushed. Use the GitHub GraphQL API via `gh api graphql` with the `resolveReviewThread` mutation:
-  ```bash
-  gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "PRRT_..."}) { thread { id isResolved } } }'
-  ```
-  Retrieve thread IDs first with a `reviewThreads` query on the pull request.
-- Resolve all addressed threads in one pass after pushing the fix commit, not one at a time during implementation.
-
----
-
 ## Code style & commits
 
-- Follow repository style and lint rules.
 - ALWAYS run `npx prettier --write .` before committing — pre-commit hooks do not run in agent sessions, so formatting must be applied manually.
 - ALWAYS ensure `npm run check` (prettier check + lint) passes before committing.
 - ALWAYS ensure `npm run lint` and `npm test` passes before committing.
 - ALWAYS ensure `npm test -- --coverage` passes before committing.
-- Keep commits small and include tests with behavior changes.
-- Follow existing code style — no new linting or build tooling unless essential.
 
 ---
 
@@ -113,13 +79,6 @@ if (typeof module !== 'undefined' && module.exports) {
 - When prepending content into a Google Doc with `insertParagraph(0, ...)`, process items oldest-first so the newest content ends up at the top.
 - `getCleanBody()` (in `src/gas-utils.js`) normalizes line breaks: 3+ consecutive newlines → 2, and handles quoted-reply stripping.
 - Always sort Gmail threads by last-message date before processing; the Gmail API does not guarantee order.
-
----
-
-## Security & secrets
-
-- Never commit secrets. Use GitHub Actions secrets or an external secret manager and document required secrets in `<agent-folder>/README.md`.
-- Request maintainer review for agents requiring elevated permissions or access to sensitive data.
 
 ---
 
