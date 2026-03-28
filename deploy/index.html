@@ -788,6 +788,250 @@
         }
       }
 
+      // ── New Label modal ──────────────────────────────────────────────────────
+
+      /**
+       * Creates a single Gmail label via the Gmail API.
+       *
+       * @param {string} labelName - Label to create (supports nested paths like "Projects/receipts").
+       * @returns {Promise<{id: string, name: string}>} The created label object.
+       * @throws {Error} On expired session, missing input, or API failure.
+       */
+      async function createGmailLabel(labelName) {
+        if (!accessToken) {
+          throw new Error(
+            'Please sign in again — your session may have expired.'
+          )
+        }
+        if (!labelName) {
+          throw new Error('Label name is required.')
+        }
+
+        const res = await fetch(
+          'https://gmail.googleapis.com/gmail/v1/users/me/labels',
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ name: labelName }),
+          }
+        )
+        if (!res.ok) {
+          const text = await res.text()
+          const isDuplicate =
+            res.status === 409 || text.toLowerCase().includes('already')
+          let msg = `Failed to create label (${res.status})`
+          if (isDuplicate) {
+            msg = `Label "${labelName}" already exists`
+          }
+          const err = new Error(msg)
+          err.status = res.status
+          err.isDuplicate = isDuplicate
+          throw err
+        }
+        return res.json()
+      }
+
+      /**
+       * Rebuilds a label <select> or fills a text <input> with the current
+       * userGmailLabels list, optionally pre-selecting a value.
+       */
+      function refreshLabelDropdown(selectId, selectedValue) {
+        const el = document.getElementById(selectId)
+        if (!el) return
+        if (el.tagName === 'INPUT') {
+          el.value = selectedValue || ''
+          return
+        }
+        if (el.tagName !== 'SELECT') return
+        const opts = userGmailLabels
+          .map(
+            (l) =>
+              '<option value="' +
+              escapeHtml(l) +
+              '"' +
+              (l === selectedValue ? ' selected' : '') +
+              '>' +
+              escapeHtml(l) +
+              '</option>'
+          )
+          .join('')
+        el.innerHTML = '<option value="">— Select label —</option>' + opts
+      }
+
+      /**
+       * Opens the "New Label" modal for a Gmail to Drive config card.
+       * The modal creates both a trigger label and a "-archived" processed
+       * label in one action, then refreshes both dropdowns.
+       */
+      function openNewLabelModal(triggerSelectId, processedSelectId) {
+        // Remove any existing modal
+        const existing = document.getElementById('new-label-modal-overlay')
+        if (existing) existing.remove()
+
+        const overlay = document.createElement('div')
+        overlay.id = 'new-label-modal-overlay'
+        overlay.style.cssText =
+          'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;' +
+          'align-items:center;justify-content:center;z-index:9999;'
+
+        overlay.innerHTML =
+          '<div id="new-label-modal" style="background:#fff;border-radius:12px;' +
+          'box-shadow:0 8px 32px rgba(0,0,0,0.25);padding:28px 32px;width:440px;max-width:92vw;">' +
+          '<h3 style="font-size:18px;font-weight:500;margin-bottom:4px;color:#202124;">Create New Gmail Labels</h3>' +
+          '<p style="font-size:13px;color:#5f6368;margin-bottom:20px;">' +
+          'Enter a label name. Both the trigger label and its <strong>-archived</strong> counterpart will be created in your Gmail account.</p>' +
+          '<div style="margin-bottom:16px;">' +
+          '<label style="display:block;font-size:13px;color:#5f6368;margin-bottom:4px;">Label name</label>' +
+          '<input type="text" id="new-label-modal-input" placeholder="e.g. Projects/receipts" ' +
+          'style="width:100%;padding:10px 12px;border:1px solid #dadce0;border-radius:4px;font-size:14px;color:#202124;box-sizing:border-box;" />' +
+          '</div>' +
+          '<div id="new-label-modal-preview" style="background:#f8f9fa;border-radius:6px;padding:12px 14px;margin-bottom:16px;display:none;">' +
+          '<div style="font-size:12px;color:#5f6368;margin-bottom:6px;font-weight:500;">Labels to create:</div>' +
+          '<div id="new-label-preview-trigger" style="font-size:13px;color:#202124;padding:2px 0;"></div>' +
+          '<div id="new-label-preview-processed" style="font-size:13px;color:#202124;padding:2px 0;"></div>' +
+          '</div>' +
+          '<div id="new-label-modal-error" style="color:#c5221f;font-size:13px;margin-bottom:12px;display:none;"></div>' +
+          '<div id="new-label-modal-success" style="color:#137333;font-size:13px;margin-bottom:12px;display:none;"></div>' +
+          '<div style="display:flex;justify-content:flex-end;gap:10px;">' +
+          '<button type="button" id="new-label-modal-cancel" class="btn btn-outline" style="padding:8px 18px;font-size:14px;">Cancel</button>' +
+          '<button type="button" id="new-label-modal-create" class="btn btn-primary" style="padding:8px 18px;font-size:14px;" disabled>Create Labels</button>' +
+          '</div>' +
+          '</div>'
+
+        document.body.appendChild(overlay)
+
+        const input = document.getElementById('new-label-modal-input')
+        const preview = document.getElementById('new-label-modal-preview')
+        const previewTrigger = document.getElementById(
+          'new-label-preview-trigger'
+        )
+        const previewProcessed = document.getElementById(
+          'new-label-preview-processed'
+        )
+        const errorEl = document.getElementById('new-label-modal-error')
+        const successEl = document.getElementById('new-label-modal-success')
+        const createBtn = document.getElementById('new-label-modal-create')
+        const cancelBtn = document.getElementById('new-label-modal-cancel')
+
+        // Live preview as user types
+        input.addEventListener('input', function () {
+          const name = input.value.trim()
+          if (name) {
+            previewTrigger.textContent = '\u2705  ' + name
+            previewProcessed.textContent = '\u2705  ' + name + '-archived'
+            preview.style.display = ''
+            createBtn.disabled = false
+          } else {
+            preview.style.display = 'none'
+            createBtn.disabled = true
+          }
+          errorEl.style.display = 'none'
+          successEl.style.display = 'none'
+        })
+
+        let isCreating = false
+
+        function closeModal(force) {
+          if (isCreating && !force) return
+          overlay.remove()
+          document.removeEventListener('keydown', onEsc)
+        }
+
+        // Close on overlay click (but not modal body)
+        overlay.addEventListener('click', function (e) {
+          if (e.target === overlay) closeModal()
+        })
+
+        // Close on Escape
+        function onEsc(e) {
+          if (e.key === 'Escape') closeModal()
+        }
+        document.addEventListener('keydown', onEsc)
+
+        cancelBtn.addEventListener('click', function () {
+          closeModal()
+        })
+
+        // Create both labels
+        createBtn.addEventListener('click', async function () {
+          const name = input.value.trim()
+          if (!name) return
+          const archivedName = name + '-archived'
+
+          isCreating = true
+          input.disabled = true
+          createBtn.disabled = true
+          cancelBtn.disabled = true
+          createBtn.textContent = 'Creating...'
+          errorEl.style.display = 'none'
+          successEl.style.display = 'none'
+
+          try {
+            // Create trigger label (treat 409/duplicate as success)
+            try {
+              await createGmailLabel(name)
+            } catch (err) {
+              if (!err.isDuplicate) throw err
+            }
+            if (!userGmailLabels.includes(name)) userGmailLabels.push(name)
+            previewTrigger.innerHTML =
+              '<span style="color:#137333;">\u2705 ' +
+              escapeHtml(name) +
+              ' — created</span>'
+
+            // Create archived label (treat 409/duplicate as success)
+            try {
+              await createGmailLabel(archivedName)
+            } catch (err) {
+              if (!err.isDuplicate) throw err
+            }
+            if (!userGmailLabels.includes(archivedName))
+              userGmailLabels.push(archivedName)
+            previewProcessed.innerHTML =
+              '<span style="color:#137333;">\u2705 ' +
+              escapeHtml(archivedName) +
+              ' — created</span>'
+
+            // Refresh the label list and auto-select both dropdowns
+            await fetchGmailLabels()
+            refreshLabelDropdown(triggerSelectId, name)
+            refreshLabelDropdown(processedSelectId, archivedName)
+
+            successEl.textContent =
+              'Both labels created and selected in your configuration.'
+            successEl.style.display = ''
+            createBtn.textContent = 'Done'
+
+            // Auto-close after a short delay
+            setTimeout(function () {
+              closeModal(true)
+            }, 1200)
+          } catch (err) {
+            errorEl.textContent = err.message
+            errorEl.style.display = ''
+            input.disabled = false
+            createBtn.disabled = false
+            cancelBtn.disabled = false
+            createBtn.textContent = 'Create Labels'
+          } finally {
+            isCreating = false
+          }
+        })
+
+        // Submit on Enter
+        input.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' && !createBtn.disabled) {
+            createBtn.click()
+          }
+        })
+
+        input.focus()
+      }
+      window.openNewLabelModal = openNewLabelModal
+
       // ── Step 3 – Post-deploy configuration UI ───────────────────────────────────
 
       function toggleFrequencyFields() {
@@ -988,6 +1232,8 @@
             '\')">Save Configuration</button>'
         } else if (catalogId === 'gmail-to-drive-by-labels') {
           let triggerLabelHtml, processedLabelHtml
+          const triggerSelectId = 'cfg-triggerLabel-' + scriptId
+          const processedSelectId = 'cfg-processedLabel-' + scriptId
           if (userGmailLabels.length > 0) {
             const opts = userGmailLabels
               .map(
@@ -1000,22 +1246,42 @@
               )
               .join('')
             triggerLabelHtml =
-              '<select class="cfg-field" data-key="triggerLabel">' +
+              '<select class="cfg-field" data-key="triggerLabel" id="' +
+              escapeHtml(triggerSelectId) +
+              '">' +
               '<option value="">— Select label —</option>' +
               opts +
               '</select>'
             processedLabelHtml =
-              '<select class="cfg-field" data-key="processedLabel">' +
+              '<select class="cfg-field" data-key="processedLabel" id="' +
+              escapeHtml(processedSelectId) +
+              '">' +
               '<option value="">— Select label —</option>' +
               opts +
               '</select>'
           } else {
             triggerLabelHtml =
-              '<input type="text" class="cfg-field" data-key="triggerLabel" placeholder="e.g. receipts" />'
+              '<input type="text" class="cfg-field" data-key="triggerLabel" id="' +
+              escapeHtml(triggerSelectId) +
+              '" placeholder="e.g. receipts" />'
             processedLabelHtml =
-              '<input type="text" class="cfg-field" data-key="processedLabel" placeholder="e.g. receipts-archived" />'
+              '<input type="text" class="cfg-field" data-key="processedLabel" id="' +
+              escapeHtml(processedSelectId) +
+              '" placeholder="e.g. receipts-archived" />'
           }
           container.innerHTML =
+            '<div style="margin-bottom:18px;">' +
+            '<button type="button" class="btn btn-outline" style="padding:8px 16px;font-size:13px;font-weight:500;" ' +
+            'onclick="window.openNewLabelModal(\'' +
+            escapeHtml(triggerSelectId) +
+            "', '" +
+            escapeHtml(processedSelectId) +
+            '\')">' +
+            '<span style="font-size:16px;line-height:1;vertical-align:middle;">+</span> ' +
+            'New Label</button>' +
+            '<span style="font-size:12px;color:#5f6368;margin-left:10px;">' +
+            'Creates both the trigger and <strong>-archived</strong> label in Gmail</span>' +
+            '</div>' +
             '<div class="field-group">' +
             '<label>Trigger Gmail Label</label>' +
             triggerLabelHtml +

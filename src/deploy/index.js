@@ -212,12 +212,50 @@ async function deployScript(fetchFn, accessToken, title, files) {
   }
 }
 
+const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1'
+
+/**
+ * Creates a new Gmail label in the authenticated user's account.
+ *
+ * @param {Function} fetchFn - A `fetch`-compatible function (injectable for testing).
+ * @param {string} accessToken - A valid OAuth 2.0 access token with the
+ *   `https://www.googleapis.com/auth/gmail.labels` scope.
+ * @param {string} labelName - The name of the label to create. Nested labels
+ *   use `/` as a separator (e.g. `"Projects/receipts"`).
+ * @returns {Promise<{id: string, name: string}>} The created label object.
+ * @throws {Error} On missing arguments or a non-OK HTTP response.
+ */
+async function createGmailLabel(fetchFn, accessToken, labelName) {
+  if (typeof fetchFn !== 'function')
+    throw new Error('fetchFn must be a function')
+  if (!accessToken) throw new Error('accessToken is required')
+  if (!labelName) throw new Error('labelName is required')
+
+  const response = await fetchFn(`${GMAIL_API_BASE}/users/me/labels`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ name: labelName }),
+  })
+
+  if (!response.ok) {
+    const text = await response.text()
+    throw new Error(`Failed to create Gmail label: ${response.status} ${text}`)
+  }
+
+  return response.json()
+}
+
 module.exports = {
   APPS_SCRIPT_API_BASE,
+  GMAIL_API_BASE,
   getScriptCatalog,
   getScriptById,
   buildProjectContent,
   createProject,
   updateProjectContent,
   deployScript,
+  createGmailLabel,
 }
