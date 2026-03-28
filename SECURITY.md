@@ -2,8 +2,8 @@
 
 ## Supported Versions
 
-| Version | Supported          |
-| ------- | ------------------ |
+| Version     | Supported          |
+| ----------- | ------------------ |
 | main branch | :white_check_mark: |
 
 ## Reporting a Vulnerability
