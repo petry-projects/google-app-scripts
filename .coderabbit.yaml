@@ -1,0 +1,29 @@
+# CodeRabbit configuration
+# https://docs.coderabbit.ai/guides/configure-coderabbit
+language: en-US
+reviews:
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+  path_filters:
+    - '!_bmad/**'
+    - '!_bmad-output/**'
+    - '!.claude/**'
+  path_instructions:
+    - path: '**/*.js'
+      instructions: >
+        Focus on JavaScript best practices, error handling,
+        and security considerations. Flag any potential issues with
+        external API calls or data validation.
+    - path: '**/*.gs'
+      instructions: >
+        This is Google Apps Script code. Focus on proper use of
+        Google services APIs, error handling, and security considerations.
+        Flag any potential issues with external API calls or data validation.
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+chat:
+  auto_reply: true
