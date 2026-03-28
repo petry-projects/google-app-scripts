@@ -1,5 +1,7 @@
 @https://github.com/petry-projects/.github/blob/main/AGENTS.md
 
+> **Org-wide standards:** This project inherits shared development standards from [petry-projects/.github/AGENTS.md](https://github.com/petry-projects/.github/blob/main/AGENTS.md).
+
 # Google Apps Script — Claude Code Project Context
 
 This file provides Claude Code-specific instructions. For comprehensive agent guidelines (repo layout, setup, testing, code style, PR reviews), see [AGENTS.md](./AGENTS.md).
