@@ -120,12 +120,12 @@ npm test -- --coverage
 
 ## Coverage Requirements
 
-| Metric     | Threshold                                        |
-| ---------- | ------------------------------------------------ |
-| Lines      | 99% (Jest config) / 100% (CI check-coverage.js)  |
-| Statements | 95%                                              |
-| Functions  | 95%                                              |
-| Branches   | 85%                                              |
+| Metric     | Threshold                                       |
+| ---------- | ----------------------------------------------- |
+| Lines      | 99% (Jest config) / 100% (CI check-coverage.js) |
+| Statements | 95%                                             |
+| Functions  | 95%                                             |
+| Branches   | 85%                                             |
 
 Coverage is enforced by:
 

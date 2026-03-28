@@ -24,13 +24,13 @@ Scripts deploy into the **user's own Google Apps Script environment**. There is 
 
 **OAuth Scopes Required:**
 
-| Scope | Purpose |
-|---|---|
-| `script.projects` | Create and update Apps Script projects |
-| `drive.readonly` | Drive Picker to browse and select existing files/folders |
-| `gmail.labels` | Read existing Gmail labels and create new ones |
-| `calendar.readonly` | Read calendar list for dropdowns |
-| `email` | Identify the signed-in user |
+| Scope               | Purpose                                                  |
+| ------------------- | -------------------------------------------------------- |
+| `script.projects`   | Create and update Apps Script projects                   |
+| `drive.readonly`    | Drive Picker to browse and select existing files/folders |
+| `gmail.labels`      | Read existing Gmail labels and create new ones           |
+| `calendar.readonly` | Read calendar list for dropdowns                         |
+| `email`             | Identify the signed-in user                              |
 
 **Features:**
 

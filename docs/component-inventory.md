@@ -22,20 +22,20 @@
 
 ### calendar-to-sheets
 
-| Function                                    | File         | Type      | Description                                                                  |
-| ------------------------------------------- | ------------ | --------- | ---------------------------------------------------------------------------- |
-| `syncAllCalendarsToSheetsGAS()`             | code.gs      | GAS Entry | Syncs all configured calendar/sheet pairs                                    |
-| `syncCalendarToSheetGAS(startIso, endIso)`  | code.gs      | GAS Entry | Syncs calendars in the given date range with chunking support                |
-| `fullResyncCalendarToSheetGAS(configIndex)` | code.gs      | GAS Entry | Clears checkpoint, full historical resync                                    |
-| `_syncCalendarToSheetGAS(cfg, start, end)`  | code.gs      | Core      | Core sync logic for one config over a date range with checkpoint management  |
+| Function                                    | File         | Type      | Description                                                                 |
+| ------------------------------------------- | ------------ | --------- | --------------------------------------------------------------------------- |
+| `syncAllCalendarsToSheetsGAS()`             | code.gs      | GAS Entry | Syncs all configured calendar/sheet pairs                                   |
+| `syncCalendarToSheetGAS(startIso, endIso)`  | code.gs      | GAS Entry | Syncs calendars in the given date range with chunking support               |
+| `fullResyncCalendarToSheetGAS(configIndex)` | code.gs      | GAS Entry | Clears checkpoint, full historical resync                                   |
+| `_syncCalendarToSheetGAS(cfg, start, end)`  | code.gs      | Core      | Core sync logic for one config over a date range with checkpoint management |
 | `syncCalendarToSheet(deps)`                 | src/index.js | Core      | Testable sync — upsert/delete event rows                                    |
-| `eventToRow(event)`                         | src/index.js | Utility   | Converts calendar event to spreadsheet row array                             |
+| `eventToRow(event)`                         | src/index.js | Utility   | Converts calendar event to spreadsheet row array                            |
 | `rowsToMap(rows)`                           | src/index.js | Utility   | Creates event ID → row index mapping                                        |
-| `rowsEqual(a, b)`                           | src/index.js | Utility   | Compares rows with type flexibility                                          |
-| `ensureHeader(sheet)`                       | src/index.js | Utility   | Ensures sheet has proper column headers                                      |
-| `sanitizeValue(value)`                      | src/index.js | Security  | Prevents formula injection in cell values                                    |
-| `getConfigs()` / `getConfig(index)`         | code.gs      | Config    | Configuration management with legacy support                                 |
-| `SYNC_CONFIGS`                              | config.gs    | Config    | Array of calendar/sheet mapping objects                                      |
+| `rowsEqual(a, b)`                           | src/index.js | Utility   | Compares rows with type flexibility                                         |
+| `ensureHeader(sheet)`                       | src/index.js | Utility   | Ensures sheet has proper column headers                                     |
+| `sanitizeValue(value)`                      | src/index.js | Security  | Prevents formula injection in cell values                                   |
+| `getConfigs()` / `getConfig(index)`         | code.gs      | Config    | Configuration management with legacy support                                |
+| `SYNC_CONFIGS`                              | config.gs    | Config    | Array of calendar/sheet mapping objects                                     |
 
 ### calendar-to-briefing-doc
 
