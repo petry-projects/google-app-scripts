@@ -10,10 +10,10 @@ permissions: {}
 jobs:
   dependabot:
     runs-on: ubuntu-latest
-    if: github.event.pull_request.user.login == 'dependabot[bot]'
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
+      pull-requests: read
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
     steps:
       - name: Dependabot metadata
         id: metadata
@@ -24,16 +24,44 @@ jobs:
       - name: Generate app token
         if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor' || steps.metadata.outputs.dependency-type == 'indirect'
         id: app-token
-        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
+        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
-      - name: Approve and auto-merge
+      - name: Approve, resolve threads, and auto-merge
         if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor' || steps.metadata.outputs.dependency-type == 'indirect'
-        run: |
-          gh pr review --approve "$PR_URL"
-          gh pr merge --squash --admin "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          # Approve the PR
+          gh pr review --approve "$PR_URL"
+
+          # Resolve all review threads (from Copilot, CodeRabbit, etc.)
+          THREADS=$(gh api graphql -f query='
+            query($owner: String!, $repo: String!, $pr: Int!) {
+              repository(owner: $owner, name: $repo) {
+                pullRequest(number: $pr) {
+                  reviewThreads(first: 100) {
+                    nodes { id isResolved }
+                  }
+                }
+              }
+            }' -f owner="$REPO_OWNER" -f repo="$REPO_NAME" -F pr="$PR_NUMBER" \
+            --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | .id')
+
+          for THREAD_ID in $THREADS; do
+            gh api graphql -f query='
+              mutation($id: ID!) {
+                resolveReviewThread(input: {threadId: $id}) {
+                  thread { isResolved }
+                }
+              }' -f id="$THREAD_ID" --silent
+          done
+
+          # Queue auto-merge (waits for all checks to pass)
+          gh pr merge --squash --auto "$PR_URL"
