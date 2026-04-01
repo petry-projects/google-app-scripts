@@ -15,8 +15,7 @@ jobs:
   claude:
     if: >-
       (github.event_name == 'pull_request' &&
-        github.event.pull_request.head.repo.full_name == github.repository &&
-        github.event.pull_request.user.login != 'dependabot[bot]') ||
+        github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
         contains(github.event.comment.body, '@claude') &&
         contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
@@ -32,6 +31,7 @@ jobs:
       issues: write
     steps:
       - name: Run Claude Code
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
         uses: anthropics/claude-code-action@bee87b3258c251f9279e5371b0cc3660f37f3f77 # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
