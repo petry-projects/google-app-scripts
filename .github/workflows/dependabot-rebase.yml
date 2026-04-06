@@ -1,0 +1,73 @@
+# Dependabot rebase workflow
+# Copy to .github/workflows/dependabot-rebase.yml
+#
+# Requires repository secrets:
+#   APP_ID         — GitHub App ID with contents:write and pull-requests:write
+#   APP_PRIVATE_KEY — GitHub App private key
+#
+# Problem: when branch protection requires branches to be up-to-date
+# (strict status checks), merging one Dependabot PR makes the others fall
+# behind. Dependabot does not auto-rebase PRs that are merely behind — it
+# only rebases on its next scheduled run or when there are merge conflicts.
+# This leaves auto-merge stalled until the next weekly Dependabot run.
+#
+# Solution: after every push to main (typically a merged PR), this workflow
+# finds open Dependabot PRs that are behind and asks Dependabot to rebase
+# them via the @dependabot rebase command. Dependabot performs the rebase
+# with its own commit signature, preserving the automerge workflow's ability
+# to verify the PR author.
+#
+# Important: never use the GitHub API update-branch endpoint to rebase
+# Dependabot PRs — it replaces Dependabot's commit signature with GitHub's,
+# which breaks dependabot/fetch-metadata verification and causes Dependabot
+# to refuse future rebases on that PR.
+name: Dependabot rebase behind PRs
+
+on:
+  push:
+    branches:
+      - main
+
+permissions: {}
+
+jobs:
+  rebase:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Rebase behind Dependabot PRs
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Find open Dependabot PRs
+          PRS=$(gh pr list --repo "$REPO" --author "app/dependabot" \
+            --json number,headRefName \
+            --jq '.[] | "\(.number) \(.headRefName)"')
+
+          if [[ -z "$PRS" ]]; then
+            echo "No open Dependabot PRs"
+            exit 0
+          fi
+
+          while IFS=' ' read -r PR_NUMBER HEAD_REF; do
+            BEHIND=$(gh api "repos/$REPO/compare/main...$HEAD_REF" \
+              --jq '.behind_by')
+
+            if [[ "$BEHIND" -gt 0 ]]; then
+              echo "PR #$PR_NUMBER ($HEAD_REF) is $BEHIND commit(s) behind — requesting rebase"
+              gh pr comment "$PR_NUMBER" --repo "$REPO" \
+                --body "@dependabot rebase"
+            else
+              echo "PR #$PR_NUMBER ($HEAD_REF) is up to date"
+            fi
+          done <<< "$PRS"
