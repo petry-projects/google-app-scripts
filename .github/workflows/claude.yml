@@ -1,3 +1,6 @@
+# AI-assisted code review via Claude Code Action on PRs.
+# Issue automation: implement, open PR, self-review, check CI, notify maintainer.
+# Standard: https://github.com/petry-projects/.github/blob/main/standards/ci-standards.md#4-claude-code-claudeyml
 name: Claude Code
 
 on:
@@ -14,6 +17,7 @@ on:
 permissions: {}
 
 jobs:
+  # Interactive mode: PR reviews and @claude mentions
   claude:
     if: >-
       (github.event_name == 'pull_request' &&
@@ -23,17 +27,16 @@ jobs:
         contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
       (github.event_name == 'pull_request_review_comment' &&
         contains(github.event.comment.body, '@claude') &&
-        contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
-      (github.event_name == 'issues' && github.event.action == 'labeled' &&
-        github.event.label.name == 'claude')
+        contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
-      # write required for issue-triggered branch creation
       contents: write
       id-token: write
       pull-requests: write
       issues: write
+      actions: read
+      checks: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -44,4 +47,48 @@ jobs:
         uses: anthropics/claude-code-action@6e2bd52842c65e914eba5c8badd17560bd26b5de # v1.0.89
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          label_trigger: 'claude'
+          additional_permissions: |
+            actions: read
+            checks: read
+
+  # Automation mode: issue-triggered work — implement, open PR, review, and notify
+  claude-issue:
+    if: >-
+      github.event_name == 'issues' && github.event.action == 'labeled' &&
+        github.event.label.name == 'claude'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      id-token: write
+      pull-requests: write
+      issues: write
+      actions: read
+      checks: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 1
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@6e2bd52842c65e914eba5c8badd17560bd26b5de # v1.0.89
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          label_trigger: "claude"
+          track_progress: "true"
+          additional_permissions: |
+            actions: read
+            checks: read
+          claude_args: |
+            --allowedTools "Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh run view:*),Bash(gh run watch:*),Bash(cat:*),Edit,Write"
+          prompt: |
+            Implement a fix for issue #${{ github.event.issue.number }}.
+
+            After implementing:
+            1. Create a pull request with a clear title and description. Include "Closes #${{ github.event.issue.number }}" in the PR body.
+            2. Self-review your own PR — look for bugs, style issues, missed edge cases, and test gaps. If you find problems, push fixes.
+            3. Review all comments and review threads on the PR. For each one:
+               - If you can address the feedback, make the fix, push, and mark the conversation as resolved.
+               - If the comment requires human judgment, leave a reply explaining what you need.
+            4. Check CI status. If CI fails, read the logs, fix the issues, and push again. Repeat until CI passes.
+            5. When CI is green, all actionable review comments are resolved, and the PR is ready, read the CODEOWNERS file and leave a comment tagging the relevant code owners to review and merge.
