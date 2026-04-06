@@ -20,6 +20,7 @@ jobs:
         uses: dependabot/fetch-metadata@ffa630c65fa7e0ecfa0625b5ceda64399aea1b36 # v2
         with:
           github-token: '${{ secrets.GITHUB_TOKEN }}'
+          skip-commit-verification: true
 
       - name: Generate app token
         if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor' || steps.metadata.outputs.dependency-type == 'indirect'
