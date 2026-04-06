@@ -20,12 +20,12 @@ set -euo pipefail
 RULESET_NAME="code-quality"
 
 # Target repo: first arg, or detect from current directory
-if [[ -n "${1:-}" ]]; then
+if [ -n "${1:-}" ]; then
   REPO="$1"
 else
   REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)"
-  if [[ -z "$REPO" ]]; then
-    echo "Usage: $0 [owner/repo]" >&2
+  if [ -z "$REPO" ]; then
+    echo "Usage: $0 [owner/repo]"
     exit 1
   fi
 fi
@@ -36,8 +36,10 @@ echo "  Repo:    $REPO"
 echo ""
 
 # ── Preflight ─────────────────────────────────────────────────────────────────
-command -v gh >/dev/null || { echo "Error: gh is required" >&2; exit 1; }
-gh auth status >/dev/null 2>&1 || { echo "Error: gh not authenticated" >&2; exit 1; }
+for cmd in gh; do
+  command -v "$cmd" >/dev/null || { echo "Error: $cmd is required"; exit 1; }
+done
+gh auth status >/dev/null 2>&1 || { echo "Error: gh not authenticated"; exit 1; }
 
 # ── Check if ruleset already exists ───────────────────────────────────────────
 EXISTING_ID=$(gh api "repos/$REPO/rulesets" -q ".[] | select(.name == \"$RULESET_NAME\") | .id" 2>/dev/null || echo "")
@@ -67,7 +69,7 @@ RULESET_PAYLOAD='{
   ]
 }'
 
-if [[ -z "$EXISTING_ID" ]]; then
+if [ -z "$EXISTING_ID" ]; then
   echo "Creating '$RULESET_NAME' ruleset..."
   echo "$RULESET_PAYLOAD" | gh api "repos/$REPO/rulesets" --method POST --input - >/dev/null
   echo "  ✓ Ruleset '$RULESET_NAME' created"
