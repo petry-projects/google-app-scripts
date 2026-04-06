@@ -1,0 +1,73 @@
+# Dependabot update-branch workflow
+# Copy to .github/workflows/dependabot-rebase.yml
+#
+# Requires repository secrets:
+#   APP_ID         — GitHub App ID with contents:write and pull-requests:write
+#   APP_PRIVATE_KEY — GitHub App private key
+#
+# Problem: when branch protection requires branches to be up-to-date
+# (strict status checks), merging one Dependabot PR makes the others fall
+# behind. Dependabot does not auto-rebase PRs that are merely behind — it
+# only rebases on its next scheduled run or when there are merge conflicts.
+# This leaves auto-merge stalled until the next weekly Dependabot run.
+#
+# Solution: after every push to main (typically a merged PR), this workflow
+# finds open Dependabot PRs that are behind and uses the GitHub API
+# update-branch endpoint with the merge method to bring them up to date.
+# Using merge (not rebase) preserves Dependabot's original commits so it
+# still recognizes the PR as its own.
+#
+# Note: the merge commit is authored by GitHub, not Dependabot, so the
+# dependabot-automerge workflow must use skip-commit-verification: true
+# in the dependabot/fetch-metadata step.
+name: Dependabot update behind PRs
+
+on:
+  push:
+    branches:
+      - main
+
+permissions: {}
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Update behind Dependabot PRs
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Find open Dependabot PRs
+          PRS=$(gh pr list --repo "$REPO" --author "app/dependabot" \
+            --json number,headRefName \
+            --jq '.[] | "\(.number) \(.headRefName)"')
+
+          if [[ -z "$PRS" ]]; then
+            echo "No open Dependabot PRs"
+            exit 0
+          fi
+
+          while IFS=' ' read -r PR_NUMBER HEAD_REF; do
+            BEHIND=$(gh api "repos/$REPO/compare/main...$HEAD_REF" \
+              --jq '.behind_by')
+
+            if [[ "$BEHIND" -gt 0 ]]; then
+              echo "PR #$PR_NUMBER ($HEAD_REF) is $BEHIND commit(s) behind — merging main"
+              gh api "repos/$REPO/pulls/$PR_NUMBER/update-branch" \
+                -X PUT -f update_method=merge \
+                --silent || echo "Warning: failed to update PR #$PR_NUMBER"
+            else
+              echo "PR #$PR_NUMBER ($HEAD_REF) is up to date"
+            fi
+          done <<< "$PRS"
