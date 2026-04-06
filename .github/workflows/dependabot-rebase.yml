@@ -1,10 +1,6 @@
 # Dependabot rebase workflow
 # Copy to .github/workflows/dependabot-rebase.yml
 #
-# Requires repository secrets:
-#   APP_ID         — GitHub App ID with contents:write and pull-requests:write
-#   APP_PRIVATE_KEY — GitHub App private key
-#
 # Problem: when branch protection requires branches to be up-to-date
 # (strict status checks), merging one Dependabot PR makes the others fall
 # behind. Dependabot does not auto-rebase PRs that are merely behind — it
@@ -35,18 +31,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: write
     steps:
-      - name: Generate app token
-        id: app-token
-        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3
-        with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-
       - name: Rebase behind Dependabot PRs
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
           # Find open Dependabot PRs
