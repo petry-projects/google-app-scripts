@@ -1,4 +1,4 @@
-# Dependabot update-branch workflow
+# Dependabot update and merge workflow
 # Copy to .github/workflows/dependabot-rebase.yml
 #
 # Requires repository secrets:
@@ -9,18 +9,22 @@
 # (strict status checks), merging one Dependabot PR makes the others fall
 # behind. Dependabot does not auto-rebase PRs that are merely behind — it
 # only rebases on its next scheduled run or when there are merge conflicts.
-# This leaves auto-merge stalled until the next weekly Dependabot run.
+# Additionally, GitHub auto-merge (--auto) may not trigger when rulesets
+# cause mergeable_state to report "blocked" even though all requirements
+# are actually met.
 #
-# Solution: after every push to main (typically a merged PR), this workflow
-# finds open Dependabot PRs that are behind and uses the GitHub API
-# update-branch endpoint with the merge method to bring them up to date.
-# Using merge (not rebase) preserves Dependabot's original commits so it
-# still recognizes the PR as its own.
+# Solution: after every push to main (typically a merged PR), this workflow:
+#   1. Updates behind Dependabot PRs using the merge method (not rebase)
+#   2. Merges any Dependabot PR that is up-to-date, approved, and passing CI
 #
-# Note: the merge commit is authored by GitHub, not Dependabot, so the
-# dependabot-automerge workflow must use skip-commit-verification: true
-# in the dependabot/fetch-metadata step.
-name: Dependabot update behind PRs
+# Using the app token for merges ensures the resulting push to main triggers
+# this workflow again, creating a self-sustaining chain that serializes
+# Dependabot PR merges one at a time.
+#
+# Note: the merge commit from update-branch is authored by GitHub, not
+# Dependabot, so the dependabot-automerge workflow must use
+# skip-commit-verification: true in the dependabot/fetch-metadata step.
+name: Dependabot update and merge
 
 on:
   push:
@@ -30,7 +34,7 @@ on:
 permissions: {}
 
 jobs:
-  update:
+  update-and-merge:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -43,7 +47,7 @@ jobs:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
-      - name: Update behind Dependabot PRs
+      - name: Update and merge Dependabot PRs
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
@@ -58,16 +62,63 @@ jobs:
             exit 0
           fi
 
+          MERGED=false
+
           while IFS=' ' read -r PR_NUMBER HEAD_REF; do
             BEHIND=$(gh api "repos/$REPO/compare/main...$HEAD_REF" \
               --jq '.behind_by')
 
             if [[ "$BEHIND" -gt 0 ]]; then
-              echo "PR #$PR_NUMBER ($HEAD_REF) is $BEHIND commit(s) behind — merging main"
+              echo "PR #$PR_NUMBER ($HEAD_REF) is $BEHIND commit(s) behind — merging main into branch"
               gh api "repos/$REPO/pulls/$PR_NUMBER/update-branch" \
                 -X PUT -f update_method=merge \
                 --silent || echo "Warning: failed to update PR #$PR_NUMBER"
+              continue
+            fi
+
+            echo "PR #$PR_NUMBER ($HEAD_REF) is up to date — checking if merge-ready"
+
+            # Skip if we already merged one (strict mode means others are now behind)
+            if [[ "$MERGED" == "true" ]]; then
+              echo "  Skipping — already merged a PR this run"
+              continue
+            fi
+
+            # Check if auto-merge is enabled (set by the automerge workflow)
+            AUTO_MERGE=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
+              --json autoMergeRequest --jq '.autoMergeRequest != null')
+
+            if [[ "$AUTO_MERGE" != "true" ]]; then
+              echo "  Skipping — auto-merge not enabled"
+              continue
+            fi
+
+            # Check if all required checks pass (look at overall rollup)
+            CHECKS_PASS=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
+              --json statusCheckRollup \
+              --jq '[.statusCheckRollup[]? | select(.name != null and .status == "COMPLETED") | .conclusion] | all(. == "SUCCESS" or . == "NEUTRAL" or . == "SKIPPED")')
+
+            CHECKS_PENDING=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
+              --json statusCheckRollup \
+              --jq '[.statusCheckRollup[]? | select(.name != null and .status != "COMPLETED")] | length')
+
+            if [[ "$CHECKS_PENDING" -gt 0 ]]; then
+              echo "  Skipping — $CHECKS_PENDING check(s) still pending"
+              continue
+            fi
+
+            if [[ "$CHECKS_PASS" != "true" ]]; then
+              echo "  Skipping — some checks failed"
+              continue
+            fi
+
+            echo "  All checks pass — merging PR #$PR_NUMBER"
+            if gh api "repos/$REPO/pulls/$PR_NUMBER/merge" \
+              -X PUT -f merge_method=squash \
+              --silent; then
+              echo "  Merged PR #$PR_NUMBER"
+              MERGED=true
             else
-              echo "PR #$PR_NUMBER ($HEAD_REF) is up to date"
+              echo "  Warning: failed to merge PR #$PR_NUMBER"
             fi
           done <<< "$PRS"
