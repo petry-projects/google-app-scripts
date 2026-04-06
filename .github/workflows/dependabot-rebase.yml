@@ -1,56 +1,73 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# SOURCE OF TRUTH: petry-projects/.github/standards/workflows/dependabot-rebase.yml
-# Standard:        petry-projects/.github/standards/dependabot-policy.md
-# Reusable:        petry-projects/.github/.github/workflows/dependabot-rebase-reusable.yml
+# Dependabot rebase workflow
+# Copy to .github/workflows/dependabot-rebase.yml
 #
-# AGENTS — READ BEFORE EDITING:
-#   • This file is a THIN CALLER STUB. All rebase/merge serialization logic
-#     lives in the reusable workflow above.
-#   • You MUST NOT change: the `uses:` ref — it is pinned to the
-#     `dependabot-rebase/stable` channel, a moving tag advanced centrally.
-#     Never repoint it to `@main`, a SHA, or a frozen `@vX` (see
-#     ci-standards.md → Reusable workflow versioning). Also do not change the
-#     concurrency group name, the explicit secrets
-#     block, or the job-level `permissions:` block — reusable workflows can be
-#     granted no more permissions than the calling job has, so removing the
-#     stanza breaks the reusable's gh API calls. Do not remove any trigger
-#     (`push` keeps the self-sustaining chain; `schedule` is the safety net
-#     when no PR merges have occurred recently; `workflow_dispatch` allows
-#     manual queue flushes).
-#   • If you need different behaviour, open a PR against the reusable in the
-#     central repo.
-# ─────────────────────────────────────────────────────────────────────────────
-#
-# Dependabot update-and-merge — thin caller for the org-level reusable.
-# To adopt: copy THIS file (standards/workflows/dependabot-rebase.yml) to
-#   .github/workflows/dependabot-rebase.yml in your repo. Do NOT copy
-#   .github/workflows/dependabot-rebase.yml from this repo — that file uses a
-#   local ref only valid in the source-of-truth repo.
-# Required org/repo secrets (inherited):
+# Requires repository secrets:
 #   APP_ID         — GitHub App ID with contents:write and pull-requests:write
 #   APP_PRIVATE_KEY — GitHub App private key
-name: Dependabot update and merge
+#
+# Problem: when branch protection requires branches to be up-to-date
+# (strict status checks), merging one Dependabot PR makes the others fall
+# behind. Dependabot does not auto-rebase PRs that are merely behind — it
+# only rebases on its next scheduled run or when there are merge conflicts.
+# This leaves auto-merge stalled until the next weekly Dependabot run.
+#
+# Solution: after every push to main (typically a merged PR), this workflow
+# finds open Dependabot PRs that are behind and asks Dependabot to rebase
+# them via the @dependabot rebase command. Dependabot performs the rebase
+# with its own commit signature, preserving the automerge workflow's ability
+# to verify the PR author.
+#
+# Important: never use the GitHub API update-branch endpoint to rebase
+# Dependabot PRs — it replaces Dependabot's commit signature with GitHub's,
+# which breaks dependabot/fetch-metadata verification and causes Dependabot
+# to refuse future rebases on that PR.
+name: Dependabot rebase behind PRs
 
 on:
   push:
     branches:
       - main
-  schedule:
-    - cron: '0 */4 * * *' # every 4 hours — safety net when no pushes to main trigger the chain
-  workflow_dispatch: # allow manual trigger to flush Dependabot PR queue
-
-concurrency:
-  group: dependabot-update-and-merge
-  cancel-in-progress: false
 
 permissions: {}
 
 jobs:
-  dependabot-rebase:
+  rebase:
+    runs-on: ubuntu-latest
     permissions:
-      contents: write # update-branch via GITHUB_TOKEN (may touch .github/workflows/)
-      pull-requests: write # re-approve PRs after branch update
-    uses: petry-projects/.github/.github/workflows/dependabot-rebase-reusable.yml@dependabot-rebase/v2-stable # NOSONAR(githubactions:S7637) first-party channel ref
-    secrets:
-      APP_ID: ${{ secrets.APP_ID }}
-      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Rebase behind Dependabot PRs
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Find open Dependabot PRs
+          PRS=$(gh pr list --repo "$REPO" --author "app/dependabot" \
+            --json number,headRefName \
+            --jq '.[] | "\(.number) \(.headRefName)"')
+
+          if [[ -z "$PRS" ]]; then
+            echo "No open Dependabot PRs"
+            exit 0
+          fi
+
+          while IFS=' ' read -r PR_NUMBER HEAD_REF; do
+            BEHIND=$(gh api "repos/$REPO/compare/main...$HEAD_REF" \
+              --jq '.behind_by')
+
+            if [[ "$BEHIND" -gt 0 ]]; then
+              echo "PR #$PR_NUMBER ($HEAD_REF) is $BEHIND commit(s) behind — requesting rebase"
+              gh pr comment "$PR_NUMBER" --repo "$REPO" \
+                --body "@dependabot rebase"
+            else
+              echo "PR #$PR_NUMBER ($HEAD_REF) is up to date"
+            fi
+          done <<< "$PRS"
