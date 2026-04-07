@@ -1,0 +1,9 @@
+# Repository settings managed via probot/settings
+# https://github.com/probot/settings
+
+# Labels — standard set
+# Reference: https://github.com/petry-projects/.github/blob/main/standards/github-settings.md#labels--standard-set
+labels:
+  - name: security
+    color: e4e669
+    description: Security vulnerability or concern
