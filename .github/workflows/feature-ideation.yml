@@ -1,0 +1,76 @@
+# Feature Ideation — google-app-scripts caller stub.
+#
+# Calls the org-wide reusable workflow at
+# petry-projects/.github/.github/workflows/feature-ideation-reusable.yml
+# All ideation logic, the multi-skill pipeline, the Opus 4.6 model
+# selection, and the github_token override live in the reusable workflow.
+#
+# To tune the prompt or pipeline for ALL BMAD repos, edit the reusable
+# workflow in petry-projects/.github — changes propagate here on next run.
+#
+# Standard: https://github.com/petry-projects/.github/blob/main/standards/ci-standards.md#8-feature-ideation-feature-ideationyml--bmad-method-repos
+name: Feature Research & Ideation (BMAD Analyst)
+
+on:
+  schedule:
+    - cron: '0 7 * * 5'   # Friday 07:00 UTC (3 AM EDT / 2 AM EST)
+  workflow_dispatch:
+    inputs:
+      focus_area:
+        description: 'Optional focus area (e.g., "Gmail automation", "deployment UX", "AI summarization")'
+        required: false
+        type: string
+      research_depth:
+        description: 'Research depth'
+        required: false
+        default: 'standard'
+        type: choice
+        options:
+          - quick
+          - standard
+          - deep
+
+permissions: {}
+
+concurrency:
+  group: feature-ideation
+  cancel-in-progress: false
+
+jobs:
+  ideate:
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      discussions: write
+      id-token: write
+    uses: petry-projects/.github/.github/workflows/feature-ideation-reusable.yml@main
+    with:
+      project_context: |
+        google-app-scripts is an open-source (MIT) collection of personal
+        productivity scripts built on Google Apps Script, targeting non-
+        technical users who want to automate repetitive tasks across
+        Gmail, Google Drive, Google Docs, and Google Calendar without
+        writing code. Current scripts include "Gmail to Drive by Labels"
+        (archives labelled emails into a Doc + de-duplicated attachments)
+        and "Calendar to Sheets" (one-way sync of calendar events into a
+        spreadsheet). The repo ships a browser-based deployment page
+        (`deploy/index.html`) that uses OAuth + the Apps Script API to
+        deploy and configure scripts in one click — no clasp, no command
+        line, no manual ID-hunting.
+
+        Adjacent / competitor space: Zapier, Make, IFTTT, n8n (general
+        no-code automation); native Apps Script libraries on GitHub;
+        Google's own Apps Script gallery; AI-powered email assistants
+        (Superhuman, Shortwave); Google Workspace add-ons.
+
+        Trends to research: AI summarization and triage in productivity
+        tools, OAuth UX patterns for non-technical users, generative
+        document automation (Docs / Sheets / Slides), Gmail "labels-as-
+        workflow" patterns, Apps Script V8 runtime improvements, web-app-
+        only deployment patterns that avoid clasp, structured outputs
+        from LLMs into Sheets/Docs.
+      focus_area: ${{ inputs.focus_area || '' }}
+      research_depth: ${{ inputs.research_depth || 'standard' }}
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
