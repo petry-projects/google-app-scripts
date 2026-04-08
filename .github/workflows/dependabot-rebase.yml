@@ -1,29 +1,26 @@
-# Dependabot update and merge workflow
-# Copy to .github/workflows/dependabot-rebase.yml
+# ─────────────────────────────────────────────────────────────────────────────
+# SOURCE OF TRUTH: petry-projects/.github/standards/workflows/dependabot-rebase.yml
+# Standard:        petry-projects/.github/standards/dependabot-policy.md
+# Reusable:        petry-projects/.github/.github/workflows/dependabot-rebase-reusable.yml
 #
-# Requires repository secrets:
+# AGENTS — READ BEFORE EDITING:
+#   • This file is a THIN CALLER STUB. All rebase/merge serialization logic
+#     lives in the reusable workflow above.
+#   • You MAY change: nothing in this file in normal use. Adopt verbatim.
+#   • You MUST NOT change: trigger event, the concurrency group name,
+#     the `uses:` line, `secrets: inherit`, or the job-level `permissions:`
+#     block — reusable workflows can be granted no more permissions than the
+#     calling job has, so removing the stanza breaks the reusable's gh API
+#     calls.
+#   • If you need different behaviour, open a PR against the reusable in the
+#     central repo.
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Dependabot update-and-merge — thin caller for the org-level reusable.
+# To adopt: copy this file to .github/workflows/dependabot-rebase.yml in your repo.
+# Required org/repo secrets (inherited):
 #   APP_ID         — GitHub App ID with contents:write and pull-requests:write
 #   APP_PRIVATE_KEY — GitHub App private key
-#
-# Problem: when branch protection requires branches to be up-to-date
-# (strict status checks), merging one Dependabot PR makes the others fall
-# behind. Dependabot does not auto-rebase PRs that are merely behind — it
-# only rebases on its next scheduled run or when there are merge conflicts.
-# Additionally, GitHub auto-merge (--auto) may not trigger when rulesets
-# cause mergeable_state to report "blocked" even though all requirements
-# are actually met.
-#
-# Solution: after every push to main (typically a merged PR), this workflow:
-#   1. Updates behind Dependabot PRs using the merge method (not rebase)
-#   2. Merges any Dependabot PR that is up-to-date, approved, and passing CI
-#
-# Using the app token for merges ensures the resulting push to main triggers
-# this workflow again, creating a self-sustaining chain that serializes
-# Dependabot PR merges one at a time.
-#
-# Note: the merge commit from update-branch is authored by GitHub, not
-# Dependabot, so the dependabot-automerge workflow must use
-# skip-commit-verification: true in the dependabot/fetch-metadata step.
 name: Dependabot update and merge
 
 on:
@@ -38,91 +35,9 @@ concurrency:
 permissions: {}
 
 jobs:
-  update-and-merge:
-    runs-on: ubuntu-latest
+  dependabot-rebase:
     permissions:
       contents: read
       pull-requests: read
-    steps:
-      - name: Generate app token
-        id: app-token
-        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3
-        with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-
-      - name: Update and merge Dependabot PRs
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          REPO: ${{ github.repository }}
-        run: |
-          # Find open Dependabot PRs
-          PRS=$(gh pr list --repo "$REPO" --author "app/dependabot" \
-            --json number,headRefName \
-            --jq '.[] | "\(.number) \(.headRefName)"')
-
-          if [[ -z "$PRS" ]]; then
-            echo "No open Dependabot PRs"
-            exit 0
-          fi
-
-          MERGED=false
-
-          while IFS=' ' read -r PR_NUMBER HEAD_REF; do
-            BEHIND=$(gh api "repos/$REPO/compare/main...$HEAD_REF" \
-              --jq '.behind_by')
-
-            if [[ "$BEHIND" -gt 0 ]]; then
-              echo "PR #$PR_NUMBER ($HEAD_REF) is $BEHIND commit(s) behind — merging main into branch"
-              gh api "repos/$REPO/pulls/$PR_NUMBER/update-branch" \
-                -X PUT -f update_method=merge \
-                --silent || echo "Warning: failed to update PR #$PR_NUMBER"
-              continue
-            fi
-
-            echo "PR #$PR_NUMBER ($HEAD_REF) is up to date — checking if merge-ready"
-
-            # Skip if we already merged one (strict mode means others are now behind)
-            if [[ "$MERGED" == "true" ]]; then
-              echo "  Skipping — already merged a PR this run"
-              continue
-            fi
-
-            # Check if auto-merge is enabled (set by the automerge workflow)
-            AUTO_MERGE=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
-              --json autoMergeRequest --jq '.autoMergeRequest != null')
-
-            if [[ "$AUTO_MERGE" != "true" ]]; then
-              echo "  Skipping — auto-merge not enabled"
-              continue
-            fi
-
-            # Check if all required checks pass (look at overall rollup)
-            CHECKS_PASS=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
-              --json statusCheckRollup \
-              --jq '[.statusCheckRollup[]? | select(.name != null and .status == "COMPLETED") | .conclusion] | all(. == "SUCCESS" or . == "NEUTRAL" or . == "SKIPPED")')
-
-            CHECKS_PENDING=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
-              --json statusCheckRollup \
-              --jq '[.statusCheckRollup[]? | select(.name != null and .status != "COMPLETED")] | length')
-
-            if [[ "$CHECKS_PENDING" -gt 0 ]]; then
-              echo "  Skipping — $CHECKS_PENDING check(s) still pending"
-              continue
-            fi
-
-            if [[ "$CHECKS_PASS" != "true" ]]; then
-              echo "  Skipping — some checks failed"
-              continue
-            fi
-
-            echo "  All checks pass — merging PR #$PR_NUMBER"
-            if gh api "repos/$REPO/pulls/$PR_NUMBER/merge" \
-              -X PUT -f merge_method=squash \
-              --silent; then
-              echo "  Merged PR #$PR_NUMBER"
-              MERGED=true
-            else
-              echo "  Warning: failed to merge PR #$PR_NUMBER"
-            fi
-          done <<< "$PRS"
+    uses: petry-projects/.github/.github/workflows/dependabot-rebase-reusable.yml@v1
+    secrets: inherit

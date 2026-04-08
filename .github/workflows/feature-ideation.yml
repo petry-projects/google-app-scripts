@@ -1,12 +1,36 @@
-# Feature Ideation — google-app-scripts caller stub.
+# ─────────────────────────────────────────────────────────────────────────────
+# SOURCE OF TRUTH: petry-projects/.github/standards/workflows/feature-ideation.yml
+# Standard:        petry-projects/.github/standards/ci-standards.md#8-feature-ideation-feature-ideationyml--bmad-method-repos
+# Reusable:        petry-projects/.github/.github/workflows/feature-ideation-reusable.yml
 #
-# Calls the org-wide reusable workflow at
+# AGENTS — READ BEFORE EDITING:
+#   • This file is a THIN CALLER STUB. The 5-phase ideation pipeline, the
+#     Opus 4.6 model selection, the github_token override, and the
+#     ANTHROPIC_MODEL env var all live in the reusable workflow above.
+#   • You MAY change: the `project_context` value (the only required edit
+#     per repo), and optionally the cron schedule.
+#   • You MUST NOT change: trigger event shape, the `uses:` line, the
+#     job-level `permissions:` block, or the `secrets:` block — these are
+#     required for the reusable to work.
+#   • If you need different behaviour, open a PR against the reusable in
+#     the central repo. The change will propagate everywhere on next run.
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Feature Ideation workflow stub — for BMAD Method-enabled repos.
+#
+# This is a thin caller for the org-wide reusable workflow at
 # petry-projects/.github/.github/workflows/feature-ideation-reusable.yml
 # All ideation logic, the multi-skill pipeline, the Opus 4.6 model
 # selection, and the github_token override live in the reusable workflow.
 #
-# To tune the prompt or pipeline for ALL BMAD repos, edit the reusable
-# workflow in petry-projects/.github — changes propagate here on next run.
+# To adopt:
+#   1. Copy this file to .github/workflows/feature-ideation.yml in your repo.
+#   2. Replace the `project_context` value with a 3-5 sentence description
+#      of your project, its target users, and the competitive landscape Mary
+#      should research. This is the only required customisation.
+#   3. (Optional) Adjust the schedule cron if Friday morning UTC doesn't suit.
+#   4. Ensure GitHub Discussions is enabled with an "Ideas" category.
+#   5. Confirm the org-level secret CLAUDE_CODE_OAUTH_TOKEN is accessible.
 #
 # Standard: https://github.com/petry-projects/.github/blob/main/standards/ci-standards.md#8-feature-ideation-feature-ideationyml--bmad-method-repos
 name: Feature Research & Ideation (BMAD Analyst)
@@ -17,7 +41,7 @@ on:
   workflow_dispatch:
     inputs:
       focus_area:
-        description: 'Optional focus area (e.g., "Gmail automation", "deployment UX", "AI summarization")'
+        description: 'Optional focus area (e.g., "accessibility", "performance")'
         required: false
         type: string
       research_depth:
@@ -38,38 +62,29 @@ concurrency:
 
 jobs:
   ideate:
+    # Permissions cascade from the calling job to the reusable workflow.
+    # The reusable workflow's two jobs (gather-signals + analyze) need:
+    #   - contents:    read   (checkout, file reads)
+    #   - issues:      read   (signal collection)
+    #   - pull-requests: read (signal collection)
+    #   - discussions: write  (CRITICAL — create/update Discussion threads)
+    #   - id-token:    write  (claude-code-action OIDC for GitHub App token)
     permissions:
       contents: read
       issues: read
       pull-requests: read
       discussions: write
       id-token: write
-    uses: petry-projects/.github/.github/workflows/feature-ideation-reusable.yml@main
+    uses: petry-projects/.github/.github/workflows/feature-ideation-reusable.yml@v1
     with:
+      # === CUSTOMISE THIS PER REPO — the only required edit ===
+      # Replace this paragraph with a 3-5 sentence description of your project,
+      # its target users, and the competitive landscape. The more specific you
+      # are, the more useful the proposals.
       project_context: |
-        google-app-scripts is an open-source (MIT) collection of personal
-        productivity scripts built on Google Apps Script, targeting non-
-        technical users who want to automate repetitive tasks across
-        Gmail, Google Drive, Google Docs, and Google Calendar without
-        writing code. Current scripts include "Gmail to Drive by Labels"
-        (archives labelled emails into a Doc + de-duplicated attachments)
-        and "Calendar to Sheets" (one-way sync of calendar events into a
-        spreadsheet). The repo ships a browser-based deployment page
-        (`deploy/index.html`) that uses OAuth + the Apps Script API to
-        deploy and configure scripts in one click — no clasp, no command
-        line, no manual ID-hunting.
-
-        Adjacent / competitor space: Zapier, Make, IFTTT, n8n (general
-        no-code automation); native Apps Script libraries on GitHub;
-        Google's own Apps Script gallery; AI-powered email assistants
-        (Superhuman, Shortwave); Google Workspace add-ons.
-
-        Trends to research: AI summarization and triage in productivity
-        tools, OAuth UX patterns for non-technical users, generative
-        document automation (Docs / Sheets / Slides), Gmail "labels-as-
-        workflow" patterns, Apps Script V8 runtime improvements, web-app-
-        only deployment patterns that avoid clasp, structured outputs
-        from LLMs into Sheets/Docs.
+        TODO: Replace this with a description of the project and its market.
+        Example: "ProjectX is a [type of product] for [target user]. Competitors
+        include A, B, C. Key emerging trends in this space: X, Y, Z."
       focus_area: ${{ inputs.focus_area || '' }}
       research_depth: ${{ inputs.research_depth || 'standard' }}
     secrets:

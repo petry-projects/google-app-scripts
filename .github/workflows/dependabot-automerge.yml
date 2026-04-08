@@ -1,3 +1,26 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# SOURCE OF TRUTH: petry-projects/.github/standards/workflows/dependabot-automerge.yml
+# Standard:        petry-projects/.github/standards/dependabot-policy.md
+# Reusable:        petry-projects/.github/.github/workflows/dependabot-automerge-reusable.yml
+#
+# AGENTS — READ BEFORE EDITING:
+#   • This file is a THIN CALLER STUB. All eligibility logic and the GitHub
+#     App token dance live in the reusable workflow above.
+#   • You MAY change: nothing in this file in normal use. Adopt verbatim.
+#   • You MUST NOT change: trigger event (must be `pull_request_target`),
+#     the `uses:` line, `secrets: inherit`, or the job-level `permissions:`
+#     block — reusable workflows can be granted no more permissions than the
+#     calling job has, so removing the stanza breaks the reusable's gh API
+#     calls.
+#   • If you need different behaviour, open a PR against the reusable in the
+#     central repo.
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Dependabot auto-merge — thin caller for the org-level reusable.
+# To adopt: copy this file to .github/workflows/dependabot-automerge.yml in your repo.
+# Required org/repo secrets (inherited):
+#   APP_ID         — GitHub App ID with contents:write and pull-requests:write
+#   APP_PRIVATE_KEY — GitHub App private key
 name: Dependabot auto-merge
 
 on:
@@ -8,61 +31,9 @@ on:
 permissions: {}
 
 jobs:
-  dependabot:
-    runs-on: ubuntu-latest
+  dependabot-automerge:
     permissions:
       contents: read
       pull-requests: read
-    if: github.event.pull_request.user.login == 'dependabot[bot]'
-    steps:
-      - name: Dependabot metadata
-        id: metadata
-        uses: dependabot/fetch-metadata@ffa630c65fa7e0ecfa0625b5ceda64399aea1b36 # v2
-        with:
-          github-token: '${{ secrets.GITHUB_TOKEN }}'
-          skip-commit-verification: true
-
-      - name: Generate app token
-        if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor' || steps.metadata.outputs.dependency-type == 'indirect'
-        id: app-token
-        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3
-        with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-
-      - name: Approve, resolve threads, and auto-merge
-        if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor' || steps.metadata.outputs.dependency-type == 'indirect'
-        env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          REPO_OWNER: ${{ github.repository_owner }}
-          REPO_NAME: ${{ github.event.repository.name }}
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: |
-          # Approve the PR
-          gh pr review --approve "$PR_URL"
-
-          # Resolve all review threads (from Copilot, CodeRabbit, etc.)
-          THREADS=$(gh api graphql -f query='
-            query($owner: String!, $repo: String!, $pr: Int!) {
-              repository(owner: $owner, name: $repo) {
-                pullRequest(number: $pr) {
-                  reviewThreads(first: 100) {
-                    nodes { id isResolved }
-                  }
-                }
-              }
-            }' -f owner="$REPO_OWNER" -f repo="$REPO_NAME" -F pr="$PR_NUMBER" \
-            --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | .id')
-
-          for THREAD_ID in $THREADS; do
-            gh api graphql -f query='
-              mutation($id: ID!) {
-                resolveReviewThread(input: {threadId: $id}) {
-                  thread { isResolved }
-                }
-              }' -f id="$THREAD_ID" --silent
-          done
-
-          # Queue auto-merge (waits for all checks to pass)
-          gh pr merge --squash --auto "$PR_URL"
+    uses: petry-projects/.github/.github/workflows/dependabot-automerge-reusable.yml@v1
+    secrets: inherit
