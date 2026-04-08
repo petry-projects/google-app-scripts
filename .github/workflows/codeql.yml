@@ -8,11 +8,11 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: '25 14 * * 1'
+    - cron: '0 17 * * 5' # Weekly scan (Friday 12:00 PM EST / 17:00 UTC)
 
 jobs:
   analyze:
-    name: Analyze (CodeQL)
+    name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: ['javascript']
+        language: ['javascript-typescript', 'actions']
 
     steps:
       - name: Checkout repository
@@ -39,4 +39,4 @@ jobs:
       - name: Run CodeQL analysis
         uses: github/codeql-action/analyze@c10b8064de6f491fea524254123dbe5e09572f13 # v4
         with:
-          category: 'security'
+          category: '/language:${{ matrix.language }}'
