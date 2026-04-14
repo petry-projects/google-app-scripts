@@ -53,6 +53,11 @@ on:
           - quick
           - standard
           - deep
+      dry_run:
+        description: 'Skip Discussion mutations and log them to a JSONL artifact instead. Use this on a fork to smoke-test before going live.'
+        required: false
+        default: false
+        type: boolean
 
 permissions: {}
 
@@ -75,7 +80,7 @@ jobs:
       pull-requests: read
       discussions: write
       id-token: write
-    uses: petry-projects/.github/.github/workflows/feature-ideation-reusable.yml@v1
+    uses: petry-projects/.github/.github/workflows/feature-ideation-reusable.yml@208ec2d69b75227d375edf8745d84fbac05a76b2 # v1
     with:
       # === CUSTOMISE THIS PER REPO — the only required edit ===
       # Replace this paragraph with a 3-5 sentence description of your project,
@@ -87,5 +92,6 @@ jobs:
         include A, B, C. Key emerging trends in this space: X, Y, Z."
       focus_area: ${{ inputs.focus_area || '' }}
       research_depth: ${{ inputs.research_depth || 'standard' }}
+      dry_run: ${{ inputs.dry_run || false }}
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
