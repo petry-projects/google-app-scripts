@@ -101,3 +101,24 @@ jobs:
 
       - name: Verify no remaining issues after auto-fix
         run: npm run check
+
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout (full history)
+        # Pin to SHA per Action Pinning Policy (ci-standards.md#action-pinning-policy).
+        # Look up current SHA: gh api repos/actions/checkout/git/refs/tags/v4 --jq '.object.sha'
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          GITLEAKS_VERSION=$(curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest | grep '"tag_name"' | cut -d'"' -f4 | sed 's/v//')
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar -xz -C /usr/local/bin gitleaks
+
+      - name: Run gitleaks (full history)
+        run: gitleaks git --redact --verbose --exit-code 1
