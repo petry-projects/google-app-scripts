@@ -1,6 +1,11 @@
 # Repository settings managed via probot/settings
 # https://github.com/probot/settings
 
+# Repository-level settings
+# Reference: https://github.com/petry-projects/.github/blob/main/standards/github-settings.md#repository-settings--standard-defaults
+repository:
+  has_wiki: false
+
 # Labels — standard set
 # Reference: https://github.com/petry-projects/.github/blob/main/standards/github-settings.md#labels--standard-set
 labels:
