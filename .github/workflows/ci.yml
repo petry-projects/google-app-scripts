@@ -107,7 +107,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      security-events: write
     steps:
       - name: Checkout (full history)
         # Pin to SHA per Action Pinning Policy (ci-standards.md#action-pinning-policy).
@@ -116,12 +115,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Run gitleaks
-        # Pinned to SHA per Action Pinning Policy (ci-standards.md#action-pinning-policy).
-        # Refresh with: gh api repos/gitleaks/gitleaks-action/git/refs/tags/v2 --jq '.object.sha'
-        # then dereference if it points at an annotated tag.
-        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
-        with:
-          args: detect --source . --redact --verbose --exit-code 1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install gitleaks
+        run: |
+          GITLEAKS_VERSION=$(curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest | grep '"tag_name"' | cut -d'"' -f4 | sed 's/v//')
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar -xz -C /usr/local/bin gitleaks
+
+      - name: Run gitleaks (full history)
+        run: gitleaks git --redact --verbose --exit-code 1
