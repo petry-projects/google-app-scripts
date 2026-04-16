@@ -28,6 +28,8 @@ on:
     branches:
       - main
 
+  workflow_dispatch: # allow manual trigger to flush Dependabot PR queue
+
 concurrency:
   group: dependabot-update-and-merge
   cancel-in-progress: false
