@@ -31,12 +31,14 @@ on:
     types: [created]
   issues:
     types: [labeled]
+  check_run:
+    types: [completed]
 
 permissions: {}
 
 jobs:
   claude-code:
-    uses: petry-projects/.github/.github/workflows/claude-code-reusable.yml@v1
+    uses: petry-projects/.github/.github/workflows/claude-code-reusable.yml@ee22b427cbce9ecadcf2b436acb57c3adf0cb63d # v1
     secrets: inherit
     permissions:
       contents: write
