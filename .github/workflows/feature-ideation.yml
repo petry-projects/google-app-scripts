@@ -28,9 +28,15 @@
 #   2. Replace the `project_context` value with a 3-5 sentence description
 #      of your project, its target users, and the competitive landscape Mary
 #      should research. This is the only required customisation.
-#   3. (Optional) Adjust the schedule cron if Friday morning UTC doesn't suit.
-#   4. Ensure GitHub Discussions is enabled with an "Ideas" category.
-#   5. Confirm the org-level secret CLAUDE_CODE_OAUTH_TOKEN is accessible.
+#   3. (Optional) Copy standards/feature-ideation-sources.md from
+#      petry-projects/.github to .github/feature-ideation-sources.md in your
+#      repo and trim/extend it for your project. Mary uses YOUR copy — not the
+#      central template — so each repo controls its own source list.
+#      Pass `sources_file: path/to/your-list.md` to the reusable workflow if
+#      you prefer a different location.
+#   4. (Optional) Adjust the schedule cron if Friday morning UTC doesn't suit.
+#   5. Ensure GitHub Discussions is enabled with an "Ideas" category.
+#   6. Confirm the org-level secret CLAUDE_CODE_OAUTH_TOKEN is accessible.
 #
 # Standard: https://github.com/petry-projects/.github/blob/main/standards/ci-standards.md#8-feature-ideation-feature-ideationyml--bmad-method-repos
 name: Feature Research & Ideation (BMAD Analyst)
@@ -53,6 +59,11 @@ on:
           - quick
           - standard
           - deep
+      dry_run:
+        description: 'Skip Discussion mutations and log them to a JSONL artifact instead. Use this on a fork to smoke-test before going live.'
+        required: false
+        default: false
+        type: boolean
 
 permissions: {}
 
@@ -64,18 +75,20 @@ jobs:
   ideate:
     # Permissions cascade from the calling job to the reusable workflow.
     # The reusable workflow's two jobs (gather-signals + analyze) need:
-    #   - contents:    read   (checkout, file reads)
-    #   - issues:      read   (signal collection)
-    #   - pull-requests: read (signal collection)
-    #   - discussions: write  (CRITICAL — create/update Discussion threads)
-    #   - id-token:    write  (claude-code-action OIDC for GitHub App token)
+    #   - contents:      read   (checkout, file reads)
+    #   - issues:        read   (signal collection)
+    #   - pull-requests: read   (signal collection)
+    #   - discussions:   write  (CRITICAL — create/update Discussion threads)
+    #   - id-token:      write  (claude-code-action OIDC for GitHub App token)
+    #   - actions:       read   (feed checkpoint — last successful run query)
     permissions:
       contents: read
       issues: read
       pull-requests: read
       discussions: write
       id-token: write
-    uses: petry-projects/.github/.github/workflows/feature-ideation-reusable.yml@v1
+      actions: read
+    uses: petry-projects/.github/.github/workflows/feature-ideation-reusable.yml@ae9709f4466dec60a5733c9e7487f69dcd004e05 # v1
     with:
       # === CUSTOMISE THIS PER REPO — the only required edit ===
       # Replace this paragraph with a 3-5 sentence description of your project,
@@ -85,7 +98,14 @@ jobs:
         TODO: Replace this with a description of the project and its market.
         Example: "ProjectX is a [type of product] for [target user]. Competitors
         include A, B, C. Key emerging trends in this space: X, Y, Z."
+      # === OPTIONAL: repo-local reputable source list ===
+      # Copy standards/feature-ideation-sources.md from petry-projects/.github
+      # to .github/feature-ideation-sources.md and customise it. The reusable
+      # workflow defaults to that path, so you only need to uncomment and change
+      # sources_file below if you store the list somewhere else.
+      # sources_file: 'docs/feature-ideation-sources.md'
       focus_area: ${{ inputs.focus_area || '' }}
       research_depth: ${{ inputs.research_depth || 'standard' }}
+      dry_run: ${{ inputs.dry_run || false }}
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
