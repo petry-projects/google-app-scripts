@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # SOURCE OF TRUTH: petry-projects/.github/standards/workflows/dependabot-automerge.yml
 # Standard:        petry-projects/.github/standards/dependabot-policy.md
-# Reusable:        petry-projects/.github/.github/workflows/dependabot-automerge-reusable.yml
+# Reusable:        petry-projects/.github/workflows/dependabot-automerge-reusable.yml
 #
 # AGENTS — READ BEFORE EDITING:
 #   • This file is a THIN CALLER STUB. All eligibility logic and the GitHub
@@ -35,5 +35,5 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-    uses: petry-projects/.github/.github/workflows/dependabot-automerge-reusable.yml@v1
+    uses: petry-projects/.github/workflows/dependabot-automerge-reusable.yml@v1
     secrets: inherit
