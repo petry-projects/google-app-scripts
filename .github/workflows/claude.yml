@@ -31,6 +31,8 @@ on:
     types: [created]
   issues:
     types: [labeled]
+  check_run:
+    types: [completed]
 
 permissions: {}
 
