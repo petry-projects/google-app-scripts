@@ -16,7 +16,7 @@
     "**/*.{js,ts}": "eslint --fix"
   },
   "devDependencies": {
-    "@commitlint/cli": "^20.5.0",
+    "@commitlint/cli": "^20.5.3",
     "@commitlint/config-conventional": "^20.5.0",
     "@playwright/test": "^1.59.1",
     "@types/google-apps-script": "^2.0.8",
