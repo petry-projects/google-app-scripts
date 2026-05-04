@@ -6,20 +6,21 @@
 # AGENTS — READ BEFORE EDITING:
 #   • This file is a THIN CALLER STUB. All rebase/merge serialization logic
 #     lives in the reusable workflow above.
-#   • You MAY change: the SHA in the `uses:` line when upgrading the reusable
-#     workflow version (bump SHA to latest main of petry-projects/.github).
-#   • You MUST NOT change: trigger event, the concurrency group name,
-#     the explicit secrets block, or the job-level `permissions:` block —
-#     reusable workflows can be granted no more permissions than the calling
-#     job has, so removing the stanza breaks
-#     the reusable's gh API calls.
+#   • You MAY change: the ref in the `uses:` line when upgrading the reusable
+#     workflow version (bump to latest commit SHA or tag of petry-projects/.github).
+#   • You MUST NOT change: the concurrency group name, the explicit secrets
+#     block, or the job-level `permissions:` block — reusable workflows can be
+#     granted no more permissions than the calling job has, so removing the
+#     stanza breaks the reusable's gh API calls. Do not remove either trigger
+#     (`push` keeps the self-sustaining chain; `workflow_dispatch` allows
+#     manual queue flushes).
 #   • If you need different behaviour, open a PR against the reusable in the
 #     central repo.
 # ─────────────────────────────────────────────────────────────────────────────
 #
 # Dependabot update-and-merge — thin caller for the org-level reusable.
 # To adopt: copy this file to .github/workflows/dependabot-rebase.yml in your repo.
-# Required org/repo secrets (inherited):
+# Required org secrets (passed explicitly):
 #   APP_ID         — GitHub App ID with contents:write and pull-requests:write
 #   APP_PRIVATE_KEY — GitHub App private key
 name: Dependabot update and merge
@@ -41,7 +42,7 @@ jobs:
     permissions:
       contents: write   # update-branch via GITHUB_TOKEN (may touch .github/workflows/)
       pull-requests: write  # re-approve PRs after branch update
-    uses: petry-projects/.github/.github/workflows/dependabot-rebase-reusable.yml@v1
+    uses: petry-projects/.github/.github/workflows/dependabot-rebase-reusable.yml@2f6d246fd7cc8740f5d7e2e4d12f087889c58365 # v1
     secrets:
       APP_ID: ${{ secrets.APP_ID }}
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
