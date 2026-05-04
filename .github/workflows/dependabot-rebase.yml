@@ -41,7 +41,7 @@ jobs:
   dependabot-rebase:
     permissions:
       pull-requests: write # post @dependabot rebase comments and re-approve PRs
-    uses: petry-projects/.github/.github/workflows/dependabot-rebase-reusable.yml@3ac78a9b0a7b5bcf0b9a62c284129f3abffdebaa # v1
+    uses: petry-projects/.github/.github/workflows/dependabot-rebase-reusable.yml@b51e2edf830ea085be0277bcf3174c7b3ec8f958 # v1
     secrets:
       APP_ID: ${{ secrets.APP_ID }}
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
