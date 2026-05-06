@@ -23,8 +23,6 @@
 .env
 .env.*
 .envrc
-.env.local
-.env.*.local
 # Keep committed templates so contributors know which vars to set.
 !.env.example
 !.env.sample
@@ -138,9 +136,6 @@ secring.*
 !*.pub.pem
 !public.pem
 !public_key.pem
-!*.crt
-!ca.crt
-!*.cert
 # NOTE: *.pem / *.key have HIGH false-positive rates (TLS test fixtures, JWT
 # libraries, webpack dev certs). Per-repo .gitignores should `!` specific
 # fixture FILES — never negate a whole directory.
