@@ -6,16 +6,13 @@
 # AGENTS — READ BEFORE EDITING:
 #   • This file is a THIN CALLER STUB. All review-dispatch logic lives in the
 #     reusable workflow above.
-#   • You MUST NOT change: the `uses:` ref — it is pinned to the
-#     `pr-review-mention/stable` channel, a moving tag advanced centrally.
-#     Never repoint it to `@main`, a SHA, or a frozen `@vX` (see
-#     ci-standards.md → Reusable workflow versioning). Also do not change the
-#     trigger events or the job-level `permissions:` block — reusable workflows
-#     can be granted no more permissions than the calling job, so removing the
-#     stanza breaks the reusable's gh API calls.
+#   • You MAY change: the tag in the `uses:` line when upgrading the reusable
+#     workflow version (e.g. bump `@v1` → `@v2` when petry-projects/.github cuts a new release).
+#   • You MUST NOT change: trigger events or the job-level `permissions:` block —
+#     reusable workflows can be granted no more permissions than the calling job,
+#     so removing the stanza breaks the reusable's gh API calls.
 #   • If you need different behaviour, open a PR against the reusable in the
-#     central repo. A new release is rolled out by moving the channel tag
-#     centrally — never by editing callers, so no fanout PR is needed.
+#     central repo.
 # ─────────────────────────────────────────────────────────────────────────────
 #
 # PR Review Mention — thin caller for the org-level reusable.
@@ -37,5 +34,5 @@ jobs:
   pr-review-mention:
     permissions:
       pull-requests: write
-    uses: petry-projects/.github/.github/workflows/pr-review-mention-reusable.yml@pr-review-mention/v2-stable # NOSONAR(githubactions:S7637) first-party channel ref
+    uses: petry-projects/.github/.github/workflows/pr-review-mention-reusable.yml@v1
     secrets: inherit
