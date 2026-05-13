@@ -6,8 +6,9 @@
 # AGENTS — READ BEFORE EDITING:
 #   • This file is a THIN CALLER STUB. All review-dispatch logic lives in the
 #     reusable workflow above.
-#   • You MAY change: the tag in the `uses:` line when upgrading the reusable
-#     workflow version (e.g. bump `@v1` → `@v2` when petry-projects/.github cuts a new release).
+#   • You MAY change: the SHA in the `uses:` line when upgrading the reusable
+#     workflow version (obtain the new SHA from petry-projects/.github main and
+#     open a fanout PR across all caller repos).
 #   • You MUST NOT change: trigger events or the job-level `permissions:` block —
 #     reusable workflows can be granted no more permissions than the calling job,
 #     so removing the stanza breaks the reusable's gh API calls.
