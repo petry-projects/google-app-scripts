@@ -1,6 +1,11 @@
 # Repository settings managed via probot/settings
 # https://github.com/probot/settings
 
+repository:
+  # Automatically delete head branches after a pull request is merged
+  # Reference: https://github.com/petry-projects/.github/blob/main/standards/github-settings.md#repository-settings--standard-defaults
+  delete_branch_on_merge: true
+
 # Labels — standard set
 # Reference: https://github.com/petry-projects/.github/blob/main/standards/github-settings.md#labels--standard-set
 labels:
