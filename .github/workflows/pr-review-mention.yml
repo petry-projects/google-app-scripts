@@ -6,13 +6,16 @@
 # AGENTS — READ BEFORE EDITING:
 #   • This file is a THIN CALLER STUB. All review-dispatch logic lives in the
 #     reusable workflow above.
-#   • You MAY change: the tag in the `uses:` line when upgrading the reusable
-#     workflow version (e.g. bump `@v1` → `@v2` when petry-projects/.github cuts a new release).
+#   • You MAY change: the SHA in the `uses:` line when upgrading the reusable
+#     workflow version (obtain the new SHA from petry-projects/.github main and
+#     open a fanout PR across all caller repos).
 #   • You MUST NOT change: trigger events or the job-level `permissions:` block —
 #     reusable workflows can be granted no more permissions than the calling job,
 #     so removing the stanza breaks the reusable's gh API calls.
 #   • If you need different behaviour, open a PR against the reusable in the
 #     central repo.
+#   • When publishing a new SHA of this reusable, also update this template and
+#     open a fanout PR across all caller repos.
 # ─────────────────────────────────────────────────────────────────────────────
 #
 # PR Review Mention — thin caller for the org-level reusable.
@@ -34,5 +37,5 @@ jobs:
   pr-review-mention:
     permissions:
       pull-requests: write
-    uses: petry-projects/.github/.github/workflows/pr-review-mention-reusable.yml@v1
+    uses: petry-projects/.github/.github/workflows/pr-review-mention-reusable.yml@d3d768dabb7f28cc63283cdfe48630da53700e50 # main
     secrets: inherit
