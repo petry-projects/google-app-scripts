@@ -75,7 +75,7 @@ jobs:
       pull-requests: read
       discussions: write
       id-token: write
-    uses: petry-projects/.github/.github/workflows/feature-ideation-reusable.yml@v1
+    uses: petry-projects/.github/.github/workflows/feature-ideation-reusable.yml@v2
     with:
       # === CUSTOMISE THIS PER REPO — the only required edit ===
       # Replace this paragraph with a 3-5 sentence description of your project,
