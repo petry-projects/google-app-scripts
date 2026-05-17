@@ -18,7 +18,7 @@
   "devDependencies": {
     "@commitlint/cli": "^20.5.3",
     "@commitlint/config-conventional": "^20.5.3",
-    "@playwright/test": "^1.59.1",
+    "@playwright/test": "^1.60.0",
     "@types/google-apps-script": "^2.0.8",
     "@types/jest": "^30.0.0",
     "@typescript-eslint/eslint-plugin": "^8.59.2",
