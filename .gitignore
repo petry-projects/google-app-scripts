@@ -3,3 +3,4 @@ coverage/
 test-results/
 playwright-report/
 .env
+.dev-lead/
