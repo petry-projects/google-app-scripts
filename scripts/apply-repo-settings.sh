@@ -11,6 +11,7 @@
 #   3. Enables secret scanning AI detection
 #   4. Enables secret scanning non-provider patterns
 #   5. Enables Dependabot security updates
+#   6. Disables check-suite auto-trigger for the Claude app (ID 1236702)
 #
 # Prerequisites: gh (authenticated with admin access to the repository)
 # Usage:
@@ -61,10 +62,35 @@ echo "  ✓ secret_scanning_ai_detection"
 echo "  ✓ secret_scanning_non_provider_patterns"
 echo "  ✓ dependabot_security_updates"
 
+# ── Disable check-suite auto-trigger for Claude app ───────────────────────────
+# Claude (app ID 1236702) creates queued check suites on every push that never
+# complete, permanently blocking auto-merge. Setting auto_trigger_checks=false
+# stops GitHub from creating suites on every push; the app still creates suites
+# explicitly when it has work to report.
+# Reference: https://github.com/petry-projects/.github/blob/main/standards/github-settings.md
+echo ""
+echo "Disabling check-suite auto-trigger for Claude app (ID 1236702)..."
+
+gh api -X PATCH "repos/$REPO/check-suites/preferences" --input - <<'JSON'
+{
+  "auto_trigger_checks": [
+    {
+      "app_id": 1236702,
+      "setting": false
+    }
+  ]
+}
+JSON
+
+echo "  ✓ check-suite auto-trigger disabled for Claude app (1236702)"
+
 # ── Verify ────────────────────────────────────────────────────────────────────
 echo ""
 echo "Verifying settings..."
 gh api "repos/$REPO" --jq '.security_and_analysis'
+echo ""
+echo "Verifying check-suite preferences..."
+gh api "repos/$REPO/check-suites/preferences" --jq '.preferences.auto_trigger_checks'
 
 echo ""
 echo "=== Done for $REPO ==="
