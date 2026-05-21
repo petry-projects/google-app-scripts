@@ -70,7 +70,7 @@ jobs:
           cache: "npm"
 
       - name: Install Node.js dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Verify environment
         run: |
