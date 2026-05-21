@@ -11,6 +11,8 @@
 #   3. Enables secret scanning AI detection
 #   4. Enables secret scanning non-provider patterns
 #   5. Enables Dependabot security updates
+#   6. Disables check-suite auto-trigger for Claude (app 1236702) to prevent
+#      orphaned queued check suites from blocking auto-merge
 #
 # Prerequisites: gh (authenticated with admin access to the repository)
 # Usage:
@@ -60,6 +62,22 @@ echo "  ✓ secret_scanning_push_protection"
 echo "  ✓ secret_scanning_ai_detection"
 echo "  ✓ secret_scanning_non_provider_patterns"
 echo "  ✓ dependabot_security_updates"
+
+# ── Disable check-suite auto-trigger for Claude (app 1236702) ─────────────────
+# Claude creates check suites on every push but only completes them when it has
+# work to do; orphaned "queued" suites permanently block auto-merge.
+echo ""
+echo "Disabling check-suite auto-trigger for Claude (app 1236702)..."
+
+gh api -X PATCH "repos/$REPO/check-suites/preferences" --input - <<'JSON'
+{
+  "auto_trigger_checks": [
+    {"app_id": 1236702, "setting": false}
+  ]
+}
+JSON
+
+echo "  ✓ check-suite auto-trigger disabled for app 1236702 (Claude)"
 
 # ── Verify ────────────────────────────────────────────────────────────────────
 echo ""
