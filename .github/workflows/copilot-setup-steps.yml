@@ -35,7 +35,7 @@
 # STACK: Node.js / npm (Google Apps Script, TypeScript, Jest)
 # ─────────────────────────────────────────────────────────────────────────────
 
-name: "Copilot Setup Steps"
+name: 'Copilot Setup Steps'
 
 on:
   workflow_dispatch:
@@ -66,8 +66,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: "20"
-          cache: "npm"
+          node-version: '20'
+          cache: 'npm'
 
       - name: Install Node.js dependencies
         run: npm ci --ignore-scripts
