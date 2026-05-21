@@ -11,6 +11,8 @@
 #   3. Enables secret scanning AI detection
 #   4. Enables secret scanning non-provider patterns
 #   5. Enables Dependabot security updates
+#   6. Disables check-suite auto-trigger for CodeRabbit (347564)
+#   7. Disables check-suite auto-trigger for Claude (1236702)
 #
 # Prerequisites: gh (authenticated with admin access to the repository)
 # Usage:
@@ -60,6 +62,25 @@ echo "  ✓ secret_scanning_push_protection"
 echo "  ✓ secret_scanning_ai_detection"
 echo "  ✓ secret_scanning_non_provider_patterns"
 echo "  ✓ dependabot_security_updates"
+
+# ── Disable check-suite auto-trigger for CodeRabbit and Claude ────────────────
+# These apps create queued check suites on every push that are never completed,
+# permanently blocking auto-merge. Disabling auto-trigger prevents this.
+# Reference: https://github.com/petry-projects/.github/blob/main/standards/github-settings.md#check-suite-auto-trigger-configuration
+echo ""
+echo "Disabling check-suite auto-trigger for CodeRabbit and Claude..."
+
+gh api -X PATCH "repos/$REPO/check-suites/preferences" --input - <<'JSON'
+{
+  "auto_trigger_checks": [
+    {"app_id": 347564, "setting": false},
+    {"app_id": 1236702, "setting": false}
+  ]
+}
+JSON
+
+echo "  ✓ CodeRabbit (347564) auto_trigger_checks: false"
+echo "  ✓ Claude (1236702) auto_trigger_checks: false"
 
 # ── Verify ────────────────────────────────────────────────────────────────────
 echo ""
