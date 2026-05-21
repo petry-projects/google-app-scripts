@@ -38,5 +38,5 @@ jobs:
     permissions:
       contents: write # update-branch via GITHUB_TOKEN (may touch .github/workflows/)
       pull-requests: write # post comments on PRs
-    uses: petry-projects/.github/.github/workflows/auto-rebase-reusable.yml@v1
+    uses: petry-projects/.github/.github/workflows/auto-rebase-reusable.yml@d3d768dabb7f28cc63283cdfe48630da53700e50 # v1
     secrets: inherit
