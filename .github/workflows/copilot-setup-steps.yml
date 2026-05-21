@@ -50,7 +50,8 @@ permissions: {}
 
 jobs:
   copilot-setup-steps:
-    if: github.event.repository.fork == false
+    # Skip on fork-origin pull requests — forks cannot access org secrets required for private packages.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
 
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -96,7 +97,10 @@ jobs:
           else
             echo "ℹ️  .github/copilot-instructions.md — not present (optional but recommended)"
           fi
-          INSTR_COUNT=$(find .github/instructions -name "*.instructions.md" 2>/dev/null | wc -l)
+          INSTR_COUNT=0
+          if [ -d ".github/instructions" ]; then
+            INSTR_COUNT=$(find .github/instructions -name "*.instructions.md" | wc -l)
+          fi
           echo "ℹ️  .github/instructions/: ${INSTR_COUNT} file(s)"
           echo ""
           echo "✅ Setup complete — Copilot cloud agent is ready to work"
