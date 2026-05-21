@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
 # apply-repo-settings.sh
 #
-# Applies required security_and_analysis settings to the repository via the
-# GitHub API, per the push-protection standard:
-# https://github.com/petry-projects/.github/blob/main/standards/push-protection.md#required-repo-level-settings
+# Applies required settings to the repository via the GitHub API:
 #
-# What this script does:
+# Security settings (per push-protection standard):
+# https://github.com/petry-projects/.github/blob/main/standards/push-protection.md#required-repo-level-settings
 #   1. Enables secret scanning
 #   2. Enables secret scanning push protection
 #   3. Enables secret scanning AI detection
 #   4. Enables secret scanning non-provider patterns
 #   5. Enables Dependabot security updates
+#
+# Check-suite auto-trigger settings (per github-settings standard):
+# https://github.com/petry-projects/.github/blob/main/standards/github-settings.md
+#   6. Disables CodeRabbit (347564) check-suite auto-trigger
+#   7. Disables Claude (1236702) check-suite auto-trigger
 #
 # Prerequisites: gh (authenticated with admin access to the repository)
 # Usage:
@@ -60,6 +64,26 @@ echo "  ✓ secret_scanning_push_protection"
 echo "  ✓ secret_scanning_ai_detection"
 echo "  ✓ secret_scanning_non_provider_patterns"
 echo "  ✓ dependabot_security_updates"
+
+# ── Disable check-suite auto-triggers ─────────────────────────────────────────
+# CodeRabbit (347564) and Claude (1236702) create queued check suites on every
+# push but only complete them when they have actual work to do. Leaving
+# auto-trigger enabled permanently blocks auto-merge because GitHub waits for
+# all check suites to reach a terminal state.
+echo ""
+echo "Disabling check-suite auto-triggers..."
+
+gh api -X PATCH "repos/$REPO/check-suites/preferences" --input - <<'JSON'
+{
+  "auto_trigger_checks": [
+    {"app_id": 347564, "setting": false},
+    {"app_id": 1236702, "setting": false}
+  ]
+}
+JSON
+
+echo "  ✓ CodeRabbit (347564) auto-trigger disabled"
+echo "  ✓ Claude (1236702) auto-trigger disabled"
 
 # ── Verify ────────────────────────────────────────────────────────────────────
 echo ""
