@@ -70,7 +70,8 @@ function removeExistingThreadFromDoc(body, threadId) {
     if (child.getType() === DocumentApp.ElementType.PARAGRAPH) {
       var text = child.asParagraph().getText()
       // Stop when we hit another thread separator (indicated by [THREAD:])
-      if (text.indexOf('[THREAD:') !== -1) {
+      // or the main thread separator
+      if (text.indexOf('[THREAD:') !== -1 || text.indexOf('==============================') !== -1) {
         threadStartIndex = i + 1 // Start after the previous thread separator
         break
       }

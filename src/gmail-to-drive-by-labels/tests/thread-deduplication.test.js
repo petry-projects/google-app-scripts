@@ -269,4 +269,98 @@ describe('Thread deduplication when new messages arrive', () => {
     expect(thread1Separators.length).toBe(1)
     expect(thread2Separators.length).toBe(1)
   })
+
+  test('updating the first thread in a multi-thread document should not affect other threads', () => {
+    // Thread 1 (will be updated)
+    const thread1Messages = [
+      createMessage({
+        subject: 'First Thread',
+        body: 'Content of first thread',
+        date: new Date('2024-01-01T10:00:00Z'),
+      }),
+    ]
+    const thread1 = global.GmailApp.__addThreadWithLabels(
+      ['test-label'],
+      thread1Messages
+    )
+
+    // Thread 2 (should remain unchanged)
+    const thread2Messages = [
+      createMessage({
+        subject: 'Second Thread',
+        body: 'Content of second thread',
+        date: new Date('2024-01-02T10:00:00Z'),
+      }),
+    ]
+    const thread2 = global.GmailApp.__addThreadWithLabels(
+      ['test-label'],
+      thread2Messages
+    )
+
+    // Process Thread 2 first, then Thread 1, so Thread 1 is at the top
+    processMessagesToDoc(thread2Messages, body, folder, {
+      threadId: thread2.getId(),
+    })
+    processMessagesToDoc(thread1Messages, body, folder, {
+      threadId: thread1.getId(),
+    })
+
+    // Verify initial state
+    let paragraphs = body.getParagraphs()
+    expect(
+      paragraphs.some((p) => p.getText().includes('Subject: First Thread'))
+    ).toBe(true)
+    expect(
+      paragraphs.some((p) => p.getText().includes('Subject: Second Thread'))
+    ).toBe(true)
+
+    // Update Thread 1 with a new message
+    const updatedThread1Messages = [
+      ...thread1Messages,
+      createMessage({
+        subject: 'Re: First Thread',
+        body: 'Reply to first thread',
+        date: new Date('2024-01-03T10:00:00Z'),
+      }),
+    ]
+
+    // Process the updated Thread 1
+    processMessagesToDoc(updatedThread1Messages, body, folder, {
+      threadId: thread1.getId(),
+    })
+
+    // Verify final state
+    paragraphs = body.getParagraphs()
+    // Check for updated Thread 1 content
+    expect(
+      paragraphs.some((p) => p.getText().includes('Subject: Re: First Thread'))
+    ).toBe(true)
+    expect(
+      paragraphs.some((p) => p.getText().includes('Reply to first thread'))
+    ).toBe(true)
+    // Check that original message of Thread 1 is still there
+    expect(
+      paragraphs.some((p) => p.getText().includes('Subject: First Thread'))
+    ).toBe(true)
+
+    // Check that Thread 2 is untouched
+    expect(
+      paragraphs.some((p) => p.getText().includes('Subject: Second Thread'))
+    ).toBe(true)
+    expect(
+      paragraphs.some((p) =>
+        p.getText().includes('Content of second thread')
+      )
+    ).toBe(true)
+
+    // Verify separators
+    const thread1Separators = paragraphs.filter((p) =>
+      p.getText().includes(`[THREAD:${thread1.getId()}]`)
+    )
+    const thread2Separators = paragraphs.filter((p) =>
+      p.getText().includes(`[THREAD:${thread2.getId()}]`)
+    )
+    expect(thread1Separators.length).toBe(1)
+    expect(thread2Separators.length).toBe(1)
+  })
 })

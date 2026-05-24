@@ -1975,7 +1975,46 @@ test('syncCalendarToSheet preserves rows without valid date columns', async () =
   // Row should still exist because it has no valid dates
   const rows = sheet.__getRows()
   expect(rows.find((r) => r[0] === 'old_event')).toBeTruthy()
-})
+  })
+
+  // Test that sync writes correct headers to an empty sheet
+  test('syncCalendarToSheet writes correct headers to a new sheet', async () => {
+  const calendar = CalendarApp.getDefaultCalendar()
+  const ss = SpreadsheetApp.openById('ss_new_sheet')
+  const sheet = ss.getSheetByName('NewSheet') // A completely new, empty sheet
+
+  // Add an event to sync
+  const evt = createCalendarEvent({
+  id: 'e_header_test',
+  title: 'Header Test Event',
+  start: new Date('2026-02-02T10:00:00Z'),
+  end: new Date('2026-02-02T11:00:00Z'),
+  })
+  calendar.__addEvent(evt)
+
+  // Sync to the new sheet
+  await syncCalendarToSheet(calendar, sheet, {
+  start: new Date('2026-02-01'),
+  end: new Date('2026-02-03'),
+  })
+
+  // Verify the header row is correct
+  const data = sheet.getDataRange().getValues()
+  const header = data[0]
+  expect(header).toEqual([
+  'id',
+  'title',
+  'start',
+  'end',
+  'description',
+  'location',
+  'attendees',
+  ])
+
+  // Verify the data row is also present
+  expect(data.length).toBe(2)
+  expect(data[1][0]).toBe('e_header_test')
+  })
 
 // Test historical data preservation (dates outside sync window)
 test('syncCalendarToSheet preserves rows with dates outside sync window', async () => {
