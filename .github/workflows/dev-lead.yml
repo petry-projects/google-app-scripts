@@ -37,6 +37,16 @@ on:
 
 permissions: {}
 
+concurrency:
+  # One active run per repo; ci-relay (check_run) keeps an ephemeral per-SHA slot
+  # so it can fire immediately without blocking or being blocked by the dispatch queue.
+  group: >-
+    ${{
+      github.event_name == 'check_run' && format('dev-lead-ci-relay-{0}', github.event.check_run.head_sha) ||
+      'dev-lead'
+    }}
+  cancel-in-progress: false
+
 jobs:
   dev-lead:
     uses: petry-projects/.github-private/.github/workflows/dev-lead-reusable.yml@main
