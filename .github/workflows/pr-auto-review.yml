@@ -19,8 +19,24 @@ on:
 permissions: {}
 
 jobs:
+  check-pat:
+    runs-on: ubuntu-latest
+    outputs:
+      has_pat: ${{ steps.check.outputs.has_pat }}
+    steps:
+      - id: check
+        env:
+          GH_PAT_WORKFLOWS: ${{ secrets.GH_PAT_WORKFLOWS }}
+        run: |
+          if [ -n "$GH_PAT_WORKFLOWS" ]; then
+            echo "has_pat=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_pat=false" >> $GITHUB_OUTPUT
+          fi
+
   pr-auto-review:
-    if: ${{ secrets.GH_PAT_WORKFLOWS != '' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')) }}
+    needs: check-pat
+    if: ${{ needs.check-pat.outputs.has_pat == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')) }}
     permissions:
       pull-requests: read
       checks: read
