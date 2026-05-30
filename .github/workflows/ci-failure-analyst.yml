@@ -18,7 +18,7 @@
 # Docs: https://github.com/petry-projects/.github-private/blob/main/docs/aw/ci-failure-analyst.md
 # ─────────────────────────────────────────────────────────────────────────────
 
-name: "CI Failure Analyst"
+name: 'CI Failure Analyst'
 
 on:
   check_run:
@@ -26,13 +26,13 @@ on:
 
 permissions:
   pull-requests: write
-  issues: write        # post/read PR comments via the Issues comments API
+  issues: write # post/read PR comments via the Issues comments API
   actions: read
   contents: read
   checks: read
 
 concurrency:
-  group: "ci-failure-analyst-${{ github.event.check_run.head_sha }}"
+  group: 'ci-failure-analyst-${{ github.event.check_run.head_sha }}'
   cancel-in-progress: false
 
 jobs:
