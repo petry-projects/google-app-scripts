@@ -2,7 +2,7 @@ name: PR Auto-Review — Ready Check
 
 on:
   workflow_run:
-    workflows: ['CI']
+    workflows: ['CI Pipeline']
     types: [completed]
   check_suite:
     types: [completed]
@@ -15,6 +15,7 @@ permissions: {}
 
 jobs:
   pr-auto-review:
+    if: ${{ secrets.GH_PAT_WORKFLOWS != '' }}
     permissions:
       pull-requests: read
       checks: read
