@@ -36,7 +36,7 @@ jobs:
 
   pr-auto-review:
     needs: check-pat
-    if: ${{ needs.check-pat.outputs.has_pat == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')) }}
+    if: ${{ needs.check-pat.outputs.has_pat == 'true' && (github.event_name != 'pull_request' || (!github.event.pull_request.head.repo.fork && github.actor != 'dependabot[bot]')) }}
     permissions:
       pull-requests: read
       checks: read
