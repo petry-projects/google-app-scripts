@@ -2,9 +2,14 @@ name: PR Auto-Review — Ready Check
 
 on:
   workflow_run:
-    workflows: ['CI Pipeline']
-    types: [completed]
-  check_suite:
+    workflows:
+      - 'CI Pipeline'
+      - 'Node.js Tests'
+      - 'Coverage'
+      - 'SonarCloud Analysis'
+      - 'Playwright UI Tests'
+      - 'Dependency audit'
+      - 'AgentShield'
     types: [completed]
   pull_request_review:
     types: [submitted, dismissed]
@@ -15,7 +20,7 @@ permissions: {}
 
 jobs:
   pr-auto-review:
-    if: ${{ secrets.GH_PAT_WORKFLOWS != '' }}
+    if: ${{ secrets.GH_PAT_WORKFLOWS != '' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')) }}
     permissions:
       pull-requests: read
       checks: read
