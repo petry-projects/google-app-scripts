@@ -8,3 +8,4 @@ playwright-report/
 .dev-lead/
 # compliance-ci-trigger
 # ci-trigger-298
+.dev-lead/
