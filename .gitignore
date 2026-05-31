@@ -6,9 +6,3 @@ playwright-report/
 *.pem
 *.key
 .dev-lead/
-# compliance-ci-trigger
-# ci-trigger-298
-.dev-lead/
-.dev-lead/
-.dev-lead/
-.dev-lead/
