@@ -1,6 +1,23 @@
 # Repository settings managed via probot/settings
 # https://github.com/probot/settings
 
+# Repository-level settings — standard defaults
+# Reference: https://github.com/petry-projects/.github/blob/main/standards/github-settings.md#repository-settings--standard-defaults
+# Security settings reference: https://github.com/petry-projects/.github/blob/main/standards/push-protection.md#required-repo-level-settings
+repository:
+  allow_auto_merge: true
+  delete_branch_on_merge: true
+  has_wiki: false
+  security_and_analysis:
+    secret_scanning:
+      status: enabled
+    secret_scanning_push_protection:
+      status: enabled
+    secret_scanning_non_provider_patterns:
+      status: enabled
+    dependabot_security_updates:
+      status: enabled
+
 # Labels — standard set
 # Reference: https://github.com/petry-projects/.github/blob/main/standards/github-settings.md#labels--standard-set
 labels:
