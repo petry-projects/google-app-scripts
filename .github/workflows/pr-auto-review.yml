@@ -43,11 +43,14 @@ on:
 
 permissions: {}
 
-# Serialize runs per commit SHA to prevent concurrent API calls from exhausting
-# the PAT rate limit. When multiple triggers fire at once (workflow_run +
-# check_suite), cancel-in-progress ensures only the latest run proceeds.
+# Serialize runs per commit SHA to reduce overlapping runs and concurrent API
+# usage. When multiple triggers fire at once (workflow_run + check_suite),
+# cancel-in-progress ensures only the latest run proceeds. The || github.sha
+# fallback ensures the group never collapses to "pr-auto-review-" on events
+# where none of the SHA fields are populated (e.g. pull_request_review without
+# a pull_request object).
 concurrency:
-  group: pr-auto-review-${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha || github.event.check_suite.head_sha }}
+  group: pr-auto-review-${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha || github.event.check_suite.head_sha || github.sha }}
   cancel-in-progress: true
 
 jobs:
