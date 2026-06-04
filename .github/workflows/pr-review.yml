@@ -1,0 +1,25 @@
+name: PR Review Agent
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  pull_request_review_comment:
+    types: [created]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_numbers:
+        description: 'PR numbers to review (comma-separated)'
+        required: false
+
+permissions: {}
+
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number || github.event.issue.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  pr-review:
+    uses: petry-projects/.github-private/.github/workflows/pr-review-reusable.yml@main
+    secrets: inherit
