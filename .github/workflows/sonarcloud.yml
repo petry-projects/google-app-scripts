@@ -15,12 +15,23 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      actions: write
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
+      - name: Cache sonar-scanner
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: ${{ runner.tool_cache }}/sonar-scanner
+          key: sonar-scanner-${{ runner.os }}-8.1.0.6389
       - name: SonarCloud Scan
         if: ${{ env.SONAR_TOKEN != '' }}
+        id: sonar_scan
+        continue-on-error: true
+        uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
+      - name: SonarCloud Scan (retry)
+        if: ${{ env.SONAR_TOKEN != '' && steps.sonar_scan.outcome == 'failure' }}
         uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
