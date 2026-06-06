@@ -6,8 +6,10 @@
 # AGENTS — READ BEFORE EDITING:
 #   • This file is a THIN CALLER STUB. All ecosystem-detection and audit logic
 #     lives in the reusable workflow above.
-#   • You MAY change: nothing in this file in normal use. Adopt verbatim.
-#   • You MUST NOT change: trigger events, the `uses:` line, or job name
+#   • You MAY change: the pinned commit SHA on the `uses:` line when
+#     upgrading or refreshing the pin for security/version-bump purposes.
+#   • You MUST NOT change: trigger events, the reusable workflow path
+#     (only the pinned SHA/ref may be updated), or job name
 #     (used as a required status check).
 #   • If you need different behaviour (new ecosystem, tool version bump),
 #     open a PR against the reusable in the central repo.
