@@ -21,5 +21,5 @@ concurrency:
 
 jobs:
   pr-review:
-    uses: petry-projects/.github-private/.github/workflows/pr-review-reusable.yml@main
+    uses: petry-projects/.github-private/.github/workflows/pr-review-reusable.yml@7b0426146444d97550dcca89d86984b809288506 # main
     secrets: inherit
