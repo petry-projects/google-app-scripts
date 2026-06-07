@@ -47,4 +47,4 @@ jobs:
       issues: write
       actions: read
       checks: read
-      statuses: read   # required by dev-lead-reusable.yml since #435
+      statuses: read # required by dev-lead-reusable.yml since #435
