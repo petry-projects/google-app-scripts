@@ -1,25 +1,55 @@
 name: PR Review Agent
 
+# Thin caller for the org PR Review agent (petry-projects/.github-private),
+# pinned to the known-good `pr-review/stable` channel. Adopted from the validated
+# `.github-private/pr-review-trigger.yml` template (#536 consumer fan-out).
+#
+# - Version selection is the moving `pr-review/stable` tag — this file never
+#   changes on promotion; a release is rolled out by moving the tag centrally.
+# - `agent_ref: pr-review/stable` pins the agent's own scripts to the same
+#   channel (#506), so the review logic AND scripts run the known-good version.
+# - `secrets: inherit` forwards the org secrets, including
+#   `DON_PETRY_BOT_GH_PAT_CLASSIC` (classic PAT — required for approvals, since
+#   fine-grained PATs cannot `addPullRequestReview`).
+
 on:
+  check_suite:
+    types: [completed]
+  pull_request_review:
+    types: [submitted, dismissed]
   pull_request:
-    types: [opened, synchronize, reopened]
-  pull_request_review_comment:
-    types: [created]
-  issue_comment:
-    types: [created]
+    types: [ready_for_review, reopened, synchronize]
   workflow_dispatch:
     inputs:
-      pr_numbers:
-        description: 'PR numbers to review (comma-separated)'
+      pr_url:
+        description: 'Optional: review a single PR URL instead of enumerating'
         required: false
+        type: string
+      dry_run:
+        description: 'If true, never submit reviews or comments'
+        required: false
+        default: 'false'
+        type: string
+      force_review:
+        description: 'If true, bypass idempotency and re-review at the same head SHA'
+        required: false
+        default: 'false'
+        type: string
+  repository_dispatch:
+    types: [pr-review-mention]
 
 permissions: {}
 
-concurrency:
-  group: pr-review-${{ github.event.pull_request.number || github.event.issue.number || github.sha }}
-  cancel-in-progress: true
-
 jobs:
-  pr-review:
-    uses: petry-projects/.github-private/.github/workflows/pr-review-reusable.yml@main
+  review:
+    uses: petry-projects/.github-private/.github/workflows/pr-review.yml@pr-review/stable
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: read
+    with:
+      agent_ref: pr-review/stable
+      pr_url: ${{ inputs.pr_url || '' }}
+      dry_run: ${{ inputs.dry_run || '' }}
+      force_review: ${{ inputs.force_review || '' }}
     secrets: inherit
