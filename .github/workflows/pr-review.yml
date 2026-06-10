@@ -22,30 +22,31 @@ on:
   workflow_dispatch:
     inputs:
       pr_url:
-        description: "Optional: review a single PR URL instead of enumerating"
+        description: 'Optional: review a single PR URL instead of enumerating'
         required: false
         type: string
       dry_run:
-        description: "If true, never submit reviews or comments"
+        description: 'If true, never submit reviews or comments'
         required: false
-        default: "false"
+        default: 'false'
         type: string
       force_review:
-        description: "If true, bypass idempotency and re-review at the same head SHA"
+        description: 'If true, bypass idempotency and re-review at the same head SHA'
         required: false
-        default: "false"
+        default: 'false'
         type: string
   repository_dispatch:
     types: [pr-review-mention]
 
-permissions:
-  contents: read
-  pull-requests: write
-  checks: read
+permissions: {}
 
 jobs:
   review:
     uses: petry-projects/.github-private/.github/workflows/pr-review.yml@pr-review/stable
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: read
     with:
       agent_ref: pr-review/stable
       pr_url: ${{ inputs.pr_url || '' }}
