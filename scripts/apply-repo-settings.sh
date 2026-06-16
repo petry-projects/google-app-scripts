@@ -37,9 +37,7 @@ echo "  Repo: $REPO"
 echo ""
 
 # ── Preflight ─────────────────────────────────────────────────────────────────
-for cmd in gh; do
-  command -v "$cmd" >/dev/null || { echo "Error: $cmd is required"; exit 1; }
-done
+command -v gh >/dev/null || { echo "Error: gh is required" >&2; exit 1; }
 gh auth status >/dev/null 2>&1 || { echo "Error: gh not authenticated"; exit 1; }
 
 # ── Apply security_and_analysis settings ──────────────────────────────────────

@@ -37,6 +37,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: dev-lead
+  cancel-in-progress: false
+
 jobs:
   dev-lead:
     uses: petry-projects/.github-private/.github/workflows/dev-lead-reusable.yml@dev-lead/stable
