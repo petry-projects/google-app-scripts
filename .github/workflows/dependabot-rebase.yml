@@ -10,8 +10,8 @@
 #     `dependabot-rebase/stable` channel, a moving tag advanced centrally.
 #     Never repoint it to `@main`, a SHA, or a frozen `@vX` (see
 #     ci-standards.md → Reusable workflow versioning). Also do not change the
-#     concurrency group name, the explicit secrets
-#     block, or the job-level `permissions:` block — reusable workflows can be
+#     concurrency group name, the explicit `secrets:` block, or the job-level
+#     `permissions:` block — reusable workflows can be
 #     granted no more permissions than the calling job has, so removing the
 #     stanza breaks the reusable's gh API calls. Do not remove any trigger
 #     (`push` keeps the self-sustaining chain; `schedule` is the safety net
