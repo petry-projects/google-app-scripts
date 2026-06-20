@@ -1,3 +1,26 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# SOURCE OF TRUTH: petry-projects/.github/standards/workflows/pr-review-mention.yml
+# Standard:        petry-projects/.github/standards/ci-standards.md
+# Reusable:        petry-projects/.github/.github/workflows/pr-review-mention-reusable.yml
+#
+# AGENTS — READ BEFORE EDITING:
+#   • This file is a THIN CALLER STUB. All review-dispatch logic lives in the
+#     reusable workflow above.
+#   • You MUST NOT change: the `uses:` ref — it is pinned to the
+#     `pr-review-mention/stable` channel, a moving tag advanced centrally.
+#     Never repoint it to `@main`, a SHA, or a frozen `@vX` (see
+#     ci-standards.md → Reusable workflow versioning). Also do not change the
+#     trigger events or the job-level `permissions:` block — reusable workflows
+#     can be granted no more permissions than the calling job, so removing the
+#     stanza breaks the reusable's gh API calls.
+#   • If you need different behaviour, open a PR against the reusable in the
+#     central repo. A new release is rolled out by moving the channel tag
+#     centrally — never by editing callers, so no fanout PR is needed.
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# PR Review Mention — thin caller for the org-level reusable.
+# To adopt: copy this file to .github/workflows/pr-review-mention.yml in your repo.
+# Requires: GH_PAT_WORKFLOWS org secret (already present in petry-projects org).
 name: PR Review — Mention Trigger
 
 on:
@@ -14,5 +37,5 @@ jobs:
   pr-review-mention:
     permissions:
       pull-requests: write
-    uses: petry-projects/.github/.github/workflows/pr-review-mention-reusable.yml@376a4fcb1117444595e3e702fa450873d0e54310 # v2
+    uses: petry-projects/.github/.github/workflows/pr-review-mention-reusable.yml@pr-review-mention/stable
     secrets: inherit

@@ -15,6 +15,9 @@
     "**/*.{js,ts,gs,json,md,yml,yaml}": "prettier --write",
     "**/*.{js,ts}": "eslint --fix"
   },
+  "overrides": {
+    "js-yaml": "^4.2.0"
+  },
   "devDependencies": {
     "@commitlint/cli": "^21.0.0",
     "@commitlint/config-conventional": "^20.5.3",
