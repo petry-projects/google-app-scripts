@@ -6,9 +6,12 @@
 # AGENTS — READ BEFORE EDITING:
 #   • This file is a THIN CALLER STUB. All rebase/merge serialization logic
 #     lives in the reusable workflow above.
-#   • You MUST NOT change: the `uses:` ref — it is pinned to the
+#   • You MUST NOT change: the `uses:` ref arbitrarily — it tracks the
 #     `dependabot-rebase/stable` channel, a moving tag advanced centrally.
-#     Never repoint it to `@main`, a SHA, or a frozen `@vX` (see
+#     The ref MUST be a full commit SHA (SonarCloud security gate requirement);
+#     update it by resolving the current SHA of `dependabot-rebase/stable`
+#     (e.g. `gh api repos/petry-projects/.github/git/refs/tags/dependabot-rebase/stable`).
+#     Never repoint it to `@main` or a frozen `@vX` (see
 #     ci-standards.md → Reusable workflow versioning). Also do not change the
 #     concurrency group name, the explicit `secrets:` block, or the job-level
 #     `permissions:` block — reusable workflows can be
@@ -50,7 +53,7 @@ jobs:
     permissions:
       contents: write # update-branch via GITHUB_TOKEN (may touch .github/workflows/)
       pull-requests: write # re-approve PRs after branch update
-    uses: petry-projects/.github/.github/workflows/dependabot-rebase-reusable.yml@dependabot-rebase/stable
+    uses: petry-projects/.github/.github/workflows/dependabot-rebase-reusable.yml@376a4fcb1117444595e3e702fa450873d0e54310 # dependabot-rebase/stable
     secrets:
       APP_ID: ${{ secrets.APP_ID }}
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
