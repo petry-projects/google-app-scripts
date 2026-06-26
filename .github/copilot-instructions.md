@@ -12,3 +12,17 @@ Please read and follow the guidance in that file.
 - **Linting:** ESLint + Prettier (`npm run check`)
 - **Coverage thresholds:** 99% lines, 95% statements/functions, 85% branches
 - **Key libraries:** `@types/google-apps-script` (GAS type defs), `ts-jest`, `husky` + `lint-staged` (pre-commit), `@commitlint` (conventional commits)
+
+## Local Dev Commands
+
+- **Install:** `npm install`
+- **Test (unit):** `npm test`
+- **Test (specific folder):** `npx jest "<agent-folder>/tests"` (replace `<agent-folder>` with the folder path)
+- **Test (unit + coverage):** `npm test -- --coverage`
+- **Test (e2e):** `npm run test:e2e`
+- **Lint + format check:** `npm run check`
+- **Lint only:** `npm run lint`
+- **Format:** `npm run format`
+- **Typecheck:** `npm run typecheck`
+
+> **Dev run:** Deployed code runs in Google Apps Script, not locally — there is no local dev server. Push code to Apps Script (via the Apps Script editor or `clasp`) to run it. Extracted logic in `src/<script-name>/src/index.js` is exercised through `npm test`.
