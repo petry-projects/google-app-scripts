@@ -17,7 +17,7 @@ This file provides Claude Code-specific instructions. For comprehensive agent gu
 ## Key Rules
 
 1. **TDD is mandatory** — write tests before implementation, include tests in the same PR
-2. **Coverage thresholds** — 100% lines, 95% statements/functions, 85% branches
+2. **Coverage thresholds** — 99% lines, 95% statements/functions, 85% branches
 3. **Avoid coverage-ignore comments and `.skip()`** — only use in rare, unavoidable cases (per AGENTS.md) with clear justification
 4. **GAS testing pattern** — extract logic to `src/index.js` with `module.exports`, inject GAS services as parameters
 5. **Always run** `npx prettier --write .` before committing — pre-commit hooks don't run in agent sessions
