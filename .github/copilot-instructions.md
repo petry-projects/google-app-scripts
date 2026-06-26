@@ -17,6 +17,7 @@ Please read and follow the guidance in that file.
 
 - **Install:** `npm install`
 - **Test (unit):** `npm test`
+- **Test (specific folder):** `npx jest "<agent-folder>/tests"` (replace `<agent-folder>` with the folder path)
 - **Test (unit + coverage):** `npm test -- --coverage`
 - **Test (e2e):** `npm run test:e2e`
 - **Lint + format check:** `npm run check`
