@@ -37,12 +37,17 @@ on:
 
 permissions: {}
 
-concurrency:
-  group: dev-lead
-  cancel-in-progress: false
+# Concurrency is centralised in the reusable workflow (dev-lead-reusable.yml) with
+# per-issue / per-PR lanes, so issue pickups are never cancelled by PR follow-up
+# traffic and the grouping can't drift per-repo. See petry-projects/.github#402.
 
 jobs:
   dev-lead:
+    # Pinned to the moving dev-lead/stable channel tag, not @main, so a broken
+    # change to dev-lead can no longer gate its own fix (the self-host circular
+    # dependency). Promotion is done by moving the dev-lead/stable tag centrally; this
+    # caller is never edited on release. agent_ref threads the same channel into
+    # dev-lead's own scripts/prompts checkout. See ci-standards.md#dev-lead-agent.
     uses: petry-projects/.github-private/.github/workflows/dev-lead-reusable.yml@dev-lead/stable
     with:
       agent_ref: dev-lead/stable
@@ -53,4 +58,4 @@ jobs:
       issues: write
       actions: read
       checks: read
-      statuses: read # required by dev-lead-reusable.yml since #435
+      statuses: read
