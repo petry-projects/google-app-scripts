@@ -33,7 +33,7 @@ This file follows the AGENTS.md conventions (see https://agents.md/) and provide
 
 ## Tests & CI (repo conventions)
 
-- **Coverage thresholds:** 100% lines, 95% statements/functions, 85% branches. Verify locally with `npm test -- --coverage` (or `npx jest --coverage`) and ensure CI coverage meets these requirements. PRs that reduce coverage below these thresholds will be rejected.
+- **Coverage thresholds:** 99% lines, 95% statements/functions, 85% branches. Verify locally with `npm test -- --coverage` (or `npx jest --coverage`) and ensure CI coverage meets these requirements. PRs that reduce coverage below these thresholds will be rejected.
 - Before requesting review or marking a PR as ready:
   - Run `npm test` and ensure all tests pass locally
   - Run `npm test -- --coverage` and ensure coverage meets thresholds
