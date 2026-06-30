@@ -42,7 +42,7 @@ permissions: {}
 
 jobs:
   review:
-    uses: petry-projects/.github-private/.github/workflows/pr-review.yml@pr-review/stable  # NOSONAR(githubactions:S7637) first-party channel ref
+    uses: petry-projects/.github-private/.github/workflows/pr-review.yml@pr-review/stable # NOSONAR(githubactions:S7637) first-party channel ref
     permissions:
       contents: read
       pull-requests: write
