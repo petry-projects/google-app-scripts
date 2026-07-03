@@ -63,7 +63,7 @@ if [[ -z "$KEY_FILE" ]]; then
   done
 fi
 
-if [[ -z "$KEY_FILE" ]] || [[ ! -f "$KEY_FILE" ]]; then
+if [[ -z "$KEY_FILE" || ! -f "$KEY_FILE" ]]; then
   echo "Error: Private key file not found." >&2
   echo "Set APP_PRIVATE_KEY_FILE or place the .pem file in your home directory." >&2
   exit 1
@@ -102,7 +102,7 @@ else:
     print('ALREADY_PRESENT')
 ")
 
-  if [[ "$UPDATED" = "ALREADY_PRESENT" ]]; then
+  if [[ "$UPDATED" == "ALREADY_PRESENT" ]]; then
     echo "  ✓ App already in bypass list"
   else
     echo "$UPDATED" | gh api "repos/$REPO/rulesets/$RULESET_ID" --method PUT --input - >/dev/null
