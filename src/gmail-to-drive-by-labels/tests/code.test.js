@@ -89,9 +89,9 @@ describe('storeEmailsAndAttachments', () => {
     storeEmailsAndAttachments()
 
     // Verify: Thread was processed and moved to archived label
-    expect(triggerLabel.getThreads().length).toBe(0)
+    expect(triggerLabel.getThreads()).toHaveLength(0)
     const archivedLabel = global.GmailApp.getUserLabelByName('test-archived')
-    expect(archivedLabel.getThreads().length).toBe(1)
+    expect(archivedLabel.getThreads()).toHaveLength(1)
 
     // Verify: Content was added to document
     const body = doc.getBody()
@@ -139,8 +139,8 @@ describe('storeEmailsAndAttachments', () => {
     // Verify both configs were processed
     const archived1 = global.GmailApp.getUserLabelByName('label-1-archived')
     const archived2 = global.GmailApp.getUserLabelByName('label-2-archived')
-    expect(archived1.getThreads().length).toBe(1)
-    expect(archived2.getThreads().length).toBe(1)
+    expect(archived1.getThreads()).toHaveLength(1)
+    expect(archived2.getThreads()).toHaveLength(1)
   })
 
   test('handles pause when rebuild does not complete', () => {
@@ -237,9 +237,9 @@ describe('processLabelGroup', () => {
     processLabelGroup(config)
 
     // Verify
-    expect(triggerLabel.getThreads().length).toBe(0)
+    expect(triggerLabel.getThreads()).toHaveLength(0)
     const archived = global.GmailApp.getUserLabelByName('test-archived')
-    expect(archived.getThreads().length).toBe(1)
+    expect(archived.getThreads()).toHaveLength(1)
 
     const paragraphs = body.getParagraphs()
     expect(paragraphs.length).toBeGreaterThan(0)
@@ -278,7 +278,7 @@ describe('processLabelGroup', () => {
     // Verify processed label was created
     const archived = global.GmailApp.getUserLabelByName('test-archived')
     expect(archived).not.toBeNull()
-    expect(archived.getThreads().length).toBe(1)
+    expect(archived.getThreads()).toHaveLength(1)
   })
 
   test('returns early if trigger label not found', () => {
@@ -341,7 +341,7 @@ describe('processLabelGroup', () => {
     expect(() => processLabelGroup(config)).not.toThrow()
 
     // Thread should not be moved since processing failed
-    expect(triggerLabel.getThreads().length).toBe(1)
+    expect(triggerLabel.getThreads()).toHaveLength(1)
 
     // Restore
     global.DocumentApp.openById = originalOpenById
@@ -377,7 +377,7 @@ describe('processLabelGroup', () => {
     global.GmailApp.createLabel = originalCreateLabel
 
     // Thread should still be moved (label creation error is non-fatal)
-    expect(triggerLabel.getThreads().length).toBe(0)
+    expect(triggerLabel.getThreads()).toHaveLength(0)
   })
 
   test('processes attachments with deduplication', () => {
@@ -408,7 +408,7 @@ describe('processLabelGroup', () => {
 
     // Verify attachment was saved
     const files = folder.__getFiles()
-    expect(files.length).toBe(1)
+    expect(files).toHaveLength(1)
     expect(files[0].getName()).toBe('test.txt')
 
     // Verify document mentions attachment
@@ -456,7 +456,7 @@ describe('processLabelGroup', () => {
 
     // Verify attachment was NOT duplicated (still only 1 file)
     const files = folder.__getFiles()
-    expect(files.length).toBe(1)
+    expect(files).toHaveLength(1)
 
     // Verify document shows it was skipped
     const body = doc.getBody()
@@ -503,7 +503,7 @@ describe('processLabelGroup', () => {
 
     // Verify we now have 2 files (original + renamed due to hash mismatch)
     const files = folder.__getFiles()
-    expect(files.length).toBe(2)
+    expect(files).toHaveLength(2)
   })
 
   test('renames attachment when name conflicts but content differs', () => {
@@ -540,7 +540,7 @@ describe('processLabelGroup', () => {
 
     // Verify we now have 2 files (original + renamed)
     const files = folder.__getFiles()
-    expect(files.length).toBe(2)
+    expect(files).toHaveLength(2)
 
     // One should be the original name, other should be renamed
     const names = files.map((f) => f.getName()).sort()

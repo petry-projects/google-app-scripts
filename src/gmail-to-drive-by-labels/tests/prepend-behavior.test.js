@@ -32,7 +32,7 @@ describe('Email prepending to document', () => {
     body.appendParagraph('Old Content 2')
 
     // Verify initial state
-    expect(body.getParagraphs().length).toBe(2)
+    expect(body.getParagraphs()).toHaveLength(2)
     expect(body.getParagraphs()[0].getText()).toBe('Old Content 1')
     expect(body.getParagraphs()[1].getText()).toBe('Old Content 2')
 
@@ -50,7 +50,7 @@ describe('Email prepending to document', () => {
 
     // Verify new content is at top
     const paragraphs = body.getParagraphs()
-    expect(paragraphs.length).toBe(6)
+    expect(paragraphs).toHaveLength(6)
     expect(paragraphs[0].getText()).toBe('Subject: Test Email')
     expect(paragraphs[1].getText()).toContain('Date:')
     expect(paragraphs[2].getText()).toBe('This is the email body')
@@ -73,7 +73,7 @@ describe('Email prepending to document', () => {
     body.insertParagraph(3, '------------------------------')
 
     const paragraphs = body.getParagraphs()
-    expect(paragraphs.length).toBe(8)
+    expect(paragraphs).toHaveLength(8)
 
     // Newest email should be at top
     expect(paragraphs[0].getText()).toBe('Subject: Second Email')
@@ -93,7 +93,7 @@ describe('Email prepending to document', () => {
     body.insertParagraph(5, '------------------------------')
 
     const paragraphs = body.getParagraphs()
-    expect(paragraphs.length).toBe(7)
+    expect(paragraphs).toHaveLength(7)
 
     // New content should be at top
     expect(paragraphs[0].getText()).toBe('Subject: Email with attachments')
