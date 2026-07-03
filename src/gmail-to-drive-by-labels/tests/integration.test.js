@@ -47,7 +47,7 @@ describe('Gmail to Drive integration with prepend behavior', () => {
 
     // Process using the real function
     const threads = triggerLabel.getThreads()
-    expect(threads.length).toBe(1)
+    expect(threads).toHaveLength(1)
 
     threads.forEach((thread) => {
       const messages = thread.getMessages()
@@ -58,7 +58,7 @@ describe('Gmail to Drive integration with prepend behavior', () => {
     const paragraphs = body.getParagraphs()
 
     // Should have 4 paragraphs per email (subject, date, content, separator) × 3 emails + 1 thread separator = 13 paragraphs
-    expect(paragraphs.length).toBe(13)
+    expect(paragraphs).toHaveLength(13)
 
     // Thread separator should be at top
     expect(paragraphs[0].getText()).toBe('==============================')
@@ -112,7 +112,7 @@ describe('Gmail to Drive integration with prepend behavior', () => {
 
     // Verify files were created
     const files = folder.__getFiles()
-    expect(files.length).toBe(2)
+    expect(files).toHaveLength(2)
   })
 
   test('new emails prepend before existing document content', () => {
@@ -140,7 +140,7 @@ describe('Gmail to Drive integration with prepend behavior', () => {
 
     // Verify new content is at top, old content at bottom
     const paragraphs = body.getParagraphs()
-    expect(paragraphs.length).toBe(8)
+    expect(paragraphs).toHaveLength(8)
 
     // New email at top
     expect(paragraphs[0].getText()).toBe('Subject: New Email')
@@ -172,7 +172,7 @@ describe('Gmail to Drive integration with prepend behavior', () => {
 
     // Process all threads using real function
     const threads = triggerLabel.getThreads()
-    expect(threads.length).toBe(2)
+    expect(threads).toHaveLength(2)
 
     threads.forEach((thread) => {
       const messages = thread.getMessages()
@@ -182,7 +182,7 @@ describe('Gmail to Drive integration with prepend behavior', () => {
     // Verify both threads are in document
     const paragraphs = body.getParagraphs()
     // Each thread has: separator + subject + date + content + message separator = 5 paragraphs × 2 threads = 10 paragraphs
-    expect(paragraphs.length).toBe(10)
+    expect(paragraphs).toHaveLength(10)
 
     // Most recently processed thread should be at top (after thread separator)
     expect(paragraphs[0].getText()).toBe('==============================')
@@ -220,7 +220,7 @@ describe('Gmail to Drive integration with prepend behavior', () => {
 
     // Should still only have 1 file (the original)
     const files = folder.__getFiles()
-    expect(files.length).toBe(1)
+    expect(files).toHaveLength(1)
   })
 
   test('handles attachment name conflicts with timestamp renaming', () => {
@@ -246,7 +246,7 @@ describe('Gmail to Drive integration with prepend behavior', () => {
 
     // Should have 2 files now (original and renamed new one)
     const files = folder.__getFiles()
-    expect(files.length).toBe(2)
+    expect(files).toHaveLength(2)
 
     // New file should have timestamp in name
     const fileNames = files.map((f) => f.getName())
@@ -281,7 +281,7 @@ describe('Gmail to Drive integration with prepend behavior', () => {
 
     // Should have 2 files (size mismatch means not a duplicate)
     const files = folder.__getFiles()
-    expect(files.length).toBe(2)
+    expect(files).toHaveLength(2)
   })
 
   test('handles files with same size but different hash', () => {
@@ -307,7 +307,7 @@ describe('Gmail to Drive integration with prepend behavior', () => {
 
     // Should have 2 files (hash mismatch means different content)
     const files = folder.__getFiles()
-    expect(files.length).toBe(2)
+    expect(files).toHaveLength(2)
   })
 
   test('handles attachments with no file extension', () => {
@@ -335,7 +335,7 @@ describe('Gmail to Drive integration with prepend behavior', () => {
 
     // Should have 2 files (original and new with timestamp)
     const files = folder.__getFiles()
-    expect(files.length).toBe(2)
+    expect(files).toHaveLength(2)
   })
 
   test('handles messages with Logger and DocumentApp options', () => {
@@ -510,7 +510,7 @@ describe('Gmail to Drive integration with prepend behavior', () => {
 
     // Should have 2 files (original and renamed new one)
     const files = folder.__getFiles()
-    expect(files.length).toBe(2)
+    expect(files).toHaveLength(2)
 
     // Verify one file has timestamp in name
     const fileNames = files.map((f) => f.getName())
