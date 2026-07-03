@@ -100,8 +100,8 @@ describe('Thread deduplication when new messages arrive', () => {
     // + 1 thread separator at top = 9 total
     // NOT 3x the original count (which would mean old thread wasn't removed)
     paragraphs = body.getParagraphs()
-    expect(paragraphs.length).toBe(9)
-    expect(paragraphs.length).not.toBe(initialCount * 3) // Confirm deduplication worked
+    expect(paragraphs).toHaveLength(9)
+    expect(paragraphs).not.toHaveLength(initialCount * 3) // Confirm deduplication worked
 
     // Most recent message should be at top
     expect(
@@ -125,7 +125,7 @@ describe('Thread deduplication when new messages arrive', () => {
     const threadSeparators = paragraphs.filter((p) =>
       p.getText().includes(`[THREAD:${threadId}]`)
     )
-    expect(threadSeparators.length).toBe(1)
+    expect(threadSeparators).toHaveLength(1)
   })
 
   test('multiple different threads should coexist in document', () => {
@@ -167,7 +167,7 @@ describe('Thread deduplication when new messages arrive', () => {
 
     // Should have exactly 2x the paragraphs of a single thread
     const paragraphs = body.getParagraphs()
-    expect(paragraphs.length).toBe(singleThreadCount * 2)
+    expect(paragraphs).toHaveLength(singleThreadCount * 2)
 
     // Both threads should be present
     expect(
@@ -184,8 +184,8 @@ describe('Thread deduplication when new messages arrive', () => {
     const thread2Separators = paragraphs.filter((p) =>
       p.getText().includes(`[THREAD:${thread2.getId()}]`)
     )
-    expect(thread1Separators.length).toBe(1)
-    expect(thread2Separators.length).toBe(1)
+    expect(thread1Separators).toHaveLength(1)
+    expect(thread2Separators).toHaveLength(1)
   })
 
   test('updating one thread should not affect other threads', () => {
@@ -243,7 +243,7 @@ describe('Thread deduplication when new messages arrive', () => {
     //            + thread2 (1 message × 4 paragraphs + 1 thread separator = 5)
     //            = 14 paragraphs total
     const paragraphs = body.getParagraphs()
-    expect(paragraphs.length).toBe(14)
+    expect(paragraphs).toHaveLength(14)
 
     // Updated thread1 content should be present
     expect(
@@ -266,7 +266,7 @@ describe('Thread deduplication when new messages arrive', () => {
     const thread2Separators = paragraphs.filter((p) =>
       p.getText().includes(`[THREAD:${thread2.getId()}]`)
     )
-    expect(thread1Separators.length).toBe(1)
-    expect(thread2Separators.length).toBe(1)
+    expect(thread1Separators).toHaveLength(1)
+    expect(thread2Separators).toHaveLength(1)
   })
 })

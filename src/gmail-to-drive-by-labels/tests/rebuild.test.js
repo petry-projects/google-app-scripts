@@ -58,9 +58,9 @@ describe('rebuildDoc', () => {
     body.appendParagraph('Old content 3')
 
     // Verify initial state
-    expect(body.getParagraphs().length).toBe(3)
-    expect(processedLabel.getThreads().length).toBe(2)
-    expect(triggerLabel.getThreads().length).toBe(0)
+    expect(body.getParagraphs()).toHaveLength(3)
+    expect(processedLabel.getThreads()).toHaveLength(2)
+    expect(triggerLabel.getThreads()).toHaveLength(0)
 
     // Run rebuild
     const config = {
@@ -72,11 +72,11 @@ describe('rebuildDoc', () => {
     const completed = rebuildDoc(config)
 
     // Verify document is cleared
-    expect(body.getParagraphs().length).toBe(0)
+    expect(body.getParagraphs()).toHaveLength(0)
 
     // Verify emails are moved back to trigger label
-    expect(triggerLabel.getThreads().length).toBe(2)
-    expect(processedLabel.getThreads().length).toBe(0)
+    expect(triggerLabel.getThreads()).toHaveLength(2)
+    expect(processedLabel.getThreads()).toHaveLength(0)
 
     // Verify operation completed
     expect(completed).toBe(true)
@@ -103,7 +103,7 @@ describe('rebuildDoc', () => {
     expect(() => rebuildDoc(config)).not.toThrow()
 
     // Document should still be cleared
-    expect(body.getParagraphs().length).toBe(0)
+    expect(body.getParagraphs()).toHaveLength(0)
   })
 
   test('handles missing trigger label gracefully', () => {
@@ -124,7 +124,7 @@ describe('rebuildDoc', () => {
     expect(() => rebuildDoc(config)).not.toThrow()
 
     // Document should not be cleared (function returns early)
-    expect(body.getParagraphs().length).toBe(1)
+    expect(body.getParagraphs()).toHaveLength(1)
   })
 
   test('clears empty document without errors', () => {
@@ -136,7 +136,7 @@ describe('rebuildDoc', () => {
     const body = doc.getBody()
 
     // Verify initial state
-    expect(body.getParagraphs().length).toBe(0)
+    expect(body.getParagraphs()).toHaveLength(0)
 
     // Run rebuild
     const config = {
@@ -150,7 +150,7 @@ describe('rebuildDoc', () => {
     expect(() => rebuildDoc(config)).not.toThrow()
 
     // Document should still be empty
-    expect(body.getParagraphs().length).toBe(0)
+    expect(body.getParagraphs()).toHaveLength(0)
   })
 
   test('moves multiple threads correctly', () => {
@@ -175,8 +175,8 @@ describe('rebuildDoc', () => {
     body.appendParagraph('Content')
 
     // Verify initial state
-    expect(processedLabel.getThreads().length).toBe(25)
-    expect(triggerLabel.getThreads().length).toBe(0)
+    expect(processedLabel.getThreads()).toHaveLength(25)
+    expect(triggerLabel.getThreads()).toHaveLength(0)
 
     // Run rebuild
     const config = {
@@ -188,8 +188,8 @@ describe('rebuildDoc', () => {
     rebuildDoc(config)
 
     // Verify all threads are moved
-    expect(triggerLabel.getThreads().length).toBe(25)
-    expect(processedLabel.getThreads().length).toBe(0)
+    expect(triggerLabel.getThreads()).toHaveLength(25)
+    expect(processedLabel.getThreads()).toHaveLength(0)
   })
 
   test('handles document opening errors gracefully', () => {
@@ -219,7 +219,7 @@ describe('rebuildDoc', () => {
     expect(() => rebuildDoc(config)).not.toThrow()
 
     // Verify emails were NOT moved (function returned early)
-    expect(processedLabel.getThreads().length).toBe(1)
+    expect(processedLabel.getThreads()).toHaveLength(1)
 
     // Restore original function
     global.DocumentApp.openById = originalOpenById
@@ -259,7 +259,7 @@ describe('rebuildDoc', () => {
     expect(() => rebuildDoc(config)).not.toThrow()
 
     // Verify emails were NOT moved (function returned early)
-    expect(processedLabel.getThreads().length).toBe(1)
+    expect(processedLabel.getThreads()).toHaveLength(1)
 
     // Restore original function
     global.DocumentApp.openById = originalOpenById
@@ -281,8 +281,8 @@ describe('rebuildDoc', () => {
     doc.getBody().appendParagraph('Content')
 
     // Verify initial state
-    expect(processedLabel.getThreads().length).toBe(150)
-    expect(triggerLabel.getThreads().length).toBe(0)
+    expect(processedLabel.getThreads()).toHaveLength(150)
+    expect(triggerLabel.getThreads()).toHaveLength(0)
 
     // Run rebuild - should handle batching automatically
     const config = {
@@ -300,11 +300,11 @@ describe('rebuildDoc', () => {
     expect(completed1).toBe(false)
 
     // Document should be cleared
-    expect(doc.getBody().getParagraphs().length).toBe(0)
+    expect(doc.getBody().getParagraphs()).toHaveLength(0)
 
     // First batch should be moved (100 threads)
-    expect(triggerLabel.getThreads().length).toBe(100)
-    expect(processedLabel.getThreads().length).toBe(50)
+    expect(triggerLabel.getThreads()).toHaveLength(100)
+    expect(processedLabel.getThreads()).toHaveLength(50)
 
     // State should be saved
     const properties = global.PropertiesService.getUserProperties()
@@ -321,8 +321,8 @@ describe('rebuildDoc', () => {
     expect(completed2).toBe(true)
 
     // All threads should be moved
-    expect(triggerLabel.getThreads().length).toBe(150)
-    expect(processedLabel.getThreads().length).toBe(0)
+    expect(triggerLabel.getThreads()).toHaveLength(150)
+    expect(processedLabel.getThreads()).toHaveLength(0)
 
     // State should be cleaned up
     expect(properties.getProperty(stateKey)).toBeNull()
@@ -358,8 +358,8 @@ describe('rebuildDoc', () => {
     expect(completed).toBe(true)
 
     // All threads should be moved
-    expect(triggerLabel.getThreads().length).toBe(200)
-    expect(processedLabel.getThreads().length).toBe(0)
+    expect(triggerLabel.getThreads()).toHaveLength(200)
+    expect(processedLabel.getThreads()).toHaveLength(0)
   })
 })
 
@@ -402,15 +402,15 @@ describe('rebuildAllDocs', () => {
     doc2.getBody().appendParagraph('Doc 2 content')
 
     // Verify initial state
-    expect(doc1.getBody().getParagraphs().length).toBe(1)
-    expect(doc2.getBody().getParagraphs().length).toBe(1)
+    expect(doc1.getBody().getParagraphs()).toHaveLength(1)
+    expect(doc2.getBody().getParagraphs()).toHaveLength(1)
 
     // Run rebuild all
     rebuildAllDocs()
 
     // Verify both documents are cleared
-    expect(doc1.getBody().getParagraphs().length).toBe(0)
-    expect(doc2.getBody().getParagraphs().length).toBe(0)
+    expect(doc1.getBody().getParagraphs()).toHaveLength(0)
+    expect(doc2.getBody().getParagraphs()).toHaveLength(0)
   })
 
   test('handles single configuration', () => {
@@ -433,6 +433,6 @@ describe('rebuildAllDocs', () => {
     expect(() => rebuildAllDocs()).not.toThrow()
 
     // Verify document is cleared
-    expect(doc.getBody().getParagraphs().length).toBe(0)
+    expect(doc.getBody().getParagraphs()).toHaveLength(0)
   })
 })

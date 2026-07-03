@@ -9,7 +9,7 @@ describe('Apps Script mocks integration', () => {
     const found = global.GmailApp.getUserLabelByName('TEST')
     expect(found).not.toBeNull()
     const threads = found.getThreads()
-    expect(threads.length).toBe(1)
+    expect(threads).toHaveLength(1)
     expect(threads[0].getMessages()[0].getSubject()).toBe('Hi')
   })
 
@@ -17,7 +17,7 @@ describe('Apps Script mocks integration', () => {
     const doc = global.DocumentApp.openById('doc-1')
     const body = doc.getBody()
     body.appendParagraph('Hello')
-    expect(body.getParagraphs().length).toBe(1)
+    expect(body.getParagraphs()).toHaveLength(1)
 
     const folder = global.DriveApp.getFolderById('f-1')
     const b1 = createBlob('a', 'foo.txt')

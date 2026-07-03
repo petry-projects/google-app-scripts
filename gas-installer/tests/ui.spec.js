@@ -119,8 +119,8 @@ test.describe('gas-installer Index.html', () => {
   }) => {
     await expect(page.locator('#script-gmail')).toBeVisible()
     await expect(page.locator('#script-calendar')).toBeVisible()
-    expect(await page.locator('#script-gmail').isChecked()).toBe(false)
-    expect(await page.locator('#script-calendar').isChecked()).toBe(false)
+    await expect(page.locator('#script-gmail')).not.toBeChecked()
+    await expect(page.locator('#script-calendar')).not.toBeChecked()
   })
 
   test('renders project title input with placeholder', async ({ page }) => {

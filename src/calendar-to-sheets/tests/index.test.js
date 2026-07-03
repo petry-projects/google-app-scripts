@@ -78,7 +78,7 @@ test('syncCalendarToSheet adds, updates, and deletes rows correctly', async () =
   })
 
   const rows = sheet.__getRows()
-  expect(rows.length).toBe(2)
+  expect(rows).toHaveLength(2)
   expect(rows[0][0]).toBe('e1')
   expect(rows[1][0]).toBe('e2')
 
@@ -102,7 +102,7 @@ test('syncCalendarToSheet adds, updates, and deletes rows correctly', async () =
   })
 
   const rows2 = sheet.__getRows()
-  expect(rows2.length).toBe(2)
+  expect(rows2).toHaveLength(2)
   const e1row = rows2.find((r) => r[0] === 'e1')
   expect(e1row[1]).toBe('Meeting A updated')
   expect(e1row[6]).toBe('a@example.com,c@example.com')
@@ -115,7 +115,7 @@ test('syncCalendarToSheet adds, updates, and deletes rows correctly', async () =
     end: new Date('2026-02-03'),
   })
   const rows3 = sheet.__getRows()
-  expect(rows3.length).toBe(1)
+  expect(rows3).toHaveLength(1)
   expect(rows3[0][0]).toBe('e1')
 })
 
@@ -319,7 +319,7 @@ test('syncCalendarToSheet deletes multiple rows and calls sort comparator', asyn
 
   await syncCalendarToSheet(calendar, sheet, { start, end })
 
-  expect(sheet.__getRows().length).toBe(0)
+  expect(sheet.__getRows()).toHaveLength(0)
 })
 
 // Ensure the GAS wrapper can sync multiple configs in SYNC_CONFIGS
@@ -511,7 +511,7 @@ describe('Checkpoint logic (GAS only)', () => {
 
     // All events should be synced
     const rows = sheet.__getRows()
-    expect(rows.length).toBe(3)
+    expect(rows).toHaveLength(3)
     expect(rows.find((r) => r[0] === 'e_2024')).toBeTruthy()
     expect(rows.find((r) => r[0] === 'e_2025')).toBeTruthy()
     expect(rows.find((r) => r[0] === 'e_2026')).toBeTruthy()
@@ -1100,7 +1100,7 @@ describe('Checkpoint logic (GAS only)', () => {
 
     const configs = freshCode.getConfigs()
 
-    expect(configs.length).toBe(1)
+    expect(configs).toHaveLength(1)
     expect(configs[0].spreadsheetId).toBe('legacy_ss')
     expect(configs[0].sheetName).toBe('LegacySheet')
     expect(configs[0].calendarId).toBe('legacy_cal')
@@ -1122,10 +1122,10 @@ describe('Checkpoint logic (GAS only)', () => {
 
     const configs = freshCode.getConfigs()
 
-    expect(configs.length).toBe(1)
-    expect(configs[0].spreadsheetId).toBe(null)
+    expect(configs).toHaveLength(1)
+    expect(configs[0].spreadsheetId).toBeNull()
     expect(configs[0].sheetName).toBe('Sheet1')
-    expect(configs[0].calendarId).toBe(null)
+    expect(configs[0].calendarId).toBeNull()
   })
 
   test('getConfigs handles non-array SYNC_CONFIGS', () => {
@@ -1138,7 +1138,7 @@ describe('Checkpoint logic (GAS only)', () => {
     const configs = freshCode.getConfigs()
 
     // Should fall back to legacy mode
-    expect(configs.length).toBe(1)
+    expect(configs).toHaveLength(1)
     expect(configs[0].sheetName).toBe('Sheet1')
 
     delete global.SYNC_CONFIGS
@@ -1154,10 +1154,10 @@ describe('Checkpoint logic (GAS only)', () => {
     const configs = freshCode.getConfigs()
 
     // Should fall back to legacy mode when array is empty
-    expect(configs.length).toBe(1)
+    expect(configs).toHaveLength(1)
     expect(configs[0].sheetName).toBe('Sheet1')
-    expect(configs[0].spreadsheetId).toBe(null)
-    expect(configs[0].calendarId).toBe(null)
+    expect(configs[0].spreadsheetId).toBeNull()
+    expect(configs[0].calendarId).toBeNull()
 
     delete global.SYNC_CONFIGS
   })
@@ -1340,7 +1340,7 @@ describe('Checkpoint logic (GAS only)', () => {
 
     // First sync with both events
     code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03')
-    expect(sheet.__getRows().length).toBe(2)
+    expect(sheet.__getRows()).toHaveLength(2)
 
     // Remove one event and sync again
     calendar.__reset()
@@ -1348,7 +1348,7 @@ describe('Checkpoint logic (GAS only)', () => {
     code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03')
 
     const rows = sheet.__getRows()
-    expect(rows.length).toBe(1)
+    expect(rows).toHaveLength(1)
     expect(rows[0][0]).toBe('e_del1')
 
     delete global.SPREADSHEET_ID
@@ -1573,7 +1573,7 @@ describe('Checkpoint logic (GAS only)', () => {
     calendar.__addEvent(recentEvent)
     code.syncCalendarToSheetGAS('2025-01-01', '2026-03-01')
 
-    expect(sheet.__getRows().length).toBe(2)
+    expect(sheet.__getRows()).toHaveLength(2)
 
     // Now simulate an incremental sync from Feb 1 onwards
     // The old event (Jan 2025) is NOT deleted from calendar, but it's outside the sync window
@@ -1586,7 +1586,7 @@ describe('Checkpoint logic (GAS only)', () => {
 
     // Both events should still be in the sheet
     const rows = sheet.__getRows()
-    expect(rows.length).toBe(2)
+    expect(rows).toHaveLength(2)
     expect(rows.find((r) => r[0] === 'e_old')).toBeTruthy()
     expect(rows.find((r) => r[0] === 'e_recent')).toBeTruthy()
 
@@ -1651,7 +1651,7 @@ describe('Checkpoint logic (GAS only)', () => {
     calendar.__addEvent(recentEvent2)
     code.syncCalendarToSheetGAS('2025-01-01', '2026-03-01')
 
-    expect(sheet.__getRows().length).toBe(3)
+    expect(sheet.__getRows()).toHaveLength(3)
 
     // Now delete recentEvent2 from calendar and do incremental sync
     // The old event should remain, recentEvent1 should remain, recentEvent2 should be deleted
@@ -1665,7 +1665,7 @@ describe('Checkpoint logic (GAS only)', () => {
 
     // Old event should be preserved (outside window), recentEvent1 kept, recentEvent2 deleted
     const rows = sheet.__getRows()
-    expect(rows.length).toBe(2)
+    expect(rows).toHaveLength(2)
     expect(rows.find((r) => r[0] === 'e_old')).toBeTruthy()
     expect(rows.find((r) => r[0] === 'e_recent1')).toBeTruthy()
     expect(rows.find((r) => r[0] === 'e_recent2')).toBeUndefined()
@@ -1707,7 +1707,7 @@ describe('Checkpoint logic (GAS only)', () => {
     code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03')
 
     const rows = sheet.__getRows()
-    expect(rows.length).toBe(1)
+    expect(rows).toHaveLength(1)
     expect(rows[0][1]).toBe("'=MALICIOUS()") // title sanitized
     expect(rows[0][4]).toBe('\'@IMPORTDATA("http://evil.com")') // description sanitized
     expect(rows[0][5]).toBe("'+DANGEROUS") // location sanitized
@@ -1867,7 +1867,7 @@ test('syncCalendarToSheet works correctly when sheet starts empty with no header
   })
 
   const rows = sheet.__getRows()
-  expect(rows.length).toBe(2)
+  expect(rows).toHaveLength(2)
   expect(rows[0][0]).toBe('e_empty1')
   expect(rows[1][0]).toBe('e_empty2')
 
@@ -1892,7 +1892,7 @@ test('syncCalendarToSheet works correctly when sheet starts empty with no header
   })
 
   const rows2 = sheet.__getRows()
-  expect(rows2.length).toBe(2)
+  expect(rows2).toHaveLength(2)
   const e1row = rows2.find((r) => r[0] === 'e_empty1')
   expect(e1row[1]).toBe('First Event Updated')
 })
@@ -2183,13 +2183,13 @@ describe('GAS wrapper functions', () => {
     calendar.__addEvent(evt1)
 
     await code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03')
-    expect(sheet.__getRows().length).toBe(1)
+    expect(sheet.__getRows()).toHaveLength(1)
 
     // Remove event from calendar
     calendar.__reset()
 
     await code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03')
-    expect(sheet.__getRows().length).toBe(0)
+    expect(sheet.__getRows()).toHaveLength(0)
 
     delete global.SPREADSHEET_ID
     delete global.SHEET_NAME
