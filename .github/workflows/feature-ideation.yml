@@ -64,8 +64,19 @@ on:
         required: false
         default: false
         type: boolean
+      enhance_backlog:
+        description: "Backlog enhancement sweep: enhance this repo's open, human-authored, not-yet-enhanced Ideas (one comment each, idempotent). Combine with dry_run=true to preview."
+        required: false
+        default: false
+        type: boolean
+      target_discussion:
+        description: 'Internal — set by `redispatch` when bridging a `discussion:created` event to workflow_dispatch (claude-code-action does not support discussion contexts). Not for manual use.'
+        required: false
+        default: ''
+        type: string
   # Auto-enhance a freshly-created idea: when a new Discussion is opened in the
-  # Ideas category, the analyst researches and refines it in single-idea mode.
+  # Ideas category, the `redispatch` job bridges it to workflow_dispatch (see below)
+  # so the analyst refines it in single-idea mode under a supported event.
   discussion:
     types: [created]
 
@@ -76,15 +87,44 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  ideate:
-    # On the `discussion` trigger, only run for new ideas in the Ideas category
-    # and skip the bot's own creations (avoids re-enhancing scheduled output;
-    # enhancement posts a comment, which does not re-fire `discussion: created`).
-    # Schedule/dispatch runs are unaffected by this guard.
+  # ── #963 discussion→dispatch redispatch bridge ───────────────────────────────
+  # claude-code-action aborts on `discussion` event contexts ("Unsupported event
+  # type: discussion"). So on `discussion: created` we do NOT call the reusable
+  # inline; the `redispatch` job re-invokes this workflow via workflow_dispatch
+  # (under which the action runs cleanly), passing the number as target_discussion.
+  # Mirrors initiative-planner.yml's redispatch (#618). The `ideate` reusable call
+  # then runs only on workflow_dispatch/schedule.
+  redispatch:
     if: >-
-      github.event_name != 'discussion' ||
-      (github.event.discussion.category.slug == 'ideas' &&
-       github.event.discussion.user.type != 'Bot')
+      github.event_name == 'discussion' &&
+      github.event.discussion.category.slug == 'ideas' &&
+      github.event.discussion.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Guard — PAT present
+        # A workflow_dispatch fired with GITHUB_TOKEN is accepted but never starts
+        # a run (loop prevention), so a PAT is required (same as initiative-planner).
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_WORKFLOWS }}
+        run: |
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::error::GH_PAT_WORKFLOWS is required — a workflow_dispatch fired with GITHUB_TOKEN will not start a run."
+            exit 1
+          fi
+      - name: Re-dispatch under workflow_dispatch
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_WORKFLOWS }}
+          REPO: ${{ github.repository }}
+          DISCUSSION_NUMBER: ${{ github.event.discussion.number }}
+        run: |
+          gh workflow run feature-ideation.yml --repo "${REPO}" \
+            -f target_discussion="${DISCUSSION_NUMBER}"
+
+  ideate:
+    # Runs on workflow_dispatch (including the redispatch bridge above) and schedule.
+    if: github.event_name != 'discussion'
     # Permissions cascade from the calling job to the reusable workflow.
     # The reusable workflow's two jobs (gather-signals + analyze) need:
     #   - contents:      read   (checkout, file reads)
@@ -100,12 +140,12 @@ jobs:
       discussions: write
       id-token: write
       actions: read
-    uses: petry-projects/.github/.github/workflows/feature-ideation-reusable.yml@c2beceb1c3ffcaf7981db22d168de669c9fdf816 # v1
+    uses: petry-projects/.github/.github/workflows/feature-ideation-reusable.yml@e20a8fac1b6a10bd6ad0999258e88a423f890ba6 # v1
     with:
-      # On the `discussion: created` trigger this carries the new Discussion's
-      # number → the reusable runs single-idea enhancement mode. Empty on
-      # schedule/dispatch → normal scan. Do not edit this line.
-      target_discussion: ${{ github.event.discussion.number }}
+      # Populated by the `redispatch` bridge above (which forwards the new
+      # Discussion number on `discussion: created`); empty on schedule/dispatch →
+      # normal scan. Do not edit this line.
+      target_discussion: ${{ inputs.target_discussion || '' }}
       # === CUSTOMISE THIS PER REPO — the only required edit ===
       # Replace this paragraph with a 3-5 sentence description of your project,
       # its target users, and the competitive landscape. The more specific you
@@ -123,5 +163,7 @@ jobs:
       focus_area: ${{ inputs.focus_area || '' }}
       research_depth: ${{ inputs.research_depth || 'standard' }}
       dry_run: ${{ inputs.dry_run || false }}
+      # Backlog enhancement sweep of existing un-enhanced Ideas (workflow_dispatch).
+      enhance_backlog: ${{ inputs.enhance_backlog == true }}
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
