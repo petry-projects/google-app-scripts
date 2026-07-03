@@ -22,12 +22,12 @@
 set -euo pipefail
 
 # Target repo: first arg, or detect from current directory
-if [ -n "${1:-}" ]; then
+if [[ -n "${1:-}" ]]; then
   REPO="$1"
 else
   REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)"
-  if [ -z "$REPO" ]; then
-    echo "Usage: $0 [owner/repo]"
+  if [[ -z "$REPO" ]]; then
+    echo "Usage: $0 [owner/repo]" >&2
     exit 1
   fi
 fi
@@ -38,7 +38,7 @@ echo ""
 
 # ── Preflight ─────────────────────────────────────────────────────────────────
 command -v gh >/dev/null || { echo "Error: gh is required" >&2; exit 1; }
-gh auth status >/dev/null 2>&1 || { echo "Error: gh not authenticated"; exit 1; }
+gh auth status >/dev/null 2>&1 || { echo "Error: gh not authenticated" >&2; exit 1; }
 
 # ── Apply security_and_analysis settings ──────────────────────────────────────
 echo "Applying security_and_analysis settings..."
