@@ -24,12 +24,12 @@ APP_NAME="dependabot-automerge-petry"
 RULESET_NAME="${RULESET_NAME:-protect-branches}"
 
 # Target repo: first arg, or detect from current directory
-if [ -n "${1:-}" ]; then
+if [[ -n "${1:-}" ]]; then
   REPO="$1"
 else
   REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)"
-  if [ -z "$REPO" ]; then
-    echo "Usage: $0 [owner/repo]"
+  if [[ -z "$REPO" ]]; then
+    echo "Usage: $0 [owner/repo]" >&2
     exit 1
   fi
 fi
@@ -41,31 +41,31 @@ echo ""
 
 # ── Preflight ─────────────────────────────────────────────────────────────────
 for cmd in gh python3; do
-  command -v "$cmd" >/dev/null || { echo "Error: $cmd is required"; exit 1; }
+  command -v "$cmd" >/dev/null || { echo "Error: $cmd is required" >&2; exit 1; }
 done
-gh auth status >/dev/null 2>&1 || { echo "Error: gh not authenticated"; exit 1; }
+gh auth status >/dev/null 2>&1 || { echo "Error: gh not authenticated" >&2; exit 1; }
 
 # ── Step 1: Store secrets ─────────────────────────────────────────────────────
 echo "Step 1/3: Storing secrets..."
 
 # Locate private key
 KEY_FILE="${APP_PRIVATE_KEY_FILE:-}"
-if [ -z "$KEY_FILE" ]; then
+if [[ -z "$KEY_FILE" ]]; then
   # Search common locations
   for candidate in \
     "$HOME/dependabot-automerge-petry.pem" \
     "$HOME/dependabot-google-app-scripts"*.pem \
     "$HOME/.ssh/dependabot-automerge-petry.pem"; do
-    if [ -f "$candidate" ]; then
+    if [[ -f "$candidate" ]]; then
       KEY_FILE="$candidate"
       break
     fi
   done
 fi
 
-if [ -z "$KEY_FILE" ] || [ ! -f "$KEY_FILE" ]; then
-  echo "Error: Private key file not found."
-  echo "Set APP_PRIVATE_KEY_FILE or place the .pem file in your home directory."
+if [[ -z "$KEY_FILE" || ! -f "$KEY_FILE" ]]; then
+  echo "Error: Private key file not found." >&2
+  echo "Set APP_PRIVATE_KEY_FILE or place the .pem file in your home directory." >&2
   exit 1
 fi
 
@@ -81,7 +81,7 @@ echo "Step 2/3: Updating ruleset bypass list..."
 
 RULESET_ID=$(gh api "repos/$REPO/rulesets" -q ".[] | select(.name == \"$RULESET_NAME\") | .id" 2>/dev/null || echo "")
 
-if [ -z "$RULESET_ID" ]; then
+if [[ -z "$RULESET_ID" ]]; then
   echo "  ⏭ No '$RULESET_NAME' ruleset found — skipping"
 else
   CURRENT=$(gh api "repos/$REPO/rulesets/$RULESET_ID")
@@ -102,7 +102,7 @@ else:
     print('ALREADY_PRESENT')
 ")
 
-  if [ "$UPDATED" = "ALREADY_PRESENT" ]; then
+  if [[ "$UPDATED" == "ALREADY_PRESENT" ]]; then
     echo "  ✓ App already in bypass list"
   else
     echo "$UPDATED" | gh api "repos/$REPO/rulesets/$RULESET_ID" --method PUT --input - >/dev/null
@@ -116,7 +116,7 @@ echo "Step 3/3: Checking workflow..."
 
 WORKFLOW_EXISTS=$(gh api "repos/$REPO/contents/.github/workflows/dependabot-automerge.yml" --jq '.name' 2>/dev/null || echo "")
 
-if [ -n "$WORKFLOW_EXISTS" ]; then
+if [[ -n "$WORKFLOW_EXISTS" ]]; then
   echo "  ✓ dependabot-automerge.yml already exists"
 else
   echo "  ⚠ dependabot-automerge.yml not found in $REPO"
