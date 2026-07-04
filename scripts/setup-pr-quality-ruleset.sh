@@ -21,12 +21,12 @@ set -euo pipefail
 RULESET_NAME="pr-quality"
 
 # Target repo: first arg, or detect from current directory
-if [ -n "${1:-}" ]; then
+if [[ -n "${1:-}" ]]; then
   REPO="$1"
 else
   REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)"
-  if [ -z "$REPO" ]; then
-    echo "Usage: $0 [owner/repo]"
+  if [[ -z "$REPO" ]]; then
+    echo "Usage: $0 [owner/repo]" >&2
     exit 1
   fi
 fi
@@ -37,13 +37,13 @@ echo "  Repo:    $REPO"
 echo ""
 
 # ── Preflight ─────────────────────────────────────────────────────────────────
-command -v gh >/dev/null || { echo "Error: gh CLI is required"; exit 1; }
-gh auth status >/dev/null 2>&1 || { echo "Error: gh not authenticated"; exit 1; }
+command -v gh >/dev/null || { echo "Error: gh CLI is required" >&2; exit 1; }
+gh auth status >/dev/null 2>&1 || { echo "Error: gh not authenticated" >&2; exit 1; }
 
 # ── Check if ruleset already exists ───────────────────────────────────────────
 EXISTING_ID=$(gh api "repos/$REPO/rulesets" -q ".[] | select(.name == \"$RULESET_NAME\") | .id" 2>/dev/null || echo "")
 
-if [ -n "$EXISTING_ID" ]; then
+if [[ -n "$EXISTING_ID" ]]; then
   echo "  ✓ '$RULESET_NAME' ruleset already exists (id: $EXISTING_ID) — nothing to do."
   echo ""
   echo "=== Done ==="
