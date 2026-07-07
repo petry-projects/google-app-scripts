@@ -1989,8 +1989,9 @@
           try {
             await apiFetch(`${APPS_SCRIPT_API}/projects/${storedId}`)
             return storedId
-          } catch {
-            // Project no longer exists — fall through to creation.
+          } catch (err) {
+            if (err.httpStatus !== 404) throw err
+            // 404: project no longer exists — fall through to creation.
           }
         }
 

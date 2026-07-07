@@ -1041,6 +1041,63 @@ test.describe('deploy index.html', () => {
     )
   })
 
+  test('handleDeploy propagates non-404 error from project verification and does not create a new project', async ({
+    page,
+  }) => {
+    await page.evaluate(() => {
+      localStorage.setItem(
+        'gas_copilot_deployed',
+        JSON.stringify({
+          'gmail-to-drive-by-labels\nPetry-Projects – Gmail to Drive By Labels':
+            'auth-error-script-id',
+        })
+      )
+    })
+
+    let projectCreated = false
+
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      await route.fulfill({ status: 200, body: '// code' })
+    })
+    await page.route('https://script.googleapis.com/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (method === 'GET' && url.includes('/projects/auth-error-script-id')) {
+        // Simulate a transient auth failure (not 404)
+        await route.fulfill({
+          status: 403,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            error: { message: 'The caller does not have permission' },
+          }),
+        })
+      } else if (method === 'POST' && url.endsWith('/projects')) {
+        projectCreated = true
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify({ scriptId: 'should-not-be-created' }),
+        })
+      } else if (method === 'PUT' && url.includes('/content')) {
+        await route.fulfill({ status: 200, body: '{}' })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await signIn(page)
+    await page
+      .locator('#script-list input[value="gmail-to-drive-by-labels"]')
+      .click()
+    await page.locator('#btn-deploy').click()
+    await page.waitForSelector('.status-error')
+
+    // A 403 during verification must surface as a failure, not silently fall through
+    expect(projectCreated).toBe(false)
+    await expect(page.locator('.status-error')).toContainText(
+      'Deployment failed'
+    )
+  })
+
   test('handleDeploy creates new project if stored project was deleted', async ({
     page,
   }) => {
