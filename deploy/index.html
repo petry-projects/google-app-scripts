@@ -1887,33 +1887,11 @@
             const files = await fetchScriptFiles(catalogId)
 
             // ── Idempotent project lookup / creation ────────────────────────
-            let projectId = null
-            const storedId = getStoredScriptId(catalogId, projectTitle)
-            if (storedId) {
-              showStatus(
-                'info',
-                `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Verifying existing project <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
-              )
-              try {
-                await apiFetch(`${APPS_SCRIPT_API}/projects/${storedId}`)
-                projectId = storedId
-              } catch {
-                // Project no longer exists — fall through to creation.
-              }
-            }
-
-            if (!projectId) {
-              showStatus(
-                'info',
-                `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Creating project <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
-              )
-              const project = await apiFetch(`${APPS_SCRIPT_API}/projects`, {
-                method: 'POST',
-                body: JSON.stringify({ title: projectTitle }),
-              })
-              projectId = validateScriptId(project.scriptId)
-              storeScriptId(catalogId, projectTitle, projectId)
-            }
+            const projectId = await resolveDeployProjectId(
+              catalogId,
+              projectTitle,
+              progress
+            )
 
             showStatus(
               'info',
@@ -1986,30 +1964,7 @@
           // Show Step 3 config cards
           renderConfigCards(deployedProjects)
         } catch (err) {
-          const isApiDisabled =
-            err.message && err.message.includes('Apps Script API')
-          const errorDetail = err.stack || err.message || String(err)
-          const errorDetailBlock =
-            `<details style="margin-top:6px;font-size:12px;">` +
-            `<summary style="cursor:pointer;color:#888;">Error detail</summary>` +
-            `<div class="error-detail">${escapeHtml(errorDetail)}</div>` +
-            `<button class="copy-btn" data-copy="${encodeURIComponent(errorDetail)}"` +
-            ` onclick="navigator.clipboard.writeText(decodeURIComponent(this.dataset.copy)).catch(()=>{})">` +
-            `📋 Copy error</button>` +
-            `</details>`
-          const errorHtml = isApiDisabled
-            ? '❌ Deployment failed: User has not enabled the Apps Script API.' +
-              '<a href="https://script.google.com/home/usersettings" target="_blank" rel="noopener"' +
-              ' style="display:block;margin-top:8px;">' +
-              '👉 Enable it at script.google.com/home/usersettings' +
-              '</a>' +
-              '<span style="font-size:12px;color:#888;display:block;margin-top:4px;">' +
-              'After enabling, wait a minute then try again.' +
-              '</span>' +
-              errorDetailBlock
-            : `❌ Deployment failed: ${escapeHtml(err.message)}` +
-              errorDetailBlock
-          showStatus('error', errorHtml)
+          showStatus('error', buildDeployErrorHtml(err))
         } finally {
           btn.disabled = false
           btn.innerHTML = 'Deploy to my account'
@@ -2018,6 +1973,74 @@
       }
 
       // ── Helpers ───────────────────────────────────────────────────────────────────
+
+      /**
+       * Resolves the Apps Script project id for a catalog entry idempotently:
+       * reuses a stored project when it still exists, otherwise creates a new one
+       * and remembers its id.
+       */
+      async function resolveDeployProjectId(catalogId, projectTitle, progress) {
+        const storedId = getStoredScriptId(catalogId, projectTitle)
+        if (storedId) {
+          showStatus(
+            'info',
+            `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Verifying existing project <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
+          )
+          try {
+            await apiFetch(`${APPS_SCRIPT_API}/projects/${storedId}`)
+            return storedId
+          } catch {
+            // Project no longer exists — fall through to creation.
+          }
+        }
+
+        showStatus(
+          'info',
+          `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Creating project <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
+        )
+        const project = await apiFetch(`${APPS_SCRIPT_API}/projects`, {
+          method: 'POST',
+          body: JSON.stringify({ title: projectTitle }),
+        })
+        const projectId = validateScriptId(project.scriptId)
+        storeScriptId(catalogId, projectTitle, projectId)
+        return projectId
+      }
+
+      /**
+       * Builds the status HTML shown when a deployment fails, with a special
+       * hint when the failure is a disabled Apps Script API, plus a collapsible
+       * error-detail block with a copy button.
+       */
+      function buildDeployErrorHtml(err) {
+        const isApiDisabled =
+          err.message && err.message.includes('Apps Script API')
+        const errorDetail = err.stack || err.message || String(err)
+        const errorDetailBlock =
+          `<details style="margin-top:6px;font-size:12px;">` +
+          `<summary style="cursor:pointer;color:#888;">Error detail</summary>` +
+          `<div class="error-detail">${escapeHtml(errorDetail)}</div>` +
+          `<button class="copy-btn" data-copy="${encodeURIComponent(errorDetail)}"` +
+          ` onclick="navigator.clipboard.writeText(decodeURIComponent(this.dataset.copy)).catch(()=>{})">` +
+          `📋 Copy error</button>` +
+          `</details>`
+        if (isApiDisabled) {
+          return (
+            '❌ Deployment failed: User has not enabled the Apps Script API.' +
+            '<a href="https://script.google.com/home/usersettings" target="_blank" rel="noopener"' +
+            ' style="display:block;margin-top:8px;">' +
+            '👉 Enable it at script.google.com/home/usersettings' +
+            '</a>' +
+            '<span style="font-size:12px;color:#888;display:block;margin-top:4px;">' +
+            'After enabling, wait a minute then try again.' +
+            '</span>' +
+            errorDetailBlock
+          )
+        }
+        return (
+          `❌ Deployment failed: ${escapeHtml(err.message)}` + errorDetailBlock
+        )
+      }
 
       /**
        * Fetches the code.gs and config.gs source files for `scriptId` from GitHub.
