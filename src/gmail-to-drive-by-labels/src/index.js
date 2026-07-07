@@ -762,9 +762,9 @@ function moveEmailsPhase(state, labels, properties, stateKey, limits) {
   const threads = processedLabel.getThreads()
   console.log('[rebuildDoc] Found', threads.length, 'threads to move')
 
-  // Process in batches, always from index 0 since we're removing items
+  // Process in batches
   let batchCount = 0
-  while (batchCount < BATCH_SIZE && threads.length > 0) {
+  while (batchCount < BATCH_SIZE && batchCount < threads.length) {
     // Check if we're running out of time
     const elapsed = new Date().getTime() - startTime
     if (elapsed > MAX_EXECUTION_TIME) {
@@ -774,21 +774,17 @@ function moveEmailsPhase(state, labels, properties, stateKey, limits) {
       return false // Not complete, run again
     }
 
-    // Always process index 0 since removing items shrinks the array
-    const thread = threads[0]
+    const thread = threads[batchCount]
     processedLabel.removeFromThread(thread)
     triggerLabel.addToThread(thread)
     batchCount++
-
-    // Refresh threads array
-    threads.splice(0, 1)
   }
 
   console.log('[rebuildDoc] Moved', batchCount, 'threads in this batch')
   state.processedCount += batchCount
 
   // Check if we're done
-  if (processedLabel.getThreads().length === 0) {
+  if (batchCount === threads.length) {
     console.log('[rebuildDoc] All threads moved')
     state.phase = 'complete'
     properties.setProperty(stateKey, JSON.stringify(state))
@@ -798,7 +794,7 @@ function moveEmailsPhase(state, labels, properties, stateKey, limits) {
   // Still more threads to process
   console.log(
     '[rebuildDoc] Still',
-    processedLabel.getThreads().length,
+    threads.length - batchCount,
     'threads remaining'
   )
   properties.setProperty(stateKey, JSON.stringify(state))

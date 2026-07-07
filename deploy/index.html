@@ -2013,9 +2013,9 @@
        * error-detail block with a copy button.
        */
       function buildDeployErrorHtml(err) {
-        const isApiDisabled =
-          err.message && err.message.includes('Apps Script API')
-        const errorDetail = err.stack || err.message || String(err)
+        const errMsg = err && err.message ? err.message : String(err || '')
+        const isApiDisabled = errMsg.includes('Apps Script API')
+        const errorDetail = (err && err.stack) || errMsg
         const errorDetailBlock =
           `<details style="margin-top:6px;font-size:12px;">` +
           `<summary style="cursor:pointer;color:#888;">Error detail</summary>` +
@@ -2037,9 +2037,7 @@
             errorDetailBlock
           )
         }
-        return (
-          `❌ Deployment failed: ${escapeHtml(err.message)}` + errorDetailBlock
-        )
+        return `❌ Deployment failed: ${escapeHtml(errMsg)}` + errorDetailBlock
       }
 
       /**
