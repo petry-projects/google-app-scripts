@@ -218,7 +218,7 @@ test.describe('gas-installer Index.html', () => {
       const bg = cs.backgroundColor
       el.remove()
 
-      const channels = (s) => s.match(/\d+(\.\d+)?/g).map(Number)
+      const channels = (s) => (s.match(/\d+(\.\d+)?/g) || []).map(Number)
       const luminance = ([r, g, b]) => {
         const lin = [r, g, b].map((v) => {
           v /= 255
