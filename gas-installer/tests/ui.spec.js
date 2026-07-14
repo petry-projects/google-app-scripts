@@ -11,7 +11,7 @@
  */
 
 const { test, expect } = require('@playwright/test')
-const path = require('path')
+const path = require('node:path')
 
 const PAGE_URL = `file://${path.resolve(__dirname, '..', 'Index.html')}`
 
