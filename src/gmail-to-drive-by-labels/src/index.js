@@ -698,7 +698,7 @@ function rebuildDoc(config, services) {
   const triggerLabelName = config.triggerLabel
   const processedLabelName = config.processedLabel
   const stateKey =
-    'rebuild_state_' + triggerLabelName.replaceAll(/[^a-zA-Z0-9]/g, '_')
+    'rebuild_state_' + triggerLabelName.replace(/[^a-zA-Z0-9]/g, '_')
 
   // 1. Validate and get labels
   console.log('[rebuildDoc] Looking up labels')
