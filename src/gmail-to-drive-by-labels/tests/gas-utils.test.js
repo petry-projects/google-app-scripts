@@ -22,6 +22,24 @@ describe('getCleanBody', () => {
     expect(getCleanBody(input)).toBe('Message body')
   })
 
+  test('cuts off at Outlook From: ... Sent: header', () => {
+    const input =
+      'Hello from Outlook\nFrom: John Doe Sent: Mon, Jul 14, 2026 10:00 AM\nTo: Jane Smith\nQuoted content'
+    expect(getCleanBody(input)).toBe('Hello from Outlook')
+  })
+
+  test('cuts off at generic From: Name <email@domain> header', () => {
+    const input =
+      'Original message\nFrom: Jane Smith <jane@example.com>\nSubject: Re: Test\nQuoted content'
+    expect(getCleanBody(input)).toBe('Original message')
+  })
+
+  test('cuts off at earliest matching header when multiple patterns present', () => {
+    const input =
+      'Line1\nFrom: John Doe <john@example.com>\nOn Jan 1, 2020, John Doe <john@example.com> wrote:\nMore quoted'
+    expect(getCleanBody(input)).toBe('Line1')
+  })
+
   test('handles match at start of text (lineStart = 0)', () => {
     const input =
       'On Jan 1, 2020, John Doe <john@example.com> wrote:\nQuoted content here'
