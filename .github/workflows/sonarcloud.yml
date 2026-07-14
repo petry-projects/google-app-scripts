@@ -15,8 +15,6 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-    env:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -30,5 +28,7 @@ jobs:
       - name: Generate test coverage
         run: npm test -- --coverage
       - name: SonarCloud Scan
-        if: ${{ env.SONAR_TOKEN != '' }}
+        if: ${{ secrets.SONAR_TOKEN != '' }}
         uses: SonarSource/sonarqube-scan-action@713881670b6b3676cda39549040e2d88c70d582e # v8.2.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
