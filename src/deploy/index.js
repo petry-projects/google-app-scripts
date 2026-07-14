@@ -97,10 +97,10 @@ function buildProjectContent(files) {
   }
   for (const f of files) {
     if (!f || typeof f.name !== 'string' || !f.name) {
-      throw new Error('Each file must have a non-empty string name')
+      throw new TypeError('Each file must have a non-empty string name')
     }
     if (typeof f.source !== 'string') {
-      throw new Error('Each file must have a string source')
+      throw new TypeError('Each file must have a string source')
     }
   }
   return {
@@ -124,7 +124,7 @@ function buildProjectContent(files) {
  */
 async function createProject(fetchFn, accessToken, title) {
   if (typeof fetchFn !== 'function')
-    throw new Error('fetchFn must be a function')
+    throw new TypeError('fetchFn must be a function')
   if (!accessToken) throw new Error('accessToken is required')
   if (!title) throw new Error('title is required')
 
@@ -159,7 +159,7 @@ async function createProject(fetchFn, accessToken, title) {
  */
 async function updateProjectContent(fetchFn, accessToken, scriptId, content) {
   if (typeof fetchFn !== 'function')
-    throw new Error('fetchFn must be a function')
+    throw new TypeError('fetchFn must be a function')
   if (!accessToken) throw new Error('accessToken is required')
   if (!scriptId) throw new Error('scriptId is required')
   if (!content || !Array.isArray(content.files)) {
@@ -227,7 +227,7 @@ const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1'
  */
 async function createGmailLabel(fetchFn, accessToken, labelName) {
   if (typeof fetchFn !== 'function')
-    throw new Error('fetchFn must be a function')
+    throw new TypeError('fetchFn must be a function')
   if (!accessToken) throw new Error('accessToken is required')
   if (!labelName) throw new Error('labelName is required')
 

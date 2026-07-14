@@ -12,7 +12,7 @@
  */
 
 const { test, expect } = require('@playwright/test')
-const path = require('path')
+const path = require('node:path')
 
 const PAGE_URL = `file://${path.resolve(__dirname, '..', 'index.html')}`
 
@@ -273,8 +273,9 @@ test.describe('deploy index.html', () => {
     page,
   }) => {
     await signIn(page)
-    // Default mock returns empty files array
-    await page.waitForTimeout(500)
+    // Default mock returns empty files array; wait for sign-in to settle by
+    // observing Step 2 render, then assert Step 3 never appears.
+    await expect(page.locator('#step2-card')).toBeVisible()
     await expect(page.locator('#step3-card')).toBeHidden()
   })
 

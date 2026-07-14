@@ -169,7 +169,7 @@ describe('storeEmailsAndAttachments', () => {
     const originalDate = Date
     let callCount = 0
     global.Date = class extends originalDate {
-      getTime() {
+      static now() {
         callCount++
         if (callCount > 50) {
           return 5 * 60 * 1000 // 5 minutes - exceeds threshold

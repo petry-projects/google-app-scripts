@@ -1,4 +1,4 @@
-const crypto = require('crypto')
+const crypto = require('node:crypto')
 
 /**
  * getCleanBody - logic ported from GAS for local testing
@@ -7,10 +7,10 @@ function getCleanBody(text) {
   if (!text) return ''
 
   const headerPatterns = [
-    /^\s*On\s+.+\s+wrote:/m,
-    /^\s*From:\s+.+\s+Sent:\s+/m,
+    /^\s*On\s+\S.*\swrote:/m,
+    /^\s*From:\s+\S.*\sSent:\s+/m,
     /^\s*_{10,}/m,
-    /^\s*From:\s+.+<.+@.+>/m,
+    /^\s*From:\s+\S[^<\r\n]*<[^@\r\n]+@[^>\r\n]+>/m,
     /confidentiality notice/im,
   ]
 
@@ -19,10 +19,8 @@ function getCleanBody(text) {
     const match = text.match(pattern)
     if (match) {
       // Prefer splitting at the start of the line containing the match
-      const lineStart =
-        text.lastIndexOf('\n', match.index) === -1
-          ? 0
-          : text.lastIndexOf('\n', match.index) + 1
+      const nlIndex = text.lastIndexOf('\n', match.index)
+      const lineStart = nlIndex === -1 ? 0 : nlIndex + 1
       if (splitIndex === -1 || lineStart < splitIndex) {
         splitIndex = lineStart
       }
@@ -39,7 +37,7 @@ function getCleanBody(text) {
   // Join lines and normalize line breaks: replace 2+ consecutive line breaks with 1
   // This prevents excessive blank lines in Google Docs where each \n creates a paragraph break
   let result = cleanLines.join('\n').trim()
-  result = result.replace(/\n{2,}/g, '\n')
+  result = result.replaceAll(/\n{2,}/g, '\n')
 
   return result
 }
@@ -53,7 +51,7 @@ function getFileHash(blob) {
     bytes = blob
   } else if (blob && typeof blob.getBytes === 'function') {
     bytes = Buffer.from(blob.getBytes())
-  } else if (blob && blob.bytes) {
+  } else if (blob?.bytes) {
     bytes = Buffer.from(blob.bytes)
   } else {
     throw new Error('Unsupported blob type')

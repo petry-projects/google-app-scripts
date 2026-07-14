@@ -651,7 +651,6 @@
         } catch {
           // best-effort; ignore storage errors
         }
-        const safeId = escapeHtml(scriptId)
         const section = document.getElementById('setup-section-' + scriptId)
         if (section) {
           section.innerHTML = `<div style="font-size:12px;color:#137333;">⏱ Trigger previously activated.</div>`
@@ -667,7 +666,7 @@
        * to activate the hourly trigger.
        */
       function buildSetupSource(triggerFn) {
-        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(triggerFn)) {
+        if (!/^[a-zA-Z_]\w*$/.test(triggerFn)) {
           throw new Error(
             'Invalid trigger function name: ' + JSON.stringify(triggerFn)
           )
@@ -718,7 +717,7 @@
           )
           const anyNeedsUpdate = checked.some((el) => {
             const v = scriptVersions.get(el.value)
-            return v && v.needsUpdate
+            return v?.needsUpdate
           })
           if (anyNeedsUpdate) {
             btn.textContent = 'Update & Deploy to my account'
@@ -1565,11 +1564,11 @@
             fields.email ? [fields.email] : []
           )
           const subject = JSON.stringify(fields.subject || 'Weekly Briefing')
-          const lookahead = parseInt(fields.lookaheadDays, 10) || 7
+          const lookahead = Number.parseInt(fields.lookaheadDays, 10) || 7
           const freq = JSON.stringify(fields.frequency || 'weekly')
           const day = JSON.stringify(fields.triggerDay || 'MONDAY')
-          const hour = parseInt(fields.triggerHour, 10) || 7
-          const interval = parseInt(fields.triggerInterval, 10) || 1
+          const hour = Number.parseInt(fields.triggerHour, 10) || 7
+          const interval = Number.parseInt(fields.triggerInterval, 10) || 1
           let scheduleLines =
             '    scheduleFrequency: ' +
             freq +
@@ -1674,12 +1673,12 @@
       }
 
       function escapeHtml(str) {
-        return String(str == null ? '' : str)
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#39;')
+        return String(str ?? '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;')
       }
 
       /**
@@ -1688,7 +1687,7 @@
        * looks tampered-with so it can never be injected into HTML or URLs.
        */
       function validateScriptId(id) {
-        if (typeof id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(id)) {
+        if (typeof id !== 'string' || !/^[\w-]+$/.test(id)) {
           throw new Error(`Invalid script ID: ${String(id).slice(0, 64)}`)
         }
         return id
@@ -1977,7 +1976,11 @@
 
           showStatus(
             'ok',
-            `✅ <strong>${deployedProjects.length === 1 ? 'Script deployed!' : `${deployedProjects.length} scripts deployed!`}</strong>` +
+            `✅ <strong>${
+              deployedProjects.length === 1
+                ? 'Script deployed!'
+                : deployedProjects.length + ' scripts deployed!'
+            }</strong>` +
               `<span style="font-size:13px;color:#137333;display:block;margin-top:4px;">` +
               `Now configure each script below, then activate the trigger.</span>` +
               projectLinksHtml
@@ -1986,8 +1989,7 @@
           // Show Step 3 config cards
           renderConfigCards(deployedProjects)
         } catch (err) {
-          const isApiDisabled =
-            err.message && err.message.includes('Apps Script API')
+          const isApiDisabled = err.message?.includes('Apps Script API')
           const errorDetail = err.stack || err.message || String(err)
           const errorDetailBlock =
             `<details style="margin-top:6px;font-size:12px;">` +
@@ -2056,7 +2058,7 @@
           let detail = body
           try {
             const json = JSON.parse(body)
-            if (json.error && json.error.message) {
+            if (json.error?.message) {
               message = json.error.message
               detail = json.error.details
                 ? `${json.error.message} — ${JSON.stringify(json.error.details)}`

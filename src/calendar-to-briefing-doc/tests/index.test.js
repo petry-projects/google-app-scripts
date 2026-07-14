@@ -120,16 +120,12 @@ describe('groupEventsByDay', () => {
 // ── formatDayLabel ────────────────────────────────────────────────────────────
 
 describe('formatDayLabel', () => {
-  it('formats a Monday correctly', () => {
-    expect(formatDayLabel('2025-01-13')).toBe('Monday, January 13')
-  })
-
-  it('formats a Saturday in December correctly', () => {
-    expect(formatDayLabel('2025-12-27')).toBe('Saturday, December 27')
-  })
-
-  it('formats a Sunday in February correctly', () => {
-    expect(formatDayLabel('2025-02-02')).toBe('Sunday, February 2')
+  it.each([
+    ['a Monday', '2025-01-13', 'Monday, January 13'],
+    ['a Saturday in December', '2025-12-27', 'Saturday, December 27'],
+    ['a Sunday in February', '2025-02-02', 'Sunday, February 2'],
+  ])('formats %s correctly', (_desc, input, expected) => {
+    expect(formatDayLabel(input)).toBe(expected)
   })
 })
 
