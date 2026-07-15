@@ -138,10 +138,12 @@ function insertSeparator(body, index, threadId, useThreadSeparator) {
 function isDuplicateAttachment(folder, fileName, newFileBlob, hashFn) {
   const existingFiles = folder.getFilesByName(fileName)
   const newFileBytes = getBlobBytes(newFileBlob)
+  let newFileHash = null
   while (existingFiles.hasNext()) {
     const existingFile = existingFiles.next()
     if (existingFile.getSize() !== newFileBytes.length) continue
-    if (hashFn(existingFile.getBlob()) === hashFn(newFileBlob)) return true
+    if (newFileHash === null) newFileHash = hashFn(newFileBlob)
+    if (hashFn(existingFile.getBlob()) === newFileHash) return true
   }
   return false
 }

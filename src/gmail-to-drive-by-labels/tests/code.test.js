@@ -467,6 +467,70 @@ describe('processLabelGroup', () => {
     expect(skipMentioned).toBe(true)
   })
 
+  test('caches new blob hash — hashFn called at most once on incoming blob even with multiple size-matching existing files', () => {
+    global.GmailApp.createLabel('test-trigger')
+    global.GmailApp.createLabel('test-archived')
+
+    const folder = global.DriveApp.getFolderById('test-folder')
+
+    // Three existing files: same name, same size (15 bytes each), different content
+    folder.createFile(createBlob('existing_file_1', 'attach.txt'))
+    folder.createFile(createBlob('existing_file_2', 'attach.txt'))
+    folder.createFile(createBlob('existing_file_3', 'attach.txt'))
+
+    // Incoming attachment: same name and size, different content — not a duplicate.
+    // No copyBlob so processAttachment uses this object directly, enabling identity
+    // tracking in the spy below.
+    const newBlob = {
+      getBytes: () => Buffer.from('new_content_xyz'),
+      getName: () => 'attach.txt',
+      bytes: Buffer.from('new_content_xyz'),
+    }
+
+    const msg = createMessage({
+      subject: 'Hash cache test',
+      body: 'Body',
+      attachments: [newBlob],
+    })
+    global.GmailApp.__addThreadWithLabels(['test-trigger'], [msg])
+
+    let newBlobHashCalls = 0
+    const spyHashFn = (blob) => {
+      if (blob === newBlob) newBlobHashCalls++
+      const bytes = blob.getBytes ? blob.getBytes() : Buffer.from('')
+      return Buffer.from(bytes).toString('hex')
+    }
+
+    processLabelGroupCore(
+      {
+        triggerLabel: 'test-trigger',
+        processedLabel: 'test-archived',
+        docId: 'test-doc',
+        folderId: 'test-folder',
+      },
+      {
+        GmailApp: global.GmailApp,
+        DocumentApp: global.DocumentApp,
+        DriveApp: global.DriveApp,
+        Logger: global.Logger,
+        Utilities: global.Utilities,
+        Session: global.Session,
+      },
+      {
+        getCleanBody,
+        getFileHash: spyHashFn,
+        removeExistingThreadFromDoc: (body, threadId) =>
+          removeExistingThread(body, threadId),
+      }
+    )
+
+    // New blob hash must be computed exactly once regardless of how many
+    // size-matching existing files are in the folder
+    expect(newBlobHashCalls).toBe(1)
+    // Attachment was not a duplicate — it should be saved (4 files total)
+    expect(folder.__getFiles()).toHaveLength(4)
+  })
+
   test('detects different content with same size', () => {
     // Setup
     global.GmailApp.createLabel('test-trigger')
