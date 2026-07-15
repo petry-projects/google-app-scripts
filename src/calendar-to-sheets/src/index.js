@@ -8,7 +8,7 @@
 function sanitizeValue(val) {
   // Prevent formula injection by prefixing formula metacharacters with '
   // Also catches leading whitespace/control chars followed by formula chars
-  if (typeof val === 'string' && /^[\x00-\x20]*[=+\-@]/.test(val)) {
+  if (typeof val === 'string' && /^[\x00-\x20]*[=+@-]/.test(val)) {
     return "'" + val
   }
   return val
@@ -213,7 +213,7 @@ async function syncCalendarToSheet(
   }
   // delete from bottom to top
   console.log('[syncCalendarToSheet] Deleting rows:', toDelete.length)
-  toDelete.sort((a, b) => b - a).forEach((r) => sheet.deleteRow(r))
+  toDelete.toSorted((a, b) => b - a).forEach((r) => sheet.deleteRow(r))
   console.log('[syncCalendarToSheet] Sync complete')
 }
 

@@ -213,7 +213,7 @@ function formatBriefing(title, groupedEvents, formatTime) {
     sections.push(dayLabel)
 
     // Detect if items are tuples or plain events
-    const isTuple = items.length > 0 && items[0] && items[0].event
+    const isTuple = items.length > 0 && items[0]?.event
     const tuples = isTuple
       ? items
       : items.map((e) => ({ event: e, calendarName: null }))
@@ -266,7 +266,7 @@ function emailBriefing(gmailApp, recipients, subject, body) {
  */
 function shouldRunNow(config, now, lastRunMs) {
   const hour = now.getHours()
-  const scheduleHour = config.scheduleHour != null ? config.scheduleHour : 7
+  const scheduleHour = config.scheduleHour ?? 7
 
   if (hour !== scheduleHour) return false
 
