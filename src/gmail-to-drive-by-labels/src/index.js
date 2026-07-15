@@ -72,174 +72,201 @@ function removeExistingThread(body, threadId) {
 }
 
 /**
- * Process a single message and prepend its content to the document body.
- * Returns the number of paragraphs inserted.
+ * Read a blob's raw bytes, tolerating both GAS blobs (getBytes) and test mocks
+ * (bytes property), falling back to an empty buffer.
+ *
+ * @param {Object} blob - Blob-like object
+ * @returns {Array|Buffer} Byte array
+ */
+function getBlobBytes(blob) {
+  if (blob.getBytes) return blob.getBytes()
+  return blob.bytes || Buffer.from('')
+}
+
+/**
+ * Insert the subject heading paragraph, applying HEADING_3 style (or a bold
+ * fallback) when a DocumentApp service is available.
+ *
+ * @param {Object} body - Document body object
+ * @param {number} index - Insertion index
+ * @param {string} subject - Message subject
+ * @param {Object} [DocumentApp] - GAS DocumentApp service (optional)
+ */
+function insertHeading(body, index, subject, DocumentApp) {
+  const subjectText = 'Subject: ' + (subject ? subject : '(No Subject)')
+  const headingPara = body.insertParagraph(index, subjectText)
+  if (!DocumentApp) return
+  try {
+    headingPara.setHeading(DocumentApp.ParagraphHeading.HEADING_3)
+  } catch {
+    const style = {}
+    style[DocumentApp.Attribute.BOLD] = true
+    headingPara.setAttributes(style)
+  }
+}
+
+/**
+ * Insert a thread separator (embedding the thread ID) when requested, otherwise
+ * a plain separator.
+ *
+ * @param {Object} body - Document body object
+ * @param {number} index - Insertion index
+ * @param {string} threadId - Thread ID
+ * @param {boolean} useThreadSeparator - Whether to embed the thread ID
+ */
+function insertSeparator(body, index, threadId, useThreadSeparator) {
+  if (threadId && useThreadSeparator) {
+    body.insertParagraph(
+      index,
+      `------------------------------[THREAD:${threadId}]`
+    )
+  } else {
+    body.insertParagraph(index, '------------------------------')
+  }
+}
+
+/**
+ * Determine whether an attachment blob already exists in the folder by comparing
+ * size then MD5 hash against every existing file sharing its name.
+ *
+ * @param {Object} folder - Drive folder object
+ * @param {string} fileName - Attachment name
+ * @param {Object} newFileBlob - Blob for the incoming attachment
+ * @param {Function} hashFn - Function that hashes a blob
+ * @returns {boolean} True if an identical file already exists
+ */
+function isDuplicateAttachment(folder, fileName, newFileBlob, hashFn) {
+  const existingFiles = folder.getFilesByName(fileName)
+  const newFileBytes = getBlobBytes(newFileBlob)
+  while (existingFiles.hasNext()) {
+    const existingFile = existingFiles.next()
+    if (existingFile.getSize() !== newFileBytes.length) continue
+    if (hashFn(existingFile.getBlob()) === hashFn(newFileBlob)) return true
+  }
+  return false
+}
+
+/**
+ * When a same-named (but different-content) file already exists, derive a
+ * timestamp-suffixed name and apply it to the blob.
+ *
+ * @param {Object} folder - Drive folder object
+ * @param {string} fileName - Original attachment name
+ * @param {Object} newFileBlob - Blob to rename in place
+ * @param {Object} options - May carry Utilities and Session GAS services
+ * @returns {string} The resolved (possibly renamed) file name
+ */
+function resolveDuplicateName(folder, fileName, newFileBlob, options) {
+  if (!folder.getFilesByName(fileName).hasNext()) return fileName
+  const { Utilities, Session } = options
+  const timeTag =
+    Utilities && Session
+      ? Utilities.formatDate(new Date(), Session.getScriptTimeZone(), '_HHmmss')
+      : '_' + Date.now()
+  let newName = fileName.replace(/(\.[\w\d_-]+)$/i, timeTag + '$1')
+  if (newName === fileName) newName += timeTag
+  if (newFileBlob.setName) newFileBlob.setName(newName)
+  return newName
+}
+
+/**
+ * Process a single attachment: skip exact duplicates, otherwise save it
+ * (renaming on name conflicts) and record the result in the doc body.
+ *
+ * @param {Object} att - Gmail attachment object
+ * @param {Object} body - Document body object
+ * @param {number} startIndex - Index at which to insert paragraphs
+ * @param {Object} folder - Drive folder object
+ * @param {Object} options - Optional GAS services (Logger, Utilities, Session)
+ * @param {Function} hashFn - Function that hashes a blob
+ * @returns {number} Number of paragraphs inserted
+ */
+function processAttachment(att, body, startIndex, folder, options, hashFn) {
+  const { Logger } = options
+  const fileName = att.getName()
+  // In GAS environment, copyBlob() creates a copy; in tests, att itself is the blob.
+  const newFileBlob = att.copyBlob ? att.copyBlob() : att
+
+  if (isDuplicateAttachment(folder, fileName, newFileBlob, hashFn)) {
+    if (Logger) Logger.log('Skipping exact duplicate: ' + fileName)
+    body.insertParagraph(startIndex, '- [DUPLICATE SKIPPED] ' + fileName)
+    return 1
+  }
+
+  resolveDuplicateName(folder, fileName, newFileBlob, options)
+  const file = folder.createFile(newFileBlob)
+  body.insertParagraph(startIndex, '- ' + file.getName())
+  return 1
+}
+
+/**
+ * Prepend a single message's content (subject, date, body, attachments,
+ * separator) into the document body starting at index 0.
  *
  * @param {Object} message - Gmail message object
  * @param {Object} body - Document body object
  * @param {Object} folder - Drive folder object
- * @param {Object} options - Optional settings (DocumentApp, Utilities, Logger, Session for GAS)
+ * @param {Object} options - Optional settings and GAS services. Recognised keys:
+ *   DocumentApp, Utilities, Logger, Session, threadId, useThreadSeparator,
+ *   getCleanBody (injected content cleaner).
+ * @param {Function} hashFn - Function that hashes a blob (for dedup)
  * @returns {number} Number of paragraphs inserted
  */
-function processMessageToDoc(message, body, folder, options = {}) {
-  const { DocumentApp, Utilities, Logger, Session } = options
+function insertMessageContent(message, body, folder, options, hashFn) {
+  const { DocumentApp, Utilities, Logger, threadId, useThreadSeparator } =
+    options
+  const cleanBody = options.getCleanBody || getCleanBody
 
   const subject = message.getSubject()
-  const rawContent = message.getPlainBody()
-  const cleanContent = getCleanBody(rawContent)
+  const cleanContent = cleanBody(message.getPlainBody())
   const timestamp = message.getDate()
 
-  if (Logger) {
-    Logger.log('Processing: ' + subject)
-  }
-  console.log('[processMessageToDoc] Processing message:', subject)
+  if (Logger) Logger.log('Processing: ' + subject)
 
   let currentIndex = 0
-
-  // Insert subject
-  const subjectText = 'Subject: ' + (subject ? subject : '(No Subject)')
-  const headingPara = body.insertParagraph(currentIndex++, subjectText)
-
-  // Try to set heading style (GAS only)
-  if (DocumentApp) {
-    try {
-      headingPara.setHeading(DocumentApp.ParagraphHeading.HEADING_3)
-    } catch (e) {
-      const style = {}
-      style[DocumentApp.Attribute.BOLD] = true
-      headingPara.setAttributes(style)
-    }
-  }
-
-  // Insert date and content
+  insertHeading(body, currentIndex++, subject, DocumentApp)
   body.insertParagraph(currentIndex++, 'Date: ' + timestamp)
   body.insertParagraph(currentIndex++, cleanContent)
 
-  // Process attachments
   const attachments = message.getAttachments()
-  console.log('[processMessageToDoc] Found', attachments.length, 'attachments')
-
   if (attachments.length > 0) {
     body.insertParagraph(currentIndex++, '[Attachments]:')
-
-    attachments.forEach((att, attIndex) => {
-      console.log(
-        '[processMessageToDoc] Processing attachment',
-        attIndex + 1,
-        'of',
-        attachments.length,
-        ':',
-        att.getName()
+    attachments.forEach((att) => {
+      currentIndex += processAttachment(
+        att,
+        body,
+        currentIndex,
+        folder,
+        options,
+        hashFn
       )
-
-      let fileName = att.getName()
-      // In GAS environment, copyBlob() creates a copy; in test environment, att itself is the blob
-      const newFileBlob = att.copyBlob ? att.copyBlob() : att
-      let isDuplicate = false
-
-      // Check for duplicates by content hash
-      const existingFiles = folder.getFilesByName(fileName)
-      console.log(
-        '[processMessageToDoc] Checking for existing files named:',
-        fileName
-      )
-
-      let existingCount = 0
-      while (existingFiles.hasNext()) {
-        existingCount++
-        const existingFile = existingFiles.next()
-        console.log(
-          '[processMessageToDoc] Comparing with existing file',
-          existingCount
-        )
-
-        // Compare sizes first (fast fail)
-        // Try getBytes() for GAS blobs, bytes property for test mocks, empty buffer as fallback
-        const newFileBytes = newFileBlob.getBytes
-          ? newFileBlob.getBytes()
-          : newFileBlob.bytes || Buffer.from('')
-        if (existingFile.getSize() === newFileBytes.length) {
-          console.log('[processMessageToDoc] Size match, checking hash')
-
-          // Deep check: compare MD5 hashes
-          const existingHash = getFileHash(existingFile.getBlob())
-          const newHash = getFileHash(newFileBlob)
-
-          if (existingHash === newHash) {
-            console.log('[processMessageToDoc] Hash match - duplicate detected')
-            isDuplicate = true
-            break
-          } else {
-            console.log(
-              '[processMessageToDoc] Hash mismatch - different content'
-            )
-          }
-        } else {
-          console.log('[processMessageToDoc] Size mismatch - different file')
-        }
-      }
-
-      if (isDuplicate) {
-        if (Logger) {
-          Logger.log('Skipping exact duplicate: ' + fileName)
-        }
-        console.log('[processMessageToDoc] Skipping duplicate:', fileName)
-        body.insertParagraph(
-          currentIndex++,
-          '- [DUPLICATE SKIPPED] ' + fileName
-        )
-      } else {
-        // Handle name conflicts (same name, different content)
-        if (folder.getFilesByName(fileName).hasNext()) {
-          console.log(
-            '[processMessageToDoc] Name conflict detected, adding timestamp'
-          )
-
-          if (Utilities && Session) {
-            const timeTag = Utilities.formatDate(
-              new Date(),
-              Session.getScriptTimeZone(),
-              '_HHmmss'
-            )
-            const newName = fileName.replace(/(\.[\w\d_-]+)$/i, timeTag + '$1')
-            fileName = newName === fileName ? fileName + timeTag : newName
-          } else {
-            // Test environment - simple timestamp
-            const timeTag = '_' + Date.now()
-            const newName = fileName.replace(/(\.[\w\d_-]+)$/i, timeTag + '$1')
-            fileName = newName === fileName ? fileName + timeTag : newName
-          }
-
-          if (newFileBlob.setName) {
-            newFileBlob.setName(fileName)
-          }
-          console.log('[processMessageToDoc] Renamed to:', fileName)
-        }
-
-        console.log('[processMessageToDoc] Saving new file:', fileName)
-        const file = folder.createFile(newFileBlob)
-        body.insertParagraph(currentIndex++, '- ' + file.getName())
-        console.log('[processMessageToDoc] File saved successfully')
-      }
     })
   }
 
-  // Insert separator - use thread separator for bottom message (oldest, first in sorted array) if threadId provided
-  const { threadId, isBottomMessage } = options
-  if (threadId && isBottomMessage) {
-    const separator = `------------------------------[THREAD:${threadId}]`
-    body.insertParagraph(currentIndex++, separator)
-    console.log('[processMessageToDoc] Added thread separator:', threadId)
-  } else {
-    body.insertParagraph(currentIndex++, '------------------------------')
-  }
+  insertSeparator(body, currentIndex++, threadId, useThreadSeparator)
 
-  // Pause in GAS environment to prevent crashes
-  if (Utilities) {
-    Utilities.sleep(500)
-  }
+  if (Utilities) Utilities.sleep(500)
 
   return currentIndex
+}
+
+/**
+ * Process a single message and prepend its content to the document body.
+ *
+ * @param {Object} message - Gmail message object
+ * @param {Object} body - Document body object
+ * @param {Object} folder - Drive folder object
+ * @param {Object} options - Optional settings (DocumentApp, Utilities, Logger, Session, threadId, isBottomMessage)
+ * @returns {number} Number of paragraphs inserted
+ */
+function processMessageToDoc(message, body, folder, options = {}) {
+  return insertMessageContent(
+    message,
+    body,
+    folder,
+    { ...options, useThreadSeparator: options.isBottomMessage },
+    getFileHash
+  )
 }
 
 /**
@@ -352,289 +379,141 @@ function storeEmailsAndAttachments(configs, processLabelGroupFn) {
  * @param {Object} services - GAS services object with GmailApp, DocumentApp, DriveApp, Logger, Utilities, Session
  * @param {Object} helperFns - Helper functions object with getCleanBody, getFileHash, removeExistingThreadFromDoc
  */
+/**
+ * Look up the trigger label and processed label, creating the processed label
+ * if it does not exist.
+ *
+ * @param {Object} GmailApp - GAS GmailApp service
+ * @param {Object} config - Configuration with triggerLabel and processedLabel
+ * @param {Object} Logger - GAS Logger service
+ * @returns {{triggerLabel: Object, processedLabel: Object}} Resolved labels
+ */
+function resolveLabels(GmailApp, config, Logger) {
+  const triggerLabel = GmailApp.getUserLabelByName(config.triggerLabel)
+  let processedLabel = GmailApp.getUserLabelByName(config.processedLabel)
+
+  if (!processedLabel) {
+    try {
+      processedLabel = GmailApp.createLabel(config.processedLabel)
+    } catch {
+      Logger.log('Could not create label: ' + config.processedLabel)
+    }
+  }
+
+  if (!triggerLabel) {
+    Logger.log('Trigger label not found: ' + config.triggerLabel)
+  }
+
+  return { triggerLabel, processedLabel }
+}
+
+/**
+ * Open the destination document body and Drive folder for a config.
+ *
+ * @param {Object} DocumentApp - GAS DocumentApp service
+ * @param {Object} DriveApp - GAS DriveApp service
+ * @param {Object} config - Configuration with docId and folderId
+ * @param {Object} Logger - GAS Logger service
+ * @returns {{body: Object, folder: Object}|null} Doc body and folder, or null on error
+ */
+function openDocAndFolder(DocumentApp, DriveApp, config, Logger) {
+  try {
+    const doc = DocumentApp.openById(config.docId)
+    return {
+      body: doc.getBody(),
+      folder: DriveApp.getFolderById(config.folderId),
+    }
+  } catch (e) {
+    Logger.log(
+      'Error opening Doc or Folder. Check IDs in Config.gs. Error: ' + e.message
+    )
+    return null
+  }
+}
+
+/**
+ * Process every message in a thread (oldest first) and update the thread's
+ * labels once complete.
+ *
+ * @param {Object} thread - Gmail thread object
+ * @param {Object} body - Document body object
+ * @param {Object} folder - Drive folder object
+ * @param {Object} ctx - Context: triggerLabel, processedLabel,
+ *   removeExistingThreadFromDoc, messageOptions, hashFn
+ */
+function processThread(thread, body, folder, ctx) {
+  const {
+    triggerLabel,
+    processedLabel,
+    removeExistingThreadFromDoc,
+    messageOptions,
+    hashFn,
+  } = ctx
+  const threadId = thread.getId()
+  const messages = thread.getMessages()
+
+  removeExistingThreadFromDoc(body, threadId)
+
+  // Sort messages oldest-first so prepending leaves the newest at the top.
+  messages.sort(function (a, b) {
+    return a.getDate().getTime() - b.getDate().getTime()
+  })
+
+  messages.forEach((message, msgIndex) => {
+    insertMessageContent(
+      message,
+      body,
+      folder,
+      { ...messageOptions, threadId, useThreadSeparator: msgIndex === 0 },
+      hashFn
+    )
+  })
+
+  triggerLabel.removeFromThread(thread)
+  if (processedLabel) processedLabel.addToThread(thread)
+}
+
 function processLabelGroup(config, services, helperFns) {
   const { GmailApp, DocumentApp, DriveApp, Logger, Utilities, Session } =
     services
   const { getCleanBody, getFileHash, removeExistingThreadFromDoc } = helperFns
 
-  console.log(
-    '[processLabelGroup] Starting processing for:',
-    config.triggerLabel
+  const { triggerLabel, processedLabel } = resolveLabels(
+    GmailApp,
+    config,
+    Logger
   )
-  const triggerLabelName = config.triggerLabel
-  const processedLabelName = config.processedLabel
+  if (!triggerLabel) return
 
-  // 1. Validate Labels
-  console.log('[processLabelGroup] Looking up trigger label:', triggerLabelName)
-  const triggerLabel = GmailApp.getUserLabelByName(triggerLabelName)
-  let processedLabel = GmailApp.getUserLabelByName(processedLabelName)
-
-  // Create processed label if it doesn't exist
-  if (!processedLabel) {
-    console.log(
-      '[processLabelGroup] Processed label not found, creating:',
-      processedLabelName
-    )
-    try {
-      processedLabel = GmailApp.createLabel(processedLabelName)
-      console.log('[processLabelGroup] Created label:', processedLabelName)
-    } catch (e) {
-      Logger.log('Could not create label: ' + processedLabelName)
-      console.error('[processLabelGroup] Error creating label:', e.message)
-    }
-  }
-
-  if (!triggerLabel) {
-    Logger.log('Trigger label not found: ' + triggerLabelName)
-    console.error(
-      '[processLabelGroup] Trigger label not found:',
-      triggerLabelName
-    )
-    return
-  }
-
-  // 2. Get Threads
-  console.log(
-    '[processLabelGroup] Retrieving threads for label:',
-    triggerLabelName
-  )
   const threads = triggerLabel.getThreads()
   if (!threads || threads.length === 0) {
-    Logger.log('No emails found for: ' + triggerLabelName)
-    console.log(
-      '[processLabelGroup] No threads found for label:',
-      triggerLabelName
-    )
+    Logger.log('No emails found for: ' + config.triggerLabel)
     return
   }
-  console.log('[processLabelGroup] Found', threads.length, 'threads to process')
 
-  // Sort threads by last message date (newest first) to ensure reverse chronological order
-  // This handles cases where Gmail API returns threads in random order or when older threads are labeled
+  // Sort threads by last message date so the newest thread ends up at the top.
   const sortedThreads = sortThreadsByLastMessageDate(threads)
-  console.log(
-    '[processLabelGroup] Sorted threads by last message date (newest first)'
-  )
 
-  // 3. Open Destination Doc and Folder
-  console.log(
-    '[processLabelGroup] Opening doc:',
-    config.docId,
-    'and folder:',
-    config.folderId
-  )
-  let doc, body, folder
-  try {
-    doc = DocumentApp.openById(config.docId)
-    body = doc.getBody()
-    folder = DriveApp.getFolderById(config.folderId)
-    console.log('[processLabelGroup] Successfully opened doc and folder')
-  } catch (e) {
-    Logger.log(
-      'Error opening Doc or Folder. Check IDs in Config.gs. Error: ' + e.message
-    )
-    console.error('[processLabelGroup] Error opening Doc/Folder:', e.message)
-    return
+  const target = openDocAndFolder(DocumentApp, DriveApp, config, Logger)
+  if (!target) return
+  const { body, folder } = target
+
+  const messageOptions = {
+    DocumentApp,
+    Utilities,
+    Logger,
+    Session,
+    getCleanBody,
   }
-
-  // 4. Process Emails
-  let totalMessages = 0
-  sortedThreads.forEach((thread, threadIndex) => {
-    const messages = thread.getMessages()
-    const threadId = thread.getId()
-    console.log(
-      '[processLabelGroup] Thread',
-      threadIndex + 1,
-      'has',
-      messages.length,
-      'messages, ID:',
-      threadId
-    )
-
-    // Remove existing thread content if it already exists in the document
-    removeExistingThreadFromDoc(body, threadId)
-
-    // Sort messages by date (oldest first) so when we prepend (insert at index 0),
-    // the newest messages end up at the top of the document
-    messages.sort(function (a, b) {
-      return a.getDate().getTime() - b.getDate().getTime()
+  sortedThreads.forEach((thread) => {
+    processThread(thread, body, folder, {
+      triggerLabel,
+      processedLabel,
+      removeExistingThreadFromDoc,
+      messageOptions,
+      hashFn: getFileHash,
     })
-
-    messages.forEach((message, msgIndex) => {
-      totalMessages++
-      const subject = message.getSubject()
-      const rawContent = message.getPlainBody()
-
-      // Clean Content (removes replies, quote lines, and legal footers)
-      const cleanContent = getCleanBody(rawContent)
-      console.log(
-        '[processLabelGroup] Cleaned content length:',
-        cleanContent.length,
-        'chars (from',
-        rawContent.length,
-        ')'
-      )
-
-      const timestamp = message.getDate()
-
-      Logger.log('Processing: ' + subject)
-      console.log(
-        '[processLabelGroup] Processing message',
-        msgIndex + 1,
-        ':',
-        subject
-      )
-
-      // --- A. Prepend Text to Doc (insert at top, newest first) ---
-      // Note: currentIndex starts at 0 for each message, so each new message
-      // is inserted at the top of the document, pushing previous content down.
-      // This ensures the most recent emails appear first.
-      let currentIndex = 0
-
-      const subjectText = 'Subject: ' + (subject ? subject : '(No Subject)')
-      const headingPara = body.insertParagraph(currentIndex++, subjectText)
-
-      // Try to set heading, fallback to bold if Doc is busy
-      try {
-        headingPara.setHeading(DocumentApp.ParagraphHeading.HEADING_3)
-      } catch (e) {
-        const style = {}
-        style[DocumentApp.Attribute.BOLD] = true
-        headingPara.setAttributes(style)
-      }
-
-      body.insertParagraph(currentIndex++, 'Date: ' + timestamp)
-      body.insertParagraph(currentIndex++, cleanContent)
-
-      // --- B. Save Attachments (CONTENT-BASED DEDUPLICATION) ---
-      const attachments = message.getAttachments()
-      console.log(
-        '[processLabelGroup] Found',
-        attachments.length,
-        'attachments'
-      )
-      if (attachments.length > 0) {
-        body.insertParagraph(currentIndex++, '[Attachments]:')
-
-        attachments.forEach((att, attIndex) => {
-          console.log(
-            '[processLabelGroup] Processing attachment',
-            attIndex + 1,
-            'of',
-            attachments.length,
-            ':',
-            att.getName()
-          )
-          let fileName = att.getName()
-          const newFileBlob = att.copyBlob()
-          let isDuplicate = false
-
-          // 1. Get all files in folder with this name
-          const existingFiles = folder.getFilesByName(fileName)
-          console.log(
-            '[processLabelGroup] Checking for existing files named:',
-            fileName
-          )
-
-          let existingCount = 0
-          while (existingFiles.hasNext()) {
-            existingCount++
-            const existingFile = existingFiles.next()
-            console.log(
-              '[processLabelGroup] Comparing with existing file',
-              existingCount
-            )
-
-            // 2. Fast Fail: Compare sizes first
-            if (existingFile.getSize() === newFileBlob.getBytes().length) {
-              console.log('[processLabelGroup] Size match, checking hash')
-
-              // 3. Deep Check: Compare MD5 Hashes (The "Fingerprint")
-              const existingHash = getFileHash(existingFile.getBlob())
-              const newHash = getFileHash(newFileBlob)
-
-              if (existingHash === newHash) {
-                console.log(
-                  '[processLabelGroup] Hash match - duplicate detected'
-                )
-                isDuplicate = true
-                break // Stop checking, we found the twin
-              } else {
-                console.log(
-                  '[processLabelGroup] Hash mismatch - different content'
-                )
-              }
-            } else {
-              console.log('[processLabelGroup] Size mismatch - different file')
-            }
-          }
-
-          if (isDuplicate) {
-            Logger.log('Skipping exact duplicate: ' + fileName)
-            console.log('[processLabelGroup] Skipping duplicate:', fileName)
-            body.insertParagraph(
-              currentIndex++,
-              '- [DUPLICATE SKIPPED] ' + fileName
-            )
-          } else {
-            // It's a new file (or a file with same name but different content)
-
-            // If name exists but content is different, rename to avoid overwrite
-            if (folder.getFilesByName(fileName).hasNext()) {
-              console.log(
-                '[processLabelGroup] Name conflict detected, adding timestamp'
-              )
-              const timeTag = Utilities.formatDate(
-                new Date(),
-                Session.getScriptTimeZone(),
-                '_HHmmss'
-              )
-              // Insert timestamp before the file extension
-              let newName = fileName.replace(/(\.[\w\d_-]+)$/i, timeTag + '$1')
-              // Fallback if regex fails (files without extension)
-              if (newName === fileName) newName += timeTag
-
-              newFileBlob.setName(newName)
-              fileName = newName // Update for log
-              console.log('[processLabelGroup] Renamed to:', fileName)
-            }
-
-            console.log('[processLabelGroup] Saving new file:', fileName)
-            const file = folder.createFile(newFileBlob)
-            body.insertParagraph(currentIndex++, '- ' + file.getName())
-            console.log('[processLabelGroup] File saved successfully')
-          }
-        })
-      }
-
-      // Add separator - use thread separator for oldest message (first in sorted array)
-      const isOldestMessage = msgIndex === 0
-      if (isOldestMessage) {
-        const threadSeparator =
-          '------------------------------[THREAD:' + threadId + ']'
-        body.insertParagraph(currentIndex++, threadSeparator)
-        console.log(
-          '[processLabelGroup] Added thread separator for thread:',
-          threadId
-        )
-      } else {
-        body.insertParagraph(currentIndex++, '------------------------------')
-      }
-
-      // Pause briefly to allow Google Doc to save (prevents crash)
-      Utilities.sleep(500)
-    })
-
-    // 5. Cleanup Labels
-    console.log('[processLabelGroup] Updating labels for thread')
-    triggerLabel.removeFromThread(thread)
-    if (processedLabel) processedLabel.addToThread(thread)
   })
-  console.log('[processLabelGroup] Processed', totalMessages, 'total messages')
-  console.log(
-    '[processLabelGroup] Completed processing for:',
-    config.triggerLabel
-  )
 }
 
 /**
