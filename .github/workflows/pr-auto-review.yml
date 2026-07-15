@@ -56,6 +56,6 @@ jobs:
       pull-requests: read
       checks: read
       actions: read
-    uses: petry-projects/.github/.github/workflows/pr-auto-review-reusable.yml@v2 # NOSONAR(githubactions:S7637) first-party channel ref
+    uses: petry-projects/.github/.github/workflows/pr-auto-review-reusable.yml@pr-auto-review/stable # NOSONAR(githubactions:S7637) first-party channel ref
     secrets:
       GH_PAT_WORKFLOWS: ${{ secrets.GH_PAT_WORKFLOWS }}
