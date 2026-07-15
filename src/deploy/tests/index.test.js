@@ -9,6 +9,7 @@ const {
   updateProjectContent,
   deployScript,
   createGmailLabel,
+  buildDeployErrorMessage,
 } = require('../index')
 
 // ---------------------------------------------------------------------------
@@ -527,5 +528,63 @@ describe('createGmailLabel', () => {
 describe('APPS_SCRIPT_API_BASE', () => {
   test('points to the correct Google API endpoint', () => {
     expect(APPS_SCRIPT_API_BASE).toBe('https://script.googleapis.com/v1')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// buildDeployErrorMessage
+// ---------------------------------------------------------------------------
+
+describe('buildDeployErrorMessage', () => {
+  test('detects Apps Script API disabled error', () => {
+    const err = new Error('The Apps Script API is not enabled for this project')
+    const result = buildDeployErrorMessage(err)
+
+    expect(result.isApiDisabled).toBe(true)
+    expect(result.message).toBe(
+      'Deployment failed: User has not enabled the Apps Script API.'
+    )
+    expect(result.detail).toContain('Apps Script API')
+  })
+
+  test('handles generic error', () => {
+    const err = new Error('Something went wrong')
+    const result = buildDeployErrorMessage(err)
+
+    expect(result.isApiDisabled).toBe(false)
+    expect(result.message).toBe('Deployment failed: Something went wrong')
+    expect(result.detail).toBe(err.stack)
+  })
+
+  test('handles error with stack trace', () => {
+    const err = new Error('Custom error message')
+    err.stack = 'Error: Custom error message\n  at someFunction'
+    const result = buildDeployErrorMessage(err)
+
+    expect(result.isApiDisabled).toBe(false)
+    expect(result.detail).toBe(err.stack)
+  })
+
+  test('handles string error', () => {
+    const result = buildDeployErrorMessage('String error')
+
+    expect(result.isApiDisabled).toBe(false)
+    expect(result.message).toBe('Deployment failed: String error')
+    expect(result.detail).toBe('String error')
+  })
+
+  test('handles null or undefined error', () => {
+    const resultNull = buildDeployErrorMessage(null)
+    const resultUndefined = buildDeployErrorMessage(undefined)
+
+    expect(resultNull.message).toBe('Deployment failed: ')
+    expect(resultUndefined.message).toBe('Deployment failed: ')
+  })
+
+  test('detects Apps Script API error case-sensitively in message', () => {
+    const err = new Error('The Apps Script API is currently disabled')
+    const result = buildDeployErrorMessage(err)
+
+    expect(result.isApiDisabled).toBe(true)
   })
 })

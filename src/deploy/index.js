@@ -248,6 +248,34 @@ async function createGmailLabel(fetchFn, accessToken, labelName) {
   return response.json()
 }
 
+/**
+ * Builds error message text for a deployment failure. Detects when the failure
+ * is due to a disabled Apps Script API and provides a special hint.
+ *
+ * @param {Error|string|null} err - The error object (or string, or null).
+ * @returns {{isApiDisabled: boolean, message: string, detail: string}} Error
+ *   info with hints for UI rendering.
+ */
+function buildDeployErrorMessage(err) {
+  const errMsg = err && err.message ? err.message : String(err || '')
+  const isApiDisabled = errMsg.includes('Apps Script API')
+  const errorDetail = (err && err.stack) || errMsg
+
+  if (isApiDisabled) {
+    return {
+      isApiDisabled: true,
+      message: 'Deployment failed: User has not enabled the Apps Script API.',
+      detail: errorDetail,
+    }
+  }
+
+  return {
+    isApiDisabled: false,
+    message: `Deployment failed: ${errMsg}`,
+    detail: errorDetail,
+  }
+}
+
 module.exports = {
   APPS_SCRIPT_API_BASE,
   GMAIL_API_BASE,
@@ -258,4 +286,5 @@ module.exports = {
   updateProjectContent,
   deployScript,
   createGmailLabel,
+  buildDeployErrorMessage,
 }

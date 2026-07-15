@@ -1,5 +1,12 @@
 const { createMessage, createBlob } = require('../../../test-utils/mocks')
-const { processMessageToDoc, processMessagesToDoc } = require('../src/index')
+const {
+  processMessageToDoc,
+  processMessagesToDoc,
+  isDuplicateAttachment,
+  resolveAttachmentFileName,
+  clearDocPhase,
+  moveEmailsPhase,
+} = require('../src/index')
 
 // This test uses the actual processing functions from src/index.js
 // to verify that the prepend behavior works correctly end-to-end
@@ -516,5 +523,264 @@ describe('Gmail to Drive integration with prepend behavior', () => {
     const fileNames = files.map((f) => f.getName())
     expect(fileNames).toContain('conflict.txt')
     expect(fileNames.some((name) => name.includes('_123456'))).toBe(true)
+  })
+})
+
+describe('isDuplicateAttachment', () => {
+  let folder
+
+  beforeEach(() => {
+    global.__mocks.docs.__reset()
+    global.__mocks.drive.__reset()
+    folder = global.DriveApp.getFolderById('test-folder')
+  })
+
+  test('detects duplicate attachment by size and hash match', () => {
+    const blobContent = 'test content'
+    const blob = createBlob(blobContent, 'test.txt', 'text/plain')
+
+    // Create initial file
+    folder.createFile(blob)
+
+    // Check if duplicate exists
+    const isDuplicate = isDuplicateAttachment(folder, 'test.txt', blob)
+
+    expect(isDuplicate).toBe(true)
+  })
+
+  test('returns false when no file with same name exists', () => {
+    const blob = createBlob('test content', 'test.txt', 'text/plain')
+
+    const isDuplicate = isDuplicateAttachment(folder, 'test.txt', blob)
+
+    expect(isDuplicate).toBe(false)
+  })
+
+  test('returns false when size matches but content differs', () => {
+    const blob1 = createBlob('test content', 'test.txt', 'text/plain')
+    const blob2 = createBlob('test conten!', 'test.txt', 'text/plain')
+
+    folder.createFile(blob1)
+
+    const isDuplicate = isDuplicateAttachment(folder, 'test.txt', blob2)
+
+    expect(isDuplicate).toBe(false)
+  })
+})
+
+describe('resolveAttachmentFileName', () => {
+  let folder
+
+  beforeEach(() => {
+    global.__mocks.drive.__reset()
+    folder = global.DriveApp.getFolderById('test-folder')
+  })
+
+  test('returns original name when no conflict exists', () => {
+    const blob = createBlob('content', 'test.txt', 'text/plain')
+
+    const resolved = resolveAttachmentFileName(folder, 'test.txt', blob, {})
+
+    expect(resolved).toBe('test.txt')
+  })
+
+  test('adds timestamp to name when conflict exists', () => {
+    const blob1 = createBlob('content1', 'test.txt', 'text/plain')
+    const blob2 = createBlob('content2', 'test.txt', 'text/plain')
+
+    folder.createFile(blob1)
+
+    const resolved = resolveAttachmentFileName(folder, 'test.txt', blob2, {})
+
+    expect(resolved).not.toBe('test.txt')
+    expect(resolved).toMatch(/test.*\.txt/)
+  })
+
+  test('handles files without extension', () => {
+    const blob1 = createBlob('content1', 'testfile', 'text/plain')
+    const blob2 = createBlob('content2', 'testfile', 'text/plain')
+
+    folder.createFile(blob1)
+
+    const resolved = resolveAttachmentFileName(folder, 'testfile', blob2, {})
+
+    expect(resolved).not.toBe('testfile')
+  })
+})
+
+describe('clearDocPhase', () => {
+  test('clears document and advances state from clear_doc to move_emails', () => {
+    const state = { phase: 'clear_doc', processedCount: 0 }
+    const config = { docId: 'test-doc' }
+
+    const mockBody = {
+      setText: jest.fn(),
+    }
+    const mockDoc = {
+      getBody: jest.fn().mockReturnValue(mockBody),
+    }
+
+    const DocumentApp = {
+      openById: jest.fn().mockReturnValue(mockDoc),
+    }
+
+    const properties = {
+      setProperty: jest.fn(),
+    }
+
+    const result = clearDocPhase(
+      state,
+      config,
+      DocumentApp,
+      properties,
+      'stateKey'
+    )
+
+    expect(mockDoc.getBody).toHaveBeenCalled()
+    expect(mockBody.setText).toHaveBeenCalledWith('')
+    expect(state.phase).toBe('move_emails')
+    expect(state.processedCount).toBe(0)
+    expect(properties.setProperty).toHaveBeenCalled()
+    expect(result).toBe(null)
+  })
+
+  test('returns null when phase is not clear_doc', () => {
+    const state = { phase: 'move_emails', processedCount: 0 }
+    const config = { docId: 'test-doc' }
+    const DocumentApp = {}
+    const properties = {}
+
+    const result = clearDocPhase(
+      state,
+      config,
+      DocumentApp,
+      properties,
+      'stateKey'
+    )
+
+    expect(result).toBe(null)
+  })
+
+  test('returns false when document open fails', () => {
+    const state = { phase: 'clear_doc', processedCount: 0 }
+    const config = { docId: 'test-doc' }
+
+    const DocumentApp = {
+      openById: jest.fn().mockImplementation(() => {
+        throw new Error('Document not found')
+      }),
+    }
+
+    const properties = {
+      setProperty: jest.fn(),
+    }
+
+    const result = clearDocPhase(
+      state,
+      config,
+      DocumentApp,
+      properties,
+      'stateKey'
+    )
+
+    expect(result).toBe(false)
+  })
+})
+
+describe('moveEmailsPhase', () => {
+  test('moves threads from processed to trigger label', () => {
+    const state = { phase: 'move_emails', processedCount: 0 }
+    const limits = {
+      BATCH_SIZE: 10,
+      MAX_EXECUTION_TIME: 300000,
+      startTime: Date.now(),
+    }
+
+    const thread1 = { id: 't1' }
+    const thread2 = { id: 't2' }
+
+    const triggerLabel = {
+      addToThread: jest.fn(),
+    }
+
+    const processedLabel = {
+      removeFromThread: jest.fn(),
+      getThreads: jest.fn().mockReturnValue([thread1, thread2]),
+    }
+
+    const properties = {
+      setProperty: jest.fn(),
+    }
+
+    const result = moveEmailsPhase(
+      state,
+      { triggerLabel, processedLabel },
+      properties,
+      'stateKey',
+      limits
+    )
+
+    expect(processedLabel.removeFromThread).toHaveBeenCalledWith(thread1)
+    expect(processedLabel.removeFromThread).toHaveBeenCalledWith(thread2)
+    expect(triggerLabel.addToThread).toHaveBeenCalledWith(thread1)
+    expect(triggerLabel.addToThread).toHaveBeenCalledWith(thread2)
+    expect(state.phase).toBe('complete')
+    expect(result).toBe(null)
+  })
+
+  test('returns false and saves state when approaching time limit', () => {
+    const state = { phase: 'move_emails', processedCount: 0 }
+    const startTime = Date.now() - 250000
+
+    const threads = Array.from({ length: 100 }, (_, i) => ({ id: `t${i}` }))
+
+    const triggerLabel = {
+      addToThread: jest.fn(),
+    }
+
+    const processedLabel = {
+      removeFromThread: jest.fn(),
+      getThreads: jest.fn().mockReturnValue(threads),
+    }
+
+    const properties = {
+      setProperty: jest.fn(),
+    }
+
+    const limits = { BATCH_SIZE: 50, MAX_EXECUTION_TIME: 300000, startTime }
+
+    const result = moveEmailsPhase(
+      state,
+      { triggerLabel, processedLabel },
+      properties,
+      'stateKey',
+      limits
+    )
+
+    // Should exit when time is low
+    expect(result).toBe(false)
+  })
+
+  test('returns null when phase is not move_emails', () => {
+    const state = { phase: 'complete' }
+    const limits = {
+      BATCH_SIZE: 10,
+      MAX_EXECUTION_TIME: 300000,
+      startTime: Date.now(),
+    }
+
+    const triggerLabel = {}
+    const processedLabel = {}
+    const properties = {}
+
+    const result = moveEmailsPhase(
+      state,
+      { triggerLabel, processedLabel },
+      properties,
+      'stateKey',
+      limits
+    )
+
+    expect(result).toBe(null)
   })
 })

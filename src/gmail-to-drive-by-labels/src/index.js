@@ -883,4 +883,8 @@ module.exports = {
   processLabelGroup,
   rebuildAllDocs,
   rebuildDoc,
+  isDuplicateAttachment,
+  resolveAttachmentFileName,
+  clearDocPhase,
+  moveEmailsPhase,
 }

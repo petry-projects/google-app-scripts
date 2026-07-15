@@ -273,4 +273,8 @@ module.exports = {
   rowsEqual,
   rowsToMap,
   ensureHeader,
+  upsertRows,
+  insertNewRows,
+  shouldDeleteRow,
+  computeRowsToDelete,
 }

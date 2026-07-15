@@ -8,6 +8,10 @@ const {
   syncCalendarToSheet,
   rowsEqual,
   rowsToMap,
+  upsertRows,
+  insertNewRows,
+  shouldDeleteRow,
+  computeRowsToDelete,
 } = require('../src/index')
 
 beforeEach(() => {
@@ -2274,5 +2278,271 @@ describe('GAS wrapper functions', () => {
     expect(sheet.__getRows().find((r) => r[0] === 'e1')).toBeTruthy()
 
     delete global.SYNC_CONFIGS
+  })
+})
+
+describe('upsertRows', () => {
+  test('upsertRows returns new rows and update count for inserts and updates', () => {
+    const sheet = {
+      getRange: jest.fn().mockReturnValue({
+        setValues: jest.fn(),
+      }),
+    }
+
+    const desiredMap = new Map([
+      [
+        'e1',
+        ['e1', 'Meeting A', '2026-02-02T10:00:00Z', '2026-02-02T11:00:00Z'],
+      ],
+      [
+        'e2',
+        ['e2', 'Meeting B', '2026-02-02T12:00:00Z', '2026-02-02T13:00:00Z'],
+      ],
+    ])
+
+    const existingMap = new Map([
+      [
+        'e1',
+        {
+          rowIndex: 2,
+          values: [
+            'e1',
+            'Old Title',
+            '2026-02-02T10:00:00Z',
+            '2026-02-02T11:00:00Z',
+          ],
+        },
+      ],
+    ])
+
+    const { updateCount, rowsToInsert } = upsertRows(
+      sheet,
+      desiredMap,
+      existingMap
+    )
+
+    expect(updateCount).toBe(1)
+    expect(rowsToInsert).toHaveLength(1)
+    expect(rowsToInsert[0][0]).toBe('e2')
+    expect(sheet.getRange).toHaveBeenCalledWith(2, 1, 1, 4)
+  })
+
+  test('upsertRows skips updates when rows are equal', () => {
+    const sheet = {
+      getRange: jest.fn(),
+    }
+
+    const desiredMap = new Map([
+      [
+        'e1',
+        ['e1', 'Meeting A', '2026-02-02T10:00:00Z', '2026-02-02T11:00:00Z'],
+      ],
+    ])
+
+    const existingMap = new Map([
+      [
+        'e1',
+        {
+          rowIndex: 2,
+          values: [
+            'e1',
+            'Meeting A',
+            '2026-02-02T10:00:00Z',
+            '2026-02-02T11:00:00Z',
+          ],
+        },
+      ],
+    ])
+
+    const { updateCount, rowsToInsert } = upsertRows(
+      sheet,
+      desiredMap,
+      existingMap
+    )
+
+    expect(updateCount).toBe(0)
+    expect(rowsToInsert).toHaveLength(0)
+    expect(sheet.getRange).not.toHaveBeenCalled()
+  })
+})
+
+describe('insertNewRows', () => {
+  test('insertNewRows inserts multiple rows using batched range write', () => {
+    const mockRange = { setValues: jest.fn() }
+    const sheet = {
+      getLastRow: jest.fn().mockReturnValue(1),
+      getRange: jest.fn().mockReturnValue(mockRange),
+    }
+
+    const rowsToInsert = [
+      ['e2', 'Meeting B', '2026-02-02T12:00:00Z', '2026-02-02T13:00:00Z'],
+      ['e3', 'Meeting C', '2026-02-02T14:00:00Z', '2026-02-02T15:00:00Z'],
+    ]
+
+    insertNewRows(sheet, rowsToInsert)
+
+    expect(sheet.getLastRow).toHaveBeenCalled()
+    expect(sheet.getRange).toHaveBeenCalledWith(2, 1, 2, 4)
+    expect(mockRange.setValues).toHaveBeenCalledWith(rowsToInsert)
+  })
+
+  test('insertNewRows falls back to appendRow when getLastRow is unavailable', () => {
+    const sheet = {
+      appendRow: jest.fn(),
+    }
+
+    const rowsToInsert = [
+      ['e2', 'Meeting B', '2026-02-02T12:00:00Z', '2026-02-02T13:00:00Z'],
+    ]
+
+    insertNewRows(sheet, rowsToInsert)
+
+    expect(sheet.appendRow).toHaveBeenCalledWith(rowsToInsert[0])
+  })
+
+  test('insertNewRows returns early when no rows to insert', () => {
+    const sheet = {
+      getLastRow: jest.fn(),
+      appendRow: jest.fn(),
+    }
+
+    insertNewRows(sheet, [])
+
+    expect(sheet.getLastRow).not.toHaveBeenCalled()
+    expect(sheet.appendRow).not.toHaveBeenCalled()
+  })
+})
+
+describe('shouldDeleteRow', () => {
+  test('shouldDeleteRow returns true when event is within sync window', () => {
+    const ex = {
+      rowIndex: 2,
+      values: ['e1', 'Meeting', '2026-02-02T10:00:00Z', '2026-02-02T11:00:00Z'],
+    }
+    const start = new Date('2026-02-01')
+    const end = new Date('2026-02-03')
+
+    const result = shouldDeleteRow('e1', ex, start, end)
+
+    expect(result).toBe(true)
+  })
+
+  test('shouldDeleteRow returns false when event is before sync window', () => {
+    const ex = {
+      rowIndex: 2,
+      values: ['e1', 'Meeting', '2026-01-15T10:00:00Z', '2026-01-15T11:00:00Z'],
+    }
+    const start = new Date('2026-02-01')
+    const end = new Date('2026-02-03')
+
+    const result = shouldDeleteRow('e1', ex, start, end)
+
+    expect(result).toBe(false)
+  })
+
+  test('shouldDeleteRow returns false when row has invalid dates', () => {
+    const ex = {
+      rowIndex: 2,
+      values: ['e1', 'Meeting', '', ''],
+    }
+    const start = new Date('2026-02-01')
+    const end = new Date('2026-02-03')
+
+    const result = shouldDeleteRow('e1', ex, start, end)
+
+    expect(result).toBe(false)
+  })
+
+  test('shouldDeleteRow returns false when start date is not a valid date', () => {
+    const ex = {
+      rowIndex: 2,
+      values: ['e1', 'Meeting', 'invalid', '2026-02-02T11:00:00Z'],
+    }
+    const start = new Date('2026-02-01')
+    const end = new Date('2026-02-03')
+
+    const result = shouldDeleteRow('e1', ex, start, end)
+
+    expect(result).toBe(false)
+  })
+})
+
+describe('computeRowsToDelete', () => {
+  test('computeRowsToDelete returns row indexes for events to delete within sync window', () => {
+    const existingMap = new Map([
+      [
+        'e1',
+        {
+          rowIndex: 2,
+          values: [
+            'e1',
+            'Meeting',
+            '2026-02-02T10:00:00Z',
+            '2026-02-02T11:00:00Z',
+          ],
+        },
+      ],
+      [
+        'e2',
+        {
+          rowIndex: 3,
+          values: [
+            'e2',
+            'Meeting',
+            '2026-02-02T12:00:00Z',
+            '2026-02-02T13:00:00Z',
+          ],
+        },
+      ],
+    ])
+
+    const desiredMap = new Map([
+      ['e1', ['e1', 'Meeting', '2026-02-02T10:00:00Z', '2026-02-02T11:00:00Z']],
+    ])
+
+    const start = new Date('2026-02-01')
+    const end = new Date('2026-02-03')
+
+    const result = computeRowsToDelete(existingMap, desiredMap, start, end)
+
+    expect(result).toEqual([3])
+  })
+
+  test('computeRowsToDelete skips events outside sync window', () => {
+    const existingMap = new Map([
+      [
+        'e1',
+        {
+          rowIndex: 2,
+          values: [
+            'e1',
+            'Meeting',
+            '2026-01-15T10:00:00Z',
+            '2026-01-15T11:00:00Z',
+          ],
+        },
+      ],
+      [
+        'e2',
+        {
+          rowIndex: 3,
+          values: [
+            'e2',
+            'Meeting',
+            '2026-02-02T12:00:00Z',
+            '2026-02-02T13:00:00Z',
+          ],
+        },
+      ],
+    ])
+
+    const desiredMap = new Map()
+
+    const start = new Date('2026-02-01')
+    const end = new Date('2026-02-03')
+
+    const result = computeRowsToDelete(existingMap, desiredMap, start, end)
+
+    expect(result).toEqual([3])
   })
 })
