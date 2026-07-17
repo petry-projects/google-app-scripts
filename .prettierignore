@@ -1,0 +1,6 @@
+# The dev-lead caller stub is a standards-owned artifact copied VERBATIM per
+# petry-projects/.github/standards/ci-standards.md#5-dev-lead-agent. Its exact bytes
+# (including the two-space gap before the `# NOSONAR` marker) are enforced by the
+# central byte-identity stub-drift guard. Prettier would collapse that gap and
+# re-introduce drift, so it must not reformat this file.
+.github/workflows/dev-lead.yml
