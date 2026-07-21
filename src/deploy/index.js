@@ -100,7 +100,7 @@ function buildProjectContent(files) {
       throw new Error('Each file must have a non-empty string name')
     }
     if (typeof f.source !== 'string') {
-      throw new Error('Each file must have a string source')
+      throw new TypeError('Each file must have a string source')
     }
   }
   return {

@@ -72,6 +72,93 @@ function removeExistingThread(body, threadId) {
 }
 
 /**
+ * Determines whether an attachment already exists in the folder by comparing
+ * size and MD5 hash against every file that shares its name.
+ *
+ * @param {Object} folder - Drive folder object
+ * @param {string} fileName - Attachment file name
+ * @param {Object} newFileBlob - Blob for the incoming attachment
+ * @returns {boolean} True if an exact-content duplicate is found
+ */
+function isDuplicateAttachment(folder, fileName, newFileBlob) {
+  const existingFiles = folder.getFilesByName(fileName)
+  console.log(
+    '[processMessageToDoc] Checking for existing files named:',
+    fileName
+  )
+
+  let existingCount = 0
+  while (existingFiles.hasNext()) {
+    existingCount++
+    const existingFile = existingFiles.next()
+    console.log(
+      '[processMessageToDoc] Comparing with existing file',
+      existingCount
+    )
+
+    // Compare sizes first (fast fail)
+    // Try getBytes() for GAS blobs, bytes property for test mocks, empty buffer as fallback
+    const newFileBytes = newFileBlob.getBytes
+      ? newFileBlob.getBytes()
+      : newFileBlob.bytes || Buffer.from('')
+    if (existingFile.getSize() !== newFileBytes.length) {
+      console.log('[processMessageToDoc] Size mismatch - different file')
+      continue
+    }
+
+    console.log('[processMessageToDoc] Size match, checking hash')
+    // Deep check: compare MD5 hashes
+    const existingHash = getFileHash(existingFile.getBlob())
+    const newHash = getFileHash(newFileBlob)
+    if (existingHash === newHash) {
+      console.log('[processMessageToDoc] Hash match - duplicate detected')
+      return true
+    }
+    console.log('[processMessageToDoc] Hash mismatch - different content')
+  }
+
+  return false
+}
+
+/**
+ * Returns a file name that does not collide with an existing file in the
+ * folder, appending a timestamp before the extension when needed. Also renames
+ * the blob in place when a conflict is resolved.
+ *
+ * @param {string} fileName - Desired file name
+ * @param {Object} folder - Drive folder object
+ * @param {Object} newFileBlob - Blob to rename when a conflict is resolved
+ * @param {Object} [Utilities] - GAS Utilities service (optional)
+ * @param {Object} [Session] - GAS Session service (optional)
+ * @returns {string} The resolved, conflict-free file name
+ */
+function resolveNameConflict(
+  fileName,
+  folder,
+  newFileBlob,
+  Utilities,
+  Session
+) {
+  if (!folder.getFilesByName(fileName).hasNext()) {
+    return fileName
+  }
+
+  console.log('[processMessageToDoc] Name conflict detected, adding timestamp')
+  const timeTag =
+    Utilities && Session
+      ? Utilities.formatDate(new Date(), Session.getScriptTimeZone(), '_HHmmss')
+      : '_' + Date.now()
+  const newName = fileName.replace(/(\.[\w-]+)$/i, timeTag + '$1')
+  const resolved = newName === fileName ? fileName + timeTag : newName
+
+  if (newFileBlob.setName) {
+    newFileBlob.setName(resolved)
+  }
+  console.log('[processMessageToDoc] Renamed to:', resolved)
+  return resolved
+}
+
+/**
  * Process a single message and prepend its content to the document body.
  * Returns the number of paragraphs inserted.
  *
@@ -97,7 +184,7 @@ function processMessageToDoc(message, body, folder, options = {}) {
   let currentIndex = 0
 
   // Insert subject
-  const subjectText = 'Subject: ' + (subject ? subject : '(No Subject)')
+  const subjectText = 'Subject: ' + (subject || '(No Subject)')
   const headingPara = body.insertParagraph(currentIndex++, subjectText)
 
   // Try to set heading style (GAS only)
@@ -135,51 +222,8 @@ function processMessageToDoc(message, body, folder, options = {}) {
       let fileName = att.getName()
       // In GAS environment, copyBlob() creates a copy; in test environment, att itself is the blob
       const newFileBlob = att.copyBlob ? att.copyBlob() : att
-      let isDuplicate = false
 
-      // Check for duplicates by content hash
-      const existingFiles = folder.getFilesByName(fileName)
-      console.log(
-        '[processMessageToDoc] Checking for existing files named:',
-        fileName
-      )
-
-      let existingCount = 0
-      while (existingFiles.hasNext()) {
-        existingCount++
-        const existingFile = existingFiles.next()
-        console.log(
-          '[processMessageToDoc] Comparing with existing file',
-          existingCount
-        )
-
-        // Compare sizes first (fast fail)
-        // Try getBytes() for GAS blobs, bytes property for test mocks, empty buffer as fallback
-        const newFileBytes = newFileBlob.getBytes
-          ? newFileBlob.getBytes()
-          : newFileBlob.bytes || Buffer.from('')
-        if (existingFile.getSize() === newFileBytes.length) {
-          console.log('[processMessageToDoc] Size match, checking hash')
-
-          // Deep check: compare MD5 hashes
-          const existingHash = getFileHash(existingFile.getBlob())
-          const newHash = getFileHash(newFileBlob)
-
-          if (existingHash === newHash) {
-            console.log('[processMessageToDoc] Hash match - duplicate detected')
-            isDuplicate = true
-            break
-          } else {
-            console.log(
-              '[processMessageToDoc] Hash mismatch - different content'
-            )
-          }
-        } else {
-          console.log('[processMessageToDoc] Size mismatch - different file')
-        }
-      }
-
-      if (isDuplicate) {
+      if (isDuplicateAttachment(folder, fileName, newFileBlob)) {
         if (Logger) {
           Logger.log('Skipping exact duplicate: ' + fileName)
         }
@@ -190,32 +234,13 @@ function processMessageToDoc(message, body, folder, options = {}) {
         )
       } else {
         // Handle name conflicts (same name, different content)
-        if (folder.getFilesByName(fileName).hasNext()) {
-          console.log(
-            '[processMessageToDoc] Name conflict detected, adding timestamp'
-          )
-
-          if (Utilities && Session) {
-            const timeTag = Utilities.formatDate(
-              new Date(),
-              Session.getScriptTimeZone(),
-              '_HHmmss'
-            )
-            const newName = fileName.replace(/(\.[\w\d_-]+)$/i, timeTag + '$1')
-            fileName = newName === fileName ? fileName + timeTag : newName
-          } else {
-            // Test environment - simple timestamp
-            const timeTag = '_' + Date.now()
-            const newName = fileName.replace(/(\.[\w\d_-]+)$/i, timeTag + '$1')
-            fileName = newName === fileName ? fileName + timeTag : newName
-          }
-
-          if (newFileBlob.setName) {
-            newFileBlob.setName(fileName)
-          }
-          console.log('[processMessageToDoc] Renamed to:', fileName)
-        }
-
+        fileName = resolveNameConflict(
+          fileName,
+          folder,
+          newFileBlob,
+          Utilities,
+          Session
+        )
         console.log('[processMessageToDoc] Saving new file:', fileName)
         const file = folder.createFile(newFileBlob)
         body.insertParagraph(currentIndex++, '- ' + file.getName())
@@ -491,7 +516,7 @@ function processLabelGroup(config, services, helperFns) {
       // This ensures the most recent emails appear first.
       let currentIndex = 0
 
-      const subjectText = 'Subject: ' + (subject ? subject : '(No Subject)')
+      const subjectText = 'Subject: ' + (subject || '(No Subject)')
       const headingPara = body.insertParagraph(currentIndex++, subjectText)
 
       // Try to set heading, fallback to bold if Doc is busy
@@ -590,7 +615,7 @@ function processLabelGroup(config, services, helperFns) {
                 '_HHmmss'
               )
               // Insert timestamp before the file extension
-              let newName = fileName.replace(/(\.[\w\d_-]+)$/i, timeTag + '$1')
+              let newName = fileName.replace(/(\.[\w-]+)$/i, timeTag + '$1')
               // Fallback if regex fails (files without extension)
               if (newName === fileName) newName += timeTag
 
@@ -687,11 +712,96 @@ function rebuildAllDocs(configs, rebuildDocFn) {
  * @param {Object} services - GAS services object with GmailApp, DocumentApp, PropertiesService
  * @returns {boolean} True if completed, false if needs to continue in another execution
  */
+// Clears the target document and advances the rebuild state to 'move_emails'.
+// Returns false when the document could not be cleared (retry next run).
+function clearDocumentPhase(DocumentApp, config, properties, stateKey, state) {
+  console.log('[rebuildDoc] Clearing document:', config.docId)
+  try {
+    const doc = DocumentApp.openById(config.docId)
+    const body = doc.getBody()
+
+    // Clear all content from the document body in a single operation
+    body.setText('')
+    console.log('[rebuildDoc] Document cleared')
+
+    // Move to next phase
+    state.phase = 'move_emails'
+    state.processedCount = 0
+    properties.setProperty(stateKey, JSON.stringify(state))
+    console.log('[rebuildDoc] Saved state, moving to email processing phase')
+    return true
+  } catch (e) {
+    console.error('[rebuildDoc] Error clearing document:', e.message)
+    // Try again next time
+    return false
+  }
+}
+
+// Moves one batch of threads from the processed label back to the trigger
+// label. Returns true when all threads have been moved, or false when the run
+// paused (time limit) or still has threads remaining (run again).
+function moveEmailsPhase(labels, properties, stateKey, state, timing) {
+  const { triggerLabel, processedLabel } = labels
+  const { startTime, maxExecutionTime, batchSize } = timing
+
+  console.log('[rebuildDoc] Moving emails from processed to trigger label')
+  console.log(
+    '[rebuildDoc] Resuming from:',
+    state.processedCount,
+    'threads processed'
+  )
+
+  const threads = processedLabel.getThreads()
+  console.log('[rebuildDoc] Found', threads.length, 'threads to move')
+
+  // Process in batches, always from index 0 since we're removing items
+  let batchCount = 0
+  while (batchCount < batchSize && threads.length > 0) {
+    // Check if we're running out of time
+    const elapsed = Date.now() - startTime
+    if (elapsed > maxExecutionTime) {
+      console.log('[rebuildDoc] Approaching time limit, saving progress')
+      state.processedCount += batchCount
+      properties.setProperty(stateKey, JSON.stringify(state))
+      return false // Not complete, run again
+    }
+
+    // Always process index 0 since removing items shrinks the array
+    const thread = threads[0]
+    processedLabel.removeFromThread(thread)
+    triggerLabel.addToThread(thread)
+    batchCount++
+
+    // Refresh threads array
+    threads.splice(0, 1)
+  }
+
+  console.log('[rebuildDoc] Moved', batchCount, 'threads in this batch')
+  state.processedCount += batchCount
+
+  // Check if we're done
+  if (processedLabel.getThreads().length === 0) {
+    console.log('[rebuildDoc] All threads moved')
+    state.phase = 'complete'
+    properties.setProperty(stateKey, JSON.stringify(state))
+    return true
+  }
+
+  // Still more threads to process
+  console.log(
+    '[rebuildDoc] Still',
+    processedLabel.getThreads().length,
+    'threads remaining'
+  )
+  properties.setProperty(stateKey, JSON.stringify(state))
+  return false // Not complete, need to run again
+}
+
 function rebuildDoc(config, services) {
   const { GmailApp, DocumentApp, PropertiesService } = services
   const MAX_EXECUTION_TIME = 4 * 60 * 1000 // 4 minutes (leaving 2 min buffer for 6 min limit)
   const BATCH_SIZE = config.batchSize || 250 // Process threads in batches (default: 250)
-  const startTime = new Date().getTime()
+  const startTime = Date.now()
 
   console.log('[rebuildDoc] Starting rebuild for:', config.triggerLabel)
 
@@ -724,78 +834,26 @@ function rebuildDoc(config, services) {
   const state = rebuildState ? JSON.parse(rebuildState) : { phase: 'clear_doc' }
 
   if (state.phase === 'clear_doc') {
-    console.log('[rebuildDoc] Clearing document:', config.docId)
-    try {
-      const doc = DocumentApp.openById(config.docId)
-      const body = doc.getBody()
-
-      // Clear all content from the document body in a single operation
-      body.setText('')
-      console.log('[rebuildDoc] Document cleared')
-
-      // Move to next phase
-      state.phase = 'move_emails'
-      state.processedCount = 0
-      properties.setProperty(stateKey, JSON.stringify(state))
-      console.log('[rebuildDoc] Saved state, moving to email processing phase')
-    } catch (e) {
-      console.error('[rebuildDoc] Error clearing document:', e.message)
-      // Try again next time
+    if (!clearDocumentPhase(DocumentApp, config, properties, stateKey, state)) {
       return false
     }
   }
 
   // 3. Move emails from processed back to trigger label (batched)
   if (state.phase === 'move_emails' && processedLabel) {
-    console.log('[rebuildDoc] Moving emails from processed to trigger label')
-    console.log(
-      '[rebuildDoc] Resuming from:',
-      state.processedCount,
-      'threads processed'
-    )
-
-    const threads = processedLabel.getThreads()
-    console.log('[rebuildDoc] Found', threads.length, 'threads to move')
-
-    // Process in batches, always from index 0 since we're removing items
-    let batchCount = 0
-    while (batchCount < BATCH_SIZE && threads.length > 0) {
-      // Check if we're running out of time
-      const elapsed = new Date().getTime() - startTime
-      if (elapsed > MAX_EXECUTION_TIME) {
-        console.log('[rebuildDoc] Approaching time limit, saving progress')
-        state.processedCount += batchCount
-        properties.setProperty(stateKey, JSON.stringify(state))
-        return false // Not complete, run again
+    const complete = moveEmailsPhase(
+      { triggerLabel, processedLabel },
+      properties,
+      stateKey,
+      state,
+      {
+        startTime,
+        maxExecutionTime: MAX_EXECUTION_TIME,
+        batchSize: BATCH_SIZE,
       }
-
-      // Always process index 0 since removing items shrinks the array
-      const thread = threads[0]
-      processedLabel.removeFromThread(thread)
-      triggerLabel.addToThread(thread)
-      batchCount++
-
-      // Refresh threads array
-      threads.splice(0, 1)
-    }
-
-    console.log('[rebuildDoc] Moved', batchCount, 'threads in this batch')
-    state.processedCount += batchCount
-
-    // Check if we're done
-    if (processedLabel.getThreads().length === 0) {
-      console.log('[rebuildDoc] All threads moved')
-      state.phase = 'complete'
-      properties.setProperty(stateKey, JSON.stringify(state))
-    } else {
-      // Still more threads to process
-      console.log(
-        '[rebuildDoc] Still',
-        processedLabel.getThreads().length,
-        'threads remaining'
-      )
-      properties.setProperty(stateKey, JSON.stringify(state))
-      return false // Not complete, need to run again
+    )
+    if (!complete) {
+      return false
     }
   }
 

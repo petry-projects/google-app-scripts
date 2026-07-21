@@ -90,7 +90,7 @@ function createDriveFolder(id = 'root') {
 }
 
 function createFile(name, blob) {
-  let _name = name || (blob && blob.getName && blob.getName()) || 'file'
+  let _name = name || blob?.getName?.() || 'file'
   const bytes =
     blob && typeof blob.getBytes === 'function'
       ? blob.getBytes()
@@ -244,7 +244,7 @@ function createCalendarEvent({
   }
 }
 
-function createCalendar(id = 'primary', name) {
+function createCalendar(id = 'primary', name = '') {
   const calName = name || id
   const events = []
   return {
@@ -458,7 +458,7 @@ function resetAll(globals) {
     globals.__mocks.calendar.__reset()
     globals.__mocks.spreadsheet.__reset()
     globals.__mocks.properties.__reset()
-    if (globals.CalendarApp && globals.CalendarApp.__resetCalendars) {
+    if (globals.CalendarApp?.__resetCalendars) {
       globals.CalendarApp.__resetCalendars()
     }
   }

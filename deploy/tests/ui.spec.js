@@ -273,8 +273,9 @@ test.describe('deploy index.html', () => {
     page,
   }) => {
     await signIn(page)
-    // Default mock returns empty files array
-    await page.waitForTimeout(500)
+    // Default mock returns empty files array; wait for the Drive lookup to
+    // settle instead of a fixed timeout, then assert Step 3 stays hidden.
+    await page.waitForLoadState('networkidle')
     await expect(page.locator('#step3-card')).toBeHidden()
   })
 

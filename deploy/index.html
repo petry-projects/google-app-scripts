@@ -651,7 +651,6 @@
         } catch {
           // best-effort; ignore storage errors
         }
-        const safeId = escapeHtml(scriptId)
         const section = document.getElementById('setup-section-' + scriptId)
         if (section) {
           section.innerHTML = `<div style="font-size:12px;color:#137333;">⏱ Trigger previously activated.</div>`
@@ -667,7 +666,7 @@
        * to activate the hourly trigger.
        */
       function buildSetupSource(triggerFn) {
-        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(triggerFn)) {
+        if (!/^[a-zA-Z_]\w*$/.test(triggerFn)) {
           throw new Error(
             'Invalid trigger function name: ' + JSON.stringify(triggerFn)
           )
@@ -1189,14 +1188,16 @@
             '<label>At approximately</label>' +
             '<select class="cfg-field" data-key="triggerHour" id="cfg-triggerHour">' +
             Array.from({ length: 24 }, (_, h) => {
-              const label =
-                h === 0
-                  ? '12 AM'
-                  : h < 12
-                    ? h + ' AM'
-                    : h === 12
-                      ? '12 PM'
-                      : h - 12 + ' PM'
+              let label
+              if (h === 0) {
+                label = '12 AM'
+              } else if (h < 12) {
+                label = h + ' AM'
+              } else if (h === 12) {
+                label = '12 PM'
+              } else {
+                label = h - 12 + ' PM'
+              }
               return (
                 '<option value="' +
                 h +
@@ -1565,11 +1566,11 @@
             fields.email ? [fields.email] : []
           )
           const subject = JSON.stringify(fields.subject || 'Weekly Briefing')
-          const lookahead = parseInt(fields.lookaheadDays, 10) || 7
+          const lookahead = Number.parseInt(fields.lookaheadDays, 10) || 7
           const freq = JSON.stringify(fields.frequency || 'weekly')
           const day = JSON.stringify(fields.triggerDay || 'MONDAY')
-          const hour = parseInt(fields.triggerHour, 10) || 7
-          const interval = parseInt(fields.triggerInterval, 10) || 1
+          const hour = Number.parseInt(fields.triggerHour, 10) || 7
+          const interval = Number.parseInt(fields.triggerInterval, 10) || 1
           let scheduleLines =
             '    scheduleFrequency: ' +
             freq +
@@ -1675,11 +1676,11 @@
 
       function escapeHtml(str) {
         return String(str == null ? '' : str)
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#39;')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;')
       }
 
       /**
@@ -1843,6 +1844,103 @@
 
       // ── Deployment ────────────────────────────────────────────────────────────────
 
+      /**
+       * Deploys a single catalog script: fetches its source, finds or creates
+       * the Apps Script project, then uploads the file content. Returns the
+       * deployed project descriptor, or null if the catalog id is unknown.
+       */
+      async function deployOneScript(catalogId, index, total) {
+        const script = SCRIPT_CATALOG.find((s) => s.id === catalogId)
+        if (!script) {
+          showStatus(
+            'error',
+            `❌ Unknown script selection: ${escapeHtml(catalogId)}`
+          )
+          return null
+        }
+        const projectTitle = `Petry-Projects – ${script.name}`
+        const progress = total > 1 ? ` (${index + 1}/${total})` : ''
+
+        showStatus(
+          'info',
+          `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Fetching source files for <strong>${escapeHtml(script.name)}</strong>${progress}…`
+        )
+
+        // Fetch source files for the selected script.
+        const files = await fetchScriptFiles(catalogId)
+
+        // ── Idempotent project lookup / creation ────────────────────────
+        let projectId = null
+        const storedId = getStoredScriptId(catalogId, projectTitle)
+        if (storedId) {
+          showStatus(
+            'info',
+            `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Verifying existing project <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
+          )
+          try {
+            await apiFetch(`${APPS_SCRIPT_API}/projects/${storedId}`)
+            projectId = storedId
+          } catch {
+            // Project no longer exists — fall through to creation.
+          }
+        }
+
+        if (!projectId) {
+          showStatus(
+            'info',
+            `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Creating project <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
+          )
+          const project = await apiFetch(`${APPS_SCRIPT_API}/projects`, {
+            method: 'POST',
+            body: JSON.stringify({ title: projectTitle }),
+          })
+          projectId = validateScriptId(project.scriptId)
+          storeScriptId(catalogId, projectTitle, projectId)
+        }
+
+        showStatus(
+          'info',
+          `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Uploading files for <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
+        )
+
+        // All scripts use an hourly trigger. Schedule logic lives in config.gs.
+        const setupSource = buildSetupSource(script.triggerFn)
+
+        // Upload source files: manifest + setup.gs + code.gs + config.gs (template).
+        await apiFetch(`${APPS_SCRIPT_API}/projects/${projectId}/content`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            files: [
+              {
+                name: 'appsscript',
+                type: 'JSON',
+                source: APPSSCRIPT_MANIFEST,
+              },
+              {
+                name: 'setup',
+                type: 'SERVER_JS',
+                source: setupSource,
+              },
+              ...files.map((f) => ({
+                name: f.name,
+                type: 'SERVER_JS',
+                source: f.source,
+              })),
+            ],
+          }),
+        })
+
+        deployedScripts.set(catalogId, {
+          scriptId: projectId,
+          title: projectTitle,
+        })
+        return {
+          scriptId: projectId,
+          title: projectTitle,
+          catalogId,
+        }
+      }
+
       async function handleDeploy() {
         const selectedIds = Array.from(
           document.querySelectorAll('input[name="script"]:checked')
@@ -1866,96 +1964,9 @@
           const total = selectedIds.length
 
           for (let i = 0; i < total; i++) {
-            const catalogId = selectedIds[i]
-            const script = SCRIPT_CATALOG.find((s) => s.id === catalogId)
-            if (!script) {
-              showStatus(
-                'error',
-                `❌ Unknown script selection: ${escapeHtml(catalogId)}`
-              )
-              return
-            }
-            const projectTitle = `Petry-Projects – ${script.name}`
-            const progress = total > 1 ? ` (${i + 1}/${total})` : ''
-
-            showStatus(
-              'info',
-              `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Fetching source files for <strong>${escapeHtml(script.name)}</strong>${progress}…`
-            )
-
-            // Fetch source files for the selected script.
-            const files = await fetchScriptFiles(catalogId)
-
-            // ── Idempotent project lookup / creation ────────────────────────
-            let projectId = null
-            const storedId = getStoredScriptId(catalogId, projectTitle)
-            if (storedId) {
-              showStatus(
-                'info',
-                `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Verifying existing project <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
-              )
-              try {
-                await apiFetch(`${APPS_SCRIPT_API}/projects/${storedId}`)
-                projectId = storedId
-              } catch {
-                // Project no longer exists — fall through to creation.
-              }
-            }
-
-            if (!projectId) {
-              showStatus(
-                'info',
-                `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Creating project <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
-              )
-              const project = await apiFetch(`${APPS_SCRIPT_API}/projects`, {
-                method: 'POST',
-                body: JSON.stringify({ title: projectTitle }),
-              })
-              projectId = validateScriptId(project.scriptId)
-              storeScriptId(catalogId, projectTitle, projectId)
-            }
-
-            showStatus(
-              'info',
-              `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Uploading files for <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
-            )
-
-            // All scripts use an hourly trigger. Schedule logic lives in config.gs.
-            const setupSource = buildSetupSource(script.triggerFn)
-
-            // Upload source files: manifest + setup.gs + code.gs + config.gs (template).
-            await apiFetch(`${APPS_SCRIPT_API}/projects/${projectId}/content`, {
-              method: 'PUT',
-              body: JSON.stringify({
-                files: [
-                  {
-                    name: 'appsscript',
-                    type: 'JSON',
-                    source: APPSSCRIPT_MANIFEST,
-                  },
-                  {
-                    name: 'setup',
-                    type: 'SERVER_JS',
-                    source: setupSource,
-                  },
-                  ...files.map((f) => ({
-                    name: f.name,
-                    type: 'SERVER_JS',
-                    source: f.source,
-                  })),
-                ],
-              }),
-            })
-
-            deployedProjects.push({
-              scriptId: projectId,
-              title: projectTitle,
-              catalogId,
-            })
-            deployedScripts.set(catalogId, {
-              scriptId: projectId,
-              title: projectTitle,
-            })
+            const deployed = await deployOneScript(selectedIds[i], i, total)
+            if (!deployed) return
+            deployedProjects.push(deployed)
           }
 
           // Refresh Step 2 to show deployment badges
@@ -1975,9 +1986,13 @@
             })
             .join('')
 
+          const deployedHeadline =
+            deployedProjects.length === 1
+              ? 'Script deployed!'
+              : `${deployedProjects.length} scripts deployed!`
           showStatus(
             'ok',
-            `✅ <strong>${deployedProjects.length === 1 ? 'Script deployed!' : `${deployedProjects.length} scripts deployed!`}</strong>` +
+            `✅ <strong>${deployedHeadline}</strong>` +
               `<span style="font-size:13px;color:#137333;display:block;margin-top:4px;">` +
               `Now configure each script below, then activate the trigger.</span>` +
               projectLinksHtml
@@ -2047,7 +2062,7 @@
           headers: {
             Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
-            ...(options.headers || {}),
+            ...options.headers,
           },
         })
         if (!res.ok) {
@@ -2062,7 +2077,7 @@
                 ? `${json.error.message} — ${JSON.stringify(json.error.details)}`
                 : json.error.message
             }
-          } catch (_) {
+          } catch {
             /* ignore parse errors */
           }
           const err = new Error(message)

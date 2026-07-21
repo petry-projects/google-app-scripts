@@ -32,7 +32,7 @@ function rowsToMap(rows) {
   const m = new Map()
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i]
-    if (!r || !r[0]) continue
+    if (!r?.[0]) continue
     m.set(r[0], { rowIndex: i + 2, values: r }) // assume header at row 1
   }
   return m
@@ -51,7 +51,8 @@ function rowsEqual(a, b) {
     // Handle Date comparison (a is ISO string, b is Date object from sheet)
     if (typeof valA === 'string' && valB instanceof Date) {
       const dateA = new Date(valA)
-      if (!isNaN(dateA) && dateA.getTime() === valB.getTime()) continue
+      if (!Number.isNaN(dateA.getTime()) && dateA.getTime() === valB.getTime())
+        continue
     }
 
     // Handle sanitized formula comparison (a has leading ', b does not)
@@ -106,6 +107,80 @@ function ensureHeader(sheet) {
   }
 }
 
+// Applies updates and inserts for the desired rows, returning the counts.
+function upsertRows(sheet, desiredMap, existingMap) {
+  let updateCount = 0
+  const rowsToInsert = []
+
+  for (const [id, row] of desiredMap.entries()) {
+    const ex = existingMap.get(id)
+    if (!ex) {
+      rowsToInsert.push(row)
+    } else if (!rowsEqual(row, ex.values)) {
+      console.log('[syncCalendarToSheet] Updating row for event:', id)
+      sheet.getRange(ex.rowIndex, 1, 1, row.length).setValues([row])
+      updateCount++
+    }
+  }
+
+  if (rowsToInsert.length > 0) {
+    console.log(
+      '[syncCalendarToSheet] Inserting new events:',
+      rowsToInsert.length
+    )
+    if (typeof sheet.getLastRow === 'function') {
+      sheet
+        .getRange(
+          sheet.getLastRow() + 1,
+          1,
+          rowsToInsert.length,
+          rowsToInsert[0].length
+        )
+        .setValues(rowsToInsert)
+    } else {
+      rowsToInsert.forEach((row) => sheet.appendRow(row))
+    }
+  }
+
+  return { updateCount, insertCount: rowsToInsert.length }
+}
+
+// Collects the row indices to delete for events that no longer exist, but only
+// when they fall within the synced [start, end] window (preserving historical
+// rows and rows with invalid date columns).
+function collectRowsToDelete(desiredMap, existingMap, start, end) {
+  const toDelete = []
+  for (const [id, ex] of existingMap.entries()) {
+    if (desiredMap.has(id)) continue
+
+    const rowStart = ex.values[2] // start is at index 2
+    const rowEnd = ex.values[3] // end is at index 3
+    if (!rowStart || !rowEnd) {
+      console.log(
+        '[syncCalendarToSheet] Preserving event with invalid dates:',
+        id
+      )
+      continue
+    }
+
+    const rowStartTime = new Date(rowStart)
+    if (
+      !Number.isNaN(rowStartTime.getTime()) &&
+      rowStartTime >= start &&
+      rowStartTime <= end
+    ) {
+      console.log('[syncCalendarToSheet] Marking event for deletion:', id)
+      toDelete.push(ex.rowIndex)
+    } else {
+      console.log(
+        '[syncCalendarToSheet] Preserving event outside sync window:',
+        id
+      )
+    }
+  }
+  return toDelete
+}
+
 async function syncCalendarToSheet(
   calendar,
   sheet,
@@ -132,88 +207,23 @@ async function syncCalendarToSheet(
   console.log('[syncCalendarToSheet] Existing rows:', body.length)
   const existingMap = rowsToMap(body)
 
-  // Upsert
-  let updateCount = 0
-  const rowsToInsert = []
-
-  for (const [id, row] of desiredMap.entries()) {
-    if (existingMap.has(id)) {
-      const ex = existingMap.get(id)
-      if (!rowsEqual(row, ex.values)) {
-        // update
-        console.log('[syncCalendarToSheet] Updating row for event:', id)
-        const rowIndex = ex.rowIndex
-        sheet.getRange(rowIndex, 1, 1, row.length).setValues([row])
-        updateCount++
-      }
-    } else {
-      rowsToInsert.push(row)
-    }
-  }
-
-  if (rowsToInsert.length > 0) {
-    console.log(
-      '[syncCalendarToSheet] Inserting new events:',
-      rowsToInsert.length
-    )
-    if (typeof sheet.getLastRow === 'function') {
-      sheet
-        .getRange(
-          sheet.getLastRow() + 1,
-          1,
-          rowsToInsert.length,
-          rowsToInsert[0].length
-        )
-        .setValues(rowsToInsert)
-    } else {
-      rowsToInsert.forEach((row) => sheet.appendRow(row))
-    }
-  }
-
+  const { updateCount, insertCount } = upsertRows(
+    sheet,
+    desiredMap,
+    existingMap
+  )
   console.log(
     '[syncCalendarToSheet] Updates:',
     updateCount,
     'Inserts:',
-    rowsToInsert.length
+    insertCount
   )
 
-  // Delete rows for events that no longer exist, but only if they fall within
-  // the synced time window to avoid deleting rows from events outside [start,end]
-  const toDelete = []
-  for (const [id, ex] of existingMap.entries()) {
-    if (!desiredMap.has(id)) {
-      // Only delete if the row has start/end columns and falls within [start,end]
-      // Otherwise, preserve historical rows outside the sync window
-      const rowStart = ex.values[2] // start is at index 2
-      const rowEnd = ex.values[3] // end is at index 3
-      if (rowStart && rowEnd) {
-        const rowStartTime = new Date(rowStart)
-        // Only delete if row's event time falls within our sync window
-        if (
-          !isNaN(rowStartTime) &&
-          rowStartTime >= start &&
-          rowStartTime <= end
-        ) {
-          console.log('[syncCalendarToSheet] Marking event for deletion:', id)
-          toDelete.push(ex.rowIndex)
-        } else {
-          console.log(
-            '[syncCalendarToSheet] Preserving event outside sync window:',
-            id
-          )
-        }
-      } else {
-        // If no valid date columns, don't delete (preserve historical data)
-        console.log(
-          '[syncCalendarToSheet] Preserving event with invalid dates:',
-          id
-        )
-      }
-    }
-  }
+  const toDelete = collectRowsToDelete(desiredMap, existingMap, start, end)
   // delete from bottom to top
   console.log('[syncCalendarToSheet] Deleting rows:', toDelete.length)
-  toDelete.sort((a, b) => b - a).forEach((r) => sheet.deleteRow(r))
+  toDelete.sort((a, b) => b - a)
+  toDelete.forEach((r) => sheet.deleteRow(r))
   console.log('[syncCalendarToSheet] Sync complete')
 }
 
