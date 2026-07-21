@@ -1,4 +1,4 @@
-const crypto = require('crypto')
+const crypto = require('node:crypto')
 
 /**
  * getCleanBody - logic ported from GAS for local testing
@@ -7,8 +7,8 @@ function getCleanBody(text) {
   if (!text) return ''
 
   const headerPatterns = [
-    /^\s*On\s+.+\s+wrote:/m,
-    /^\s*From:\s+.+\s+Sent:\s+/m,
+    /^\s*On\s.+\swrote:/m,
+    /^\s*From:\s.+\sSent:\s+/m,
     /^\s*_{10,}/m,
     /^\s*From:\s+.+<.+@.+>/m,
     /confidentiality notice/im,
@@ -39,7 +39,7 @@ function getCleanBody(text) {
   // Join lines and normalize line breaks: replace 2+ consecutive line breaks with 1
   // This prevents excessive blank lines in Google Docs where each \n creates a paragraph break
   let result = cleanLines.join('\n').trim()
-  result = result.replace(/\n{2,}/g, '\n')
+  result = result.replaceAll(/\n{2,}/g, '\n')
 
   return result
 }
@@ -56,7 +56,7 @@ function getFileHash(blob) {
   } else if (blob && blob.bytes) {
     bytes = Buffer.from(blob.bytes)
   } else {
-    throw new Error('Unsupported blob type')
+    throw new TypeError('Unsupported blob type')
   }
 
   const hash = crypto.createHash('md5').update(bytes).digest('hex')
