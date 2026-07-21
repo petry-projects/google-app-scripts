@@ -168,13 +168,19 @@ describe('storeEmailsAndAttachments', () => {
     // Mock Date to simulate timeout
     const originalDate = Date
     let callCount = 0
+    const simulatedTime = () => {
+      callCount++
+      if (callCount > 50) {
+        return 5 * 60 * 1000 // 5 minutes - exceeds threshold
+      }
+      return 0
+    }
     global.Date = class extends originalDate {
       getTime() {
-        callCount++
-        if (callCount > 50) {
-          return 5 * 60 * 1000 // 5 minutes - exceeds threshold
-        }
-        return 0
+        return simulatedTime()
+      }
+      static now() {
+        return simulatedTime()
       }
     }
 

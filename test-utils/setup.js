@@ -24,7 +24,7 @@ global.Utilities = {
   computeDigest: (algorithm, bytes) => {
     // Simple deterministic hash for testing
     // Convert bytes to a string and create a fake hash
-    const crypto = require('crypto')
+    const crypto = require('node:crypto')
     const hash = crypto.createHash('md5').update(Buffer.from(bytes)).digest()
     // Return as array of numbers (like GAS does)
     return Array.from(hash)

@@ -17,6 +17,17 @@ describe('getCleanBody', () => {
     expect(getCleanBody(input)).toBe('Line1')
   })
 
+  test('cuts off at Outlook-style From:/Sent: reply header', () => {
+    const input =
+      'My reply\nFrom: Jane Doe\nSent: Monday, Jan 1, 2020 9:00 AM\nQuoted'
+    expect(getCleanBody(input)).toBe('My reply')
+  })
+
+  test('cuts off at From: line with angle-bracket email address', () => {
+    const input = 'My reply\nFrom: Jane Doe <jane@example.com>\nQuoted content'
+    expect(getCleanBody(input)).toBe('My reply')
+  })
+
   test('cuts off at confidentiality notice', () => {
     const input = 'Message body\nThis is a confidentiality notice: do not share'
     expect(getCleanBody(input)).toBe('Message body')
