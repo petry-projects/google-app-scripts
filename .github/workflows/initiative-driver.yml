@@ -46,7 +46,7 @@ on:
     #          (the job below filters to that label).
     types: [closed, labeled]
   schedule:
-    - cron: "41 3 * * *" # off-peak safety net for missed close events
+    - cron: '41 3 * * *' # off-peak safety net for missed close events
   workflow_dispatch:
 
 permissions:
