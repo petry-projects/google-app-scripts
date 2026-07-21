@@ -4,3 +4,7 @@
 # central byte-identity stub-drift guard. Prettier would collapse that gap and
 # re-introduce drift, so it must not reformat this file.
 .github/workflows/dev-lead.yml
+# initiative-driver is a standards-owned artifact copied verbatim from
+# petry-projects/.github/standards/workflows/initiative-driver.yml.
+# Prettier must not reformat it to avoid byte-drift on future syncs.
+.github/workflows/initiative-driver.yml
