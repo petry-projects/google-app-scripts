@@ -46,7 +46,7 @@ on:
     #          (the job below filters to that label).
     types: [closed, labeled]
   schedule:
-    - cron: '41 3 * * *' # off-peak safety net for missed close events
+    - cron: "41 3 * * *" # off-peak safety net for missed close events
   workflow_dispatch:
 
 permissions:
@@ -73,16 +73,16 @@ jobs:
       - name: Guard — PAT present
         # PAT required: a workflow_dispatch fired with GITHUB_TOKEN never starts a run.
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT_WORKFLOWS }}
+          GH_TOKEN: ${{ secrets.GH_PAT_DON_PETRY || secrets.GH_PAT_WORKFLOWS }}
         run: |
           if [ -z "${GH_TOKEN}" ]; then
-            echo "::error::GH_PAT_WORKFLOWS is required — a workflow_dispatch fired with GITHUB_TOKEN never starts a run."
+            echo "::error::Either GH_PAT_DON_PETRY or GH_PAT_WORKFLOWS is required — a workflow_dispatch fired with GITHUB_TOKEN never starts a run."
             exit 1
           fi
 
       - name: Dispatch central initiative-driver
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT_WORKFLOWS }}
+          GH_TOKEN: ${{ secrets.GH_PAT_DON_PETRY || secrets.GH_PAT_WORKFLOWS }}
         run: |
           gh workflow run initiative-driver.yml \
             -R petry-projects/.github-private \
