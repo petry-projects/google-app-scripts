@@ -163,7 +163,11 @@ function collectRowsToDelete(existingMap, desiredMap, start, end) {
     }
     const rowStartTime = new Date(rowStart)
     // Only delete if row's event time falls within our sync window
-    if (!isNaN(rowStartTime) && rowStartTime >= start && rowStartTime <= end) {
+    if (
+      !isNaN(rowStartTime.getTime()) &&
+      rowStartTime >= start &&
+      rowStartTime <= end
+    ) {
       console.log('[syncCalendarToSheet] Marking event for deletion:', id)
       toDelete.push(ex.rowIndex)
     } else {

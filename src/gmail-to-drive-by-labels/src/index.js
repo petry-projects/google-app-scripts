@@ -81,6 +81,13 @@ function removeExistingThread(body, threadId) {
  */
 function isDuplicateAttachment(existingFiles, newFileBlob) {
   let existingCount = 0
+  // Try getBytes() for GAS blobs, bytes property for test mocks, empty buffer as fallback
+  const newFileBytes = newFileBlob.getBytes
+    ? newFileBlob.getBytes()
+    : newFileBlob.bytes || Buffer.from('')
+  const newFileLength = newFileBytes.length
+  let newHash = null
+
   while (existingFiles.hasNext()) {
     existingCount++
     const existingFile = existingFiles.next()
@@ -90,11 +97,7 @@ function isDuplicateAttachment(existingFiles, newFileBlob) {
     )
 
     // Compare sizes first (fast fail)
-    // Try getBytes() for GAS blobs, bytes property for test mocks, empty buffer as fallback
-    const newFileBytes = newFileBlob.getBytes
-      ? newFileBlob.getBytes()
-      : newFileBlob.bytes || Buffer.from('')
-    if (existingFile.getSize() !== newFileBytes.length) {
+    if (existingFile.getSize() !== newFileLength) {
       console.log('[processMessageToDoc] Size mismatch - different file')
       continue
     }
@@ -102,7 +105,9 @@ function isDuplicateAttachment(existingFiles, newFileBlob) {
     console.log('[processMessageToDoc] Size match, checking hash')
     // Deep check: compare MD5 hashes
     const existingHash = getFileHash(existingFile.getBlob())
-    const newHash = getFileHash(newFileBlob)
+    if (newHash === null) {
+      newHash = getFileHash(newFileBlob)
+    }
     if (existingHash === newHash) {
       console.log('[processMessageToDoc] Hash match - duplicate detected')
       return true
@@ -122,8 +127,8 @@ function isDuplicateAttachment(existingFiles, newFileBlob) {
  * @param {Object} options - Optional settings (Utilities, Session for GAS)
  * @returns {string} The resolved (possibly renamed) file name
  */
-function resolveAttachmentName(fileName, newFileBlob, options) {
-  const { Utilities, Session } = options
+function resolveAttachmentName(fileName, newFileBlob, options = {}) {
+  const { Utilities, Session } = options || {}
   console.log('[processMessageToDoc] Name conflict detected, adding timestamp')
 
   const timeTag =
@@ -160,9 +165,9 @@ function processAttachment(
   body,
   folder,
   currentIndex,
-  options
+  options = {}
 ) {
-  const { Logger } = options
+  const { Logger } = options || {}
   console.log(
     '[processMessageToDoc] Processing attachment',
     attIndex + 1,
@@ -804,21 +809,18 @@ function moveEmailsPhase({
       return false // Not complete, run again
     }
 
-    // Always process index 0 since removing items shrinks the array
-    const thread = threads[0]
+    const thread = threads.shift()
     processedLabel.removeFromThread(thread)
     triggerLabel.addToThread(thread)
     batchCount++
-
-    // Refresh threads array
-    threads.splice(0, 1)
   }
 
   console.log('[rebuildDoc] Moved', batchCount, 'threads in this batch')
   state.processedCount += batchCount
 
   // Check if we're done
-  if (processedLabel.getThreads().length === 0) {
+  const remainingCount = processedLabel.getThreads().length
+  if (remainingCount === 0) {
     console.log('[rebuildDoc] All threads moved')
     state.phase = 'complete'
     properties.setProperty(stateKey, JSON.stringify(state))
@@ -826,11 +828,7 @@ function moveEmailsPhase({
   }
 
   // Still more threads to process
-  console.log(
-    '[rebuildDoc] Still',
-    processedLabel.getThreads().length,
-    'threads remaining'
-  )
+  console.log('[rebuildDoc] Still', remainingCount, 'threads remaining')
   properties.setProperty(stateKey, JSON.stringify(state))
   return false // Not complete, need to run again
 }
