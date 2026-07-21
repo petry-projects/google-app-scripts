@@ -264,7 +264,7 @@ function processMessagesToDoc(messages, body, folder, options = {}) {
 
   // Sort messages by date (oldest first) so when we prepend (insert at index 0),
   // the newest messages end up at the top of the document
-  const sortedMessages = messages.toSorted(function (a, b) {
+  const sortedMessages = messages.slice().sort(function (a, b) {
     return a.getDate().getTime() - b.getDate().getTime()
   })
 
@@ -306,7 +306,7 @@ function processMessagesToDoc(messages, body, folder, options = {}) {
  * @returns {Array} Sorted array of threads (oldest first)
  */
 function sortThreadsByLastMessageDate(threads) {
-  return threads.toSorted(function (a, b) {
+  return threads.slice().sort(function (a, b) {
     const aMessages = a.getMessages()
     const bMessages = b.getMessages()
     const aLastDate = aMessages[aMessages.length - 1].getDate().getTime()

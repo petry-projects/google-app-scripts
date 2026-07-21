@@ -39,7 +39,7 @@ function getCleanBody(text) {
   // Join lines and normalize line breaks: replace 2+ consecutive line breaks with 1
   // This prevents excessive blank lines in Google Docs where each \n creates a paragraph break
   let result = cleanLines.join('\n').trim()
-  result = result.replaceAll(/\n{2,}/g, '\n')
+  result = result.replace(/\n{2,}/g, '\n')
 
   return result
 }

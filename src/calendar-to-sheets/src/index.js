@@ -213,7 +213,7 @@ async function syncCalendarToSheet(
   }
   // delete from bottom to top
   console.log('[syncCalendarToSheet] Deleting rows:', toDelete.length)
-  toDelete.toSorted((a, b) => b - a).forEach((r) => sheet.deleteRow(r))
+  toDelete.sort((a, b) => b - a).forEach((r) => sheet.deleteRow(r))
   console.log('[syncCalendarToSheet] Sync complete')
 }
 
