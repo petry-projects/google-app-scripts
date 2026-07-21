@@ -195,9 +195,19 @@ jobs:
       # its target users, and the competitive landscape. The more specific you
       # are, the more useful the proposals.
       project_context: |
-        TODO: Replace this with a description of the project and its market.
-        Example: "ProjectX is a [type of product] for [target user]. Competitors
-        include A, B, C. Key emerging trends in this space: X, Y, Z."
+        The Google Apps Script Productivity Suite is an open-source (MIT)
+        collection of personal-productivity automations built on Google Apps
+        Script that eliminate repetitive tasks across Gmail, Google Drive,
+        Google Calendar, and Google Docs. Flagship scripts include
+        Gmail-to-Drive-by-Labels (archiving labeled email and attachments into
+        Docs/Drive with quoted-reply cleaning and content-based de-duplication)
+        and Calendar-to-Sheets sync, all deployable through a browser-based,
+        no-CLI deployment page. Target users are individuals and small teams who
+        want to reclaim time and keep their digital workspace organized without
+        writing code. Competitors include Zapier, Make (Integromat), IFTTT, and
+        native Gmail/Workspace add-ons. Emerging trends in this space:
+        AI/Gemini-powered email triage and summarization, no-code deployment,
+        and Workspace-native automation.
       # === OPTIONAL: repo-local reputable source list ===
       # Copy standards/feature-ideation-sources.md from petry-projects/.github
       # to .github/feature-ideation-sources.md and customise it. The reusable
