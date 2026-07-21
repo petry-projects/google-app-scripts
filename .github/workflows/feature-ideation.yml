@@ -65,7 +65,7 @@ on:
         default: false
         type: boolean
       enhance_backlog:
-        description: "Backlog enhancement sweep: enhance this repo's open, human-authored, not-yet-enhanced Ideas (one comment each, idempotent). Combine with dry_run=true to preview."
+        description: 'Backlog enhancement sweep: enhance this repo''s open, human-authored, not-yet-enhanced Ideas (one comment each, idempotent). Combine with dry_run=true to preview.'
         required: false
         default: false
         type: boolean
@@ -107,7 +107,7 @@ jobs:
         # A workflow_dispatch fired with GITHUB_TOKEN is accepted but never starts
         # a run (loop prevention), so a PAT is required (same as initiative-planner).
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT_WORKFLOWS }}
+          GH_TOKEN: ${{ secrets.GH_PAT_DON_PETRY || secrets.GH_PAT_WORKFLOWS }}
         run: |
           if [ -z "${GH_TOKEN}" ]; then
             echo "::error::GH_PAT_WORKFLOWS is required — a workflow_dispatch fired with GITHUB_TOKEN will not start a run."
@@ -115,7 +115,7 @@ jobs:
           fi
       - name: Re-dispatch under workflow_dispatch
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT_WORKFLOWS }}
+          GH_TOKEN: ${{ secrets.GH_PAT_DON_PETRY || secrets.GH_PAT_WORKFLOWS }}
           REPO: ${{ github.repository }}
           DISCUSSION_NUMBER: ${{ github.event.discussion.number }}
         run: |
@@ -182,7 +182,7 @@ jobs:
       discussions: write
       id-token: write
       actions: read
-    uses: petry-projects/.github/.github/workflows/feature-ideation-reusable.yml@feature-ideation/stable # NOSONAR(githubactions:S7637) first-party channel ref
+    uses: petry-projects/.github/.github/workflows/feature-ideation-reusable.yml@feature-ideation/stable  # NOSONAR(githubactions:S7637) first-party channel ref
     with:
       # All values below come from `needs.prep.outputs.*` (resolved in the `prep`
       # job) — NOT the `inputs` context — so this reusable `with:` compiles on the
