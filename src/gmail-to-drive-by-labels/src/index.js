@@ -80,6 +80,12 @@ function removeExistingThread(body, threadId) {
  * @returns {boolean} True if an exact-content duplicate exists
  */
 function isDuplicateAttachment(existingFiles, newFileBlob) {
+  // Try getBytes() for GAS blobs, bytes property for test mocks, empty buffer as fallback.
+  const newFileBytes = newFileBlob.getBytes
+    ? newFileBlob.getBytes()
+    : newFileBlob.bytes || Buffer.from('')
+  const newFileLength = newFileBytes.length
+
   let existingCount = 0
   while (existingFiles.hasNext()) {
     existingCount++
@@ -89,12 +95,8 @@ function isDuplicateAttachment(existingFiles, newFileBlob) {
       existingCount
     )
 
-    // Compare sizes first (fast fail). Try getBytes() for GAS blobs,
-    // bytes property for test mocks, empty buffer as fallback.
-    const newFileBytes = newFileBlob.getBytes
-      ? newFileBlob.getBytes()
-      : newFileBlob.bytes || Buffer.from('')
-    if (existingFile.getSize() !== newFileBytes.length) {
+    // Compare sizes first (fast fail)
+    if (existingFile.getSize() !== newFileLength) {
       console.log('[processMessageToDoc] Size mismatch - different file')
       continue
     }
@@ -782,20 +784,24 @@ function moveProcessedThreads(labels, properties, stateKey, state, limits) {
   console.log('[rebuildDoc] Moved', batchCount, 'threads in this batch')
   state.processedCount += batchCount
 
-  // Check if we're done
-  if (processedLabel.getThreads().length === 0) {
-    console.log('[rebuildDoc] All threads moved')
-    state.phase = 'complete'
-    properties.setProperty(stateKey, JSON.stringify(state))
-    return true
+  // Check if we're done. If the local queue is non-empty we hit the batch
+  // size limit and can skip the API call — we already know threads remain.
+  if (threads.length === 0) {
+    const remainingCount = processedLabel.getThreads().length
+    if (remainingCount === 0) {
+      console.log('[rebuildDoc] All threads moved')
+      state.phase = 'complete'
+      properties.setProperty(stateKey, JSON.stringify(state))
+      return true
+    }
+    console.log('[rebuildDoc] Still', remainingCount, 'threads remaining')
+  } else {
+    console.log(
+      '[rebuildDoc] Still',
+      threads.length,
+      'threads remaining in current batch'
+    )
   }
-
-  // Still more threads to process
-  console.log(
-    '[rebuildDoc] Still',
-    processedLabel.getThreads().length,
-    'threads remaining'
-  )
   properties.setProperty(stateKey, JSON.stringify(state))
   return false // Not complete, need to run again
 }

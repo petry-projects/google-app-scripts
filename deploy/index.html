@@ -1857,8 +1857,12 @@
           try {
             await apiFetch(`${APPS_SCRIPT_API}/projects/${storedId}`)
             return storedId
-          } catch {
-            // Project no longer exists — fall through to creation.
+          } catch (err) {
+            // Only fall through to creation on 404 (Not Found).
+            // Other errors (e.g., rate limits, network issues) should propagate.
+            if (err.httpStatus !== 404) {
+              throw err
+            }
           }
         }
 
