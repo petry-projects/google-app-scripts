@@ -213,7 +213,7 @@ function formatBriefing(title, groupedEvents, formatTime) {
     sections.push(dayLabel)
 
     // Detect if items are tuples or plain events
-    const isTuple = items.length > 0 && items[0]?.event
+    const isTuple = !!items[0]?.event
     const tuples = isTuple
       ? items
       : items.map((e) => ({ event: e, calendarName: null }))

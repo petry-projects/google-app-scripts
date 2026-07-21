@@ -779,18 +779,28 @@ function moveEmailsPhase(labels, properties, stateKey, state, timing) {
   console.log('[rebuildDoc] Moved', batchCount, 'threads in this batch')
   state.processedCount += batchCount
 
-  // Check if we're done
-  if (processedLabel.getThreads().length === 0) {
+  if (threads.length > 0) {
+    console.log(
+      '[rebuildDoc] Still',
+      threads.length,
+      'threads remaining in this batch'
+    )
+    properties.setProperty(stateKey, JSON.stringify(state))
+    return false
+  }
+
+  // If the local batch is empty, double-check Gmail to ensure no more threads exist
+  const remainingThreads = processedLabel.getThreads()
+  if (remainingThreads.length === 0) {
     console.log('[rebuildDoc] All threads moved')
     state.phase = 'complete'
     properties.setProperty(stateKey, JSON.stringify(state))
     return true
   }
 
-  // Still more threads to process
   console.log(
     '[rebuildDoc] Still',
-    processedLabel.getThreads().length,
+    remainingThreads.length,
     'threads remaining'
   )
   properties.setProperty(stateKey, JSON.stringify(state))
