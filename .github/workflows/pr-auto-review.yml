@@ -28,9 +28,8 @@ on:
   # workflow_run fires when a named GitHub Actions workflow completes.
   # check_suite does NOT trigger for GitHub Actions runs, so this is required
   # to catch CI turning green on a PR.
-  # TODO: replace "CI" with your repository's CI workflow name(s).
   workflow_run:
-    workflows: ["CI"]
+    workflows: ["CI Pipeline", "Node.js Tests"]
     types: [completed]
   # check_suite covers third-party CI checks (e.g. SonarCloud, external apps).
   check_suite:
@@ -46,6 +45,13 @@ permissions: {}
 
 jobs:
   pr-auto-review:
+    # Skip fork PRs on pull_request and pull_request_review events — forks don't
+    # receive org secrets, so GH_PAT_WORKFLOWS would be empty and the reusable's
+    # gh api calls would fail. Other triggers (workflow_run, check_suite) always
+    # run in the base-repo context and have full secret access.
+    if: >
+      (github.event_name != 'pull_request' && github.event_name != 'pull_request_review') ||
+      github.event.pull_request.head.repo.fork == false
     permissions:
       pull-requests: read
       checks: read
