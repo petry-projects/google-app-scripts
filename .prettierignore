@@ -8,3 +8,9 @@
 # petry-projects/.github/standards/workflows/initiative-driver.yml.
 # Prettier must not reformat it to avoid byte-drift on future syncs.
 .github/workflows/initiative-driver.yml
+# feature-ideation is a standards-owned caller stub whose centrally-owned
+# `on:`/`permissions:`/`concurrency:` surface is enforced byte-identical against
+# petry-projects/.github/standards/workflows/feature-ideation.yml by the stub-drift
+# guard. The canonical uses single-quoted YAML scalars; Prettier would rewrite them
+# to double quotes and re-introduce surface drift, so it must not reformat this file.
+.github/workflows/feature-ideation.yml
