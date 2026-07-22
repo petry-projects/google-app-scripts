@@ -65,7 +65,7 @@ on:
         default: false
         type: boolean
       enhance_backlog:
-        description: "Backlog enhancement sweep: enhance this repo's open, human-authored, not-yet-enhanced Ideas (one comment each, idempotent). Combine with dry_run=true to preview."
+        description: 'Backlog enhancement sweep: enhance this repo''s open, human-authored, not-yet-enhanced Ideas (one comment each, idempotent). Combine with dry_run=true to preview.'
         required: false
         default: false
         type: boolean
