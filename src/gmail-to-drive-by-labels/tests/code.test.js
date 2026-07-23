@@ -176,11 +176,15 @@ describe('storeEmailsAndAttachments', () => {
     })
 
     // Run - should pause due to simulated timeout
-    rebuildAllDocs()
+    let result
+    try {
+      result = rebuildAllDocs()
+    } finally {
+      nowSpy.mockRestore()
+    }
 
-    // Restore Date.now
-    nowSpy.mockRestore()
-
+    // Should have paused (returned false)
+    expect(result).toBe(false)
     // Should have processed some but not all threads
     expect(processedLabel.getThreads().length).toBeLessThan(150)
     expect(processedLabel.getThreads().length).toBeGreaterThan(0)
