@@ -97,7 +97,7 @@ function processMessageToDoc(message, body, folder, options = {}) {
   let currentIndex = 0
 
   // Insert subject
-  const subjectText = 'Subject: ' + (subject ? subject : '(No Subject)')
+  const subjectText = 'Subject: ' + (subject || '(No Subject)')
   const headingPara = body.insertParagraph(currentIndex++, subjectText)
 
   // Try to set heading style (GAS only)
@@ -201,12 +201,12 @@ function processMessageToDoc(message, body, folder, options = {}) {
               Session.getScriptTimeZone(),
               '_HHmmss'
             )
-            const newName = fileName.replace(/(\.[\w\d_-]+)$/i, timeTag + '$1')
+            const newName = fileName.replace(/(\.[\w-]+)$/i, timeTag + '$1')
             fileName = newName === fileName ? fileName + timeTag : newName
           } else {
             // Test environment - simple timestamp
             const timeTag = '_' + Date.now()
-            const newName = fileName.replace(/(\.[\w\d_-]+)$/i, timeTag + '$1')
+            const newName = fileName.replace(/(\.[\w-]+)$/i, timeTag + '$1')
             fileName = newName === fileName ? fileName + timeTag : newName
           }
 
@@ -491,7 +491,7 @@ function processLabelGroup(config, services, helperFns) {
       // This ensures the most recent emails appear first.
       let currentIndex = 0
 
-      const subjectText = 'Subject: ' + (subject ? subject : '(No Subject)')
+      const subjectText = 'Subject: ' + (subject || '(No Subject)')
       const headingPara = body.insertParagraph(currentIndex++, subjectText)
 
       // Try to set heading, fallback to bold if Doc is busy
@@ -590,7 +590,7 @@ function processLabelGroup(config, services, helperFns) {
                 '_HHmmss'
               )
               // Insert timestamp before the file extension
-              let newName = fileName.replace(/(\.[\w\d_-]+)$/i, timeTag + '$1')
+              let newName = fileName.replace(/(\.[\w-]+)$/i, timeTag + '$1')
               // Fallback if regex fails (files without extension)
               if (newName === fileName) newName += timeTag
 
@@ -691,7 +691,7 @@ function rebuildDoc(config, services) {
   const { GmailApp, DocumentApp, PropertiesService } = services
   const MAX_EXECUTION_TIME = 4 * 60 * 1000 // 4 minutes (leaving 2 min buffer for 6 min limit)
   const BATCH_SIZE = config.batchSize || 250 // Process threads in batches (default: 250)
-  const startTime = new Date().getTime()
+  const startTime = Date.now()
 
   console.log('[rebuildDoc] Starting rebuild for:', config.triggerLabel)
 
@@ -761,7 +761,7 @@ function rebuildDoc(config, services) {
     let batchCount = 0
     while (batchCount < BATCH_SIZE && threads.length > 0) {
       // Check if we're running out of time
-      const elapsed = new Date().getTime() - startTime
+      const elapsed = Date.now() - startTime
       if (elapsed > MAX_EXECUTION_TIME) {
         console.log('[rebuildDoc] Approaching time limit, saving progress')
         state.processedCount += batchCount

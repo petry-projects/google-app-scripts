@@ -1,4 +1,4 @@
-const crypto = require('crypto')
+const crypto = require('node:crypto')
 
 /**
  * getCleanBody - logic ported from GAS for local testing
@@ -7,8 +7,8 @@ function getCleanBody(text) {
   if (!text) return ''
 
   const headerPatterns = [
-    /^\s*On\s+.+\s+wrote:/m,
-    /^\s*From:\s+.+\s+Sent:\s+/m,
+    /^\s*On\s.+\swrote:/m,
+    /^\s*From:\s.+\sSent:\s+/m,
     /^\s*_{10,}/m,
     /^\s*From:\s+.+<.+@.+>/m,
     /confidentiality notice/im,
@@ -56,7 +56,7 @@ function getFileHash(blob) {
   } else if (blob && blob.bytes) {
     bytes = Buffer.from(blob.bytes)
   } else {
-    throw new Error('Unsupported blob type')
+    throw new TypeError('Unsupported blob type')
   }
 
   const hash = crypto.createHash('md5').update(bytes).digest('hex')
