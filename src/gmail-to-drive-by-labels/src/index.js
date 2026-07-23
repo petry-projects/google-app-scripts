@@ -85,6 +85,7 @@ function isDuplicateAttachment(existingFiles, newFileBlob) {
     ? newFileBlob.getBytes()
     : newFileBlob.bytes || Buffer.from('')
   const newFileLength = newFileBytes.length
+  const newFileHash = getFileHash(newFileBlob)
 
   let existingCount = 0
   while (existingFiles.hasNext()) {
@@ -102,7 +103,7 @@ function isDuplicateAttachment(existingFiles, newFileBlob) {
     }
 
     console.log('[processMessageToDoc] Size match, checking hash')
-    if (getFileHash(existingFile.getBlob()) === getFileHash(newFileBlob)) {
+    if (getFileHash(existingFile.getBlob()) === newFileHash) {
       console.log('[processMessageToDoc] Hash match - duplicate detected')
       return true
     }
@@ -840,7 +841,8 @@ function moveProcessedThreads(labels, properties, stateKey, state, limits) {
 function rebuildDoc(config, services) {
   const { GmailApp, DocumentApp, PropertiesService } = services
   const maxExecutionTime = 4 * 60 * 1000 // 4 minutes (leaving 2 min buffer for 6 min limit)
-  const batchSize = config.batchSize || 250 // Process threads in batches (default: 250)
+  const parsedBatchSize = parseInt(config.batchSize, 10)
+  const batchSize = parsedBatchSize > 0 ? parsedBatchSize : 250
   const startTime = new Date().getTime()
 
   console.log('[rebuildDoc] Starting rebuild for:', config.triggerLabel)

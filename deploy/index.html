@@ -2043,10 +2043,13 @@
           // Refresh Step 2 to show deployment badges
           renderScriptList()
 
-          showStatus('ok', buildDeploySuccessHtml(deployedProjects))
-
-          // Show Step 3 config cards
-          renderConfigCards(deployedProjects)
+          if (deployedProjects.length === 0) {
+            showStatus('error', '❌ No scripts were deployed successfully.')
+          } else {
+            showStatus('ok', buildDeploySuccessHtml(deployedProjects))
+            // Show Step 3 config cards
+            renderConfigCards(deployedProjects)
+          }
         } catch (err) {
           showStatus('error', buildDeployErrorHtml(err))
         } finally {

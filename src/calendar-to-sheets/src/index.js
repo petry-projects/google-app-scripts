@@ -194,8 +194,14 @@ function computeDeletableRows(existingMap, desiredMap, start, end) {
     }
 
     const rowStartTime = new Date(rowStart)
-    // Only delete if row's event time falls within our sync window
-    if (!isNaN(rowStartTime) && rowStartTime >= start && rowStartTime <= end) {
+    const rowEndTime = new Date(rowEnd)
+    // Delete if event overlaps the sync window (event.start <= window.end AND event.end >= window.start)
+    if (
+      !isNaN(rowStartTime) &&
+      !isNaN(rowEndTime) &&
+      rowStartTime <= end &&
+      rowEndTime >= start
+    ) {
       console.log('[syncCalendarToSheet] Marking event for deletion:', id)
       toDelete.push(ex.rowIndex)
     } else {

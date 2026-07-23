@@ -361,6 +361,33 @@ describe('rebuildDoc', () => {
     expect(triggerLabel.getThreads()).toHaveLength(200)
     expect(processedLabel.getThreads()).toHaveLength(0)
   })
+
+  test('falls back to batch size 250 when batchSize config is non-numeric', () => {
+    const triggerLabel = global.GmailApp.createLabel('test-label')
+    const processedLabel = global.GmailApp.createLabel('test-label-archived')
+
+    // Add 10 threads (well below the 250 default)
+    for (let i = 0; i < 10; i++) {
+      const msg = createMessage({ subject: `Email ${i}`, body: `Body ${i}` })
+      global.GmailApp.__addThreadWithLabels(['test-label-archived'], [msg])
+    }
+
+    global.DocumentApp.openById('doc-1')
+
+    const config = {
+      triggerLabel: 'test-label',
+      processedLabel: 'test-label-archived',
+      docId: 'doc-1',
+      folderId: 'folder-1',
+      batchSize: 'invalid', // Non-numeric — must not hang the rebuild loop
+    }
+
+    // Should complete (not stall) and move all threads
+    const completed = rebuildDoc(config)
+    expect(completed).toBe(true)
+    expect(triggerLabel.getThreads()).toHaveLength(10)
+    expect(processedLabel.getThreads()).toHaveLength(0)
+  })
 })
 
 describe('rebuildAllDocs', () => {
