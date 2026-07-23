@@ -165,24 +165,21 @@ describe('storeEmailsAndAttachments', () => {
 
     global.DocumentApp.openById('test-doc')
 
-    // Mock Date to simulate timeout
-    const originalDate = Date
+    // Mock Date.now to simulate timeout
     let callCount = 0
-    global.Date = class extends originalDate {
-      getTime() {
-        callCount++
-        if (callCount > 50) {
-          return 5 * 60 * 1000 // 5 minutes - exceeds threshold
-        }
-        return 0
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => {
+      callCount++
+      if (callCount > 50) {
+        return 5 * 60 * 1000 // 5 minutes - exceeds threshold
       }
-    }
+      return 0
+    })
 
     // Run - should pause due to simulated timeout
     rebuildAllDocs()
 
-    // Restore Date
-    global.Date = originalDate
+    // Restore Date.now
+    nowSpy.mockRestore()
 
     // Should have processed some but not all threads
     expect(processedLabel.getThreads().length).toBeLessThan(150)

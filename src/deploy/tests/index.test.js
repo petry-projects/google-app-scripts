@@ -642,7 +642,7 @@ describe('buildDeploySuccessHtml', () => {
     ]
     const html = buildDeploySuccessHtml(projects)
 
-    expect((html.match(/Deployed successfully/g) || []).length).toBe(2)
+    expect(html.match(/Deployed successfully/g) || []).toHaveLength(2)
   })
 
   test('handles empty array with 0 scripts message', () => {

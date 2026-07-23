@@ -197,8 +197,8 @@ function computeDeletableRows(existingMap, desiredMap, start, end) {
     const rowEndTime = new Date(rowEnd)
     // Delete if event overlaps the sync window (event.start <= window.end AND event.end >= window.start)
     if (
-      !isNaN(rowStartTime) &&
-      !isNaN(rowEndTime) &&
+      !Number.isNaN(rowStartTime.getTime()) &&
+      !Number.isNaN(rowEndTime.getTime()) &&
       rowStartTime <= end &&
       rowEndTime >= start
     ) {

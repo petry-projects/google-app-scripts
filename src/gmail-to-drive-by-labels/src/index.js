@@ -788,7 +788,7 @@ function moveProcessedThreads(labels, properties, stateKey, state, limits) {
   let batchCount = 0
   while (batchCount < batchSize && threads.length > 0) {
     // Check if we're running out of time
-    if (new Date().getTime() - startTime > maxExecutionTime) {
+    if (Date.now() - startTime > maxExecutionTime) {
       console.log('[rebuildDoc] Approaching time limit, saving progress')
       state.processedCount += batchCount
       properties.setProperty(stateKey, JSON.stringify(state))
@@ -841,9 +841,9 @@ function moveProcessedThreads(labels, properties, stateKey, state, limits) {
 function rebuildDoc(config, services) {
   const { GmailApp, DocumentApp, PropertiesService } = services
   const maxExecutionTime = 4 * 60 * 1000 // 4 minutes (leaving 2 min buffer for 6 min limit)
-  const parsedBatchSize = parseInt(config.batchSize, 10)
+  const parsedBatchSize = Number.parseInt(config.batchSize, 10)
   const batchSize = parsedBatchSize > 0 ? parsedBatchSize : 250
-  const startTime = new Date().getTime()
+  const startTime = Date.now()
 
   console.log('[rebuildDoc] Starting rebuild for:', config.triggerLabel)
 

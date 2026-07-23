@@ -256,11 +256,11 @@ async function createGmailLabel(fetchFn, accessToken, labelName) {
  */
 function escapeHtml(str) {
   return String(str == null ? '' : str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#x27;')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#x27;')
 }
 
 /**
@@ -308,7 +308,7 @@ function buildDeploySuccessHtml(deployedProjects) {
 function buildDeployErrorHtml(err) {
   if (!err) return '❌ Deployment failed: Unknown error'
 
-  const isApiDisabled = err.message && err.message.includes('Apps Script API')
+  const isApiDisabled = err.message?.includes('Apps Script API')
   const errorDetail = err.stack || err.message || String(err)
   const errorDetailBlock =
     `<details style="margin-top:6px;font-size:12px;">` +
