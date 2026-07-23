@@ -279,7 +279,7 @@ function buildDeploySuccessHtml(deployedProjects) {
         `<div style="border:1px solid #c8e6c9;border-radius:6px;padding:12px 16px;margin-top:12px;">` +
         `<div style="font-size:13px;font-weight:600;color:#137333;">✅ Deployed successfully</div>` +
         `<a class="result-link" href="https://script.google.com/d/${safeId}/edit" ` +
-        `target="_blank" rel="noopener" style="margin-top:6px;display:block;">` +
+        `target="_blank" rel="noopener noreferrer" style="margin-top:6px;display:block;">` +
         `${escapeHtml(p.title)} ↗</a>` +
         `</div>`
       )
@@ -315,15 +315,14 @@ function buildDeployErrorHtml(err) {
     `<details style="margin-top:6px;font-size:12px;">` +
     `<summary style="cursor:pointer;color:#888;">Error detail</summary>` +
     `<div class="error-detail">${safeErrorDetail}</div>` +
-    `<button class="copy-btn" data-copy="${safeErrorDetail}"` +
-    ` onclick="navigator.clipboard.writeText(this.dataset.copy).catch(()=>{})">` +
+    `<button class="copy-btn" data-copy="${safeErrorDetail}">` +
     `📋 Copy error</button>` +
     `</details>`
 
   if (isApiDisabled) {
     return (
       '❌ Deployment failed: User has not enabled the Apps Script API.' +
-      '<a href="https://script.google.com/home/usersettings" target="_blank" rel="noopener"' +
+      '<a href="https://script.google.com/home/usersettings" target="_blank" rel="noopener noreferrer"' +
       ' style="display:block;margin-top:8px;">' +
       '👉 Enable it at script.google.com/home/usersettings' +
       '</a>' +
