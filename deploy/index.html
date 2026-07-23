@@ -1673,13 +1673,14 @@
         }).join('')
       }
 
+      // Tested in src/deploy/tests/index.test.js (escapeHtml suite)
       function escapeHtml(str) {
         return String(str == null ? '' : str)
           .replace(/&/g, '&amp;')
           .replace(/</g, '&lt;')
           .replace(/>/g, '&gt;')
           .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#39;')
+          .replace(/'/g, '&#x27;')
       }
 
       /**
@@ -1951,6 +1952,7 @@
       }
 
       /** Builds the success banner HTML for a set of deployed projects. */
+      // Tested in src/deploy/tests/index.test.js (buildDeploySuccessHtml suite)
       function buildDeploySuccessHtml(deployedProjects) {
         const projectLinksHtml = deployedProjects
           .map((p) => {
@@ -1979,7 +1981,7 @@
         )
       }
 
-      /** Builds the failure banner HTML for a deployment error. */
+      // Tested in src/deploy/tests/index.test.js (buildDeployErrorHtml suite)
       function buildDeployErrorHtml(err) {
         const isApiDisabled =
           err.message && err.message.includes('Apps Script API')
