@@ -1994,7 +1994,7 @@
           `<summary style="cursor:pointer;color:#888;">Error detail</summary>` +
           `<div class="error-detail">${safeErrorDetail}</div>` +
           `<button class="copy-btn" data-copy="${safeErrorDetail}"` +
-          ` onclick="navigator.clipboard.writeText(this.dataset.copy).catch(()=>{})">` +
+          ` onclick="var d=document.createElement('div');d.innerHTML=this.dataset.copy;navigator.clipboard.writeText(d.textContent).catch(()=>{})">` +
           `📋 Copy error</button>` +
           `</details>`
         if (isApiDisabled) {

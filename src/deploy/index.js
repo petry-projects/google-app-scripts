@@ -315,7 +315,8 @@ function buildDeployErrorHtml(err) {
     `<details style="margin-top:6px;font-size:12px;">` +
     `<summary style="cursor:pointer;color:#888;">Error detail</summary>` +
     `<div class="error-detail">${safeErrorDetail}</div>` +
-    `<button class="copy-btn" data-copy="${safeErrorDetail}">` +
+    `<button class="copy-btn" data-copy="${safeErrorDetail}"` +
+    ` onclick="var d=document.createElement('div');d.innerHTML=this.dataset.copy;navigator.clipboard.writeText(d.textContent).catch(()=>{})">` +
     `📋 Copy error</button>` +
     `</details>`
 

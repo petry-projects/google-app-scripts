@@ -714,6 +714,18 @@ describe('buildDeployErrorHtml', () => {
     expect(html).toContain('copy-btn')
   })
 
+  test('copy button decodes HTML entities via innerHTML before writing to clipboard', () => {
+    const err = new Error('<script>alert("xss")</script>')
+    const html = buildDeployErrorHtml(err)
+
+    // data-copy must hold the HTML-escaped value so quotes in the attribute are safe
+    expect(html).toContain('data-copy="')
+    expect(html).toContain('&lt;script&gt;')
+    // onclick must use div.innerHTML decode trick so the clipboard receives unescaped text
+    expect(html).toContain('d.innerHTML=this.dataset.copy')
+    expect(html).toContain('d.textContent')
+  })
+
   test('handles errors with string representation', () => {
     const err = { message: 'Object error' }
     const html = buildDeployErrorHtml(err)
