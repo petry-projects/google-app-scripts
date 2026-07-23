@@ -310,12 +310,13 @@ function buildDeployErrorHtml(err) {
 
   const isApiDisabled = err.message?.includes('Apps Script API')
   const errorDetail = err.stack || err.message || String(err)
+  const safeErrorDetail = escapeHtml(errorDetail)
   const errorDetailBlock =
     `<details style="margin-top:6px;font-size:12px;">` +
     `<summary style="cursor:pointer;color:#888;">Error detail</summary>` +
-    `<div class="error-detail">${escapeHtml(errorDetail)}</div>` +
-    `<button class="copy-btn" data-copy="${encodeURIComponent(errorDetail)}"` +
-    ` onclick="navigator.clipboard.writeText(decodeURIComponent(this.dataset.copy)).catch(()=>{})">` +
+    `<div class="error-detail">${safeErrorDetail}</div>` +
+    `<button class="copy-btn" data-copy="${safeErrorDetail}"` +
+    ` onclick="navigator.clipboard.writeText(this.dataset.copy).catch(()=>{})">` +
     `📋 Copy error</button>` +
     `</details>`
 
