@@ -1866,96 +1866,11 @@
           const total = selectedIds.length
 
           for (let i = 0; i < total; i++) {
-            const catalogId = selectedIds[i]
-            const script = SCRIPT_CATALOG.find((s) => s.id === catalogId)
-            if (!script) {
-              showStatus(
-                'error',
-                `❌ Unknown script selection: ${escapeHtml(catalogId)}`
-              )
-              return
-            }
-            const projectTitle = `Petry-Projects – ${script.name}`
-            const progress = total > 1 ? ` (${i + 1}/${total})` : ''
-
-            showStatus(
-              'info',
-              `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Fetching source files for <strong>${escapeHtml(script.name)}</strong>${progress}…`
-            )
-
-            // Fetch source files for the selected script.
-            const files = await fetchScriptFiles(catalogId)
-
-            // ── Idempotent project lookup / creation ────────────────────────
-            let projectId = null
-            const storedId = getStoredScriptId(catalogId, projectTitle)
-            if (storedId) {
-              showStatus(
-                'info',
-                `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Verifying existing project <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
-              )
-              try {
-                await apiFetch(`${APPS_SCRIPT_API}/projects/${storedId}`)
-                projectId = storedId
-              } catch {
-                // Project no longer exists — fall through to creation.
-              }
-            }
-
-            if (!projectId) {
-              showStatus(
-                'info',
-                `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Creating project <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
-              )
-              const project = await apiFetch(`${APPS_SCRIPT_API}/projects`, {
-                method: 'POST',
-                body: JSON.stringify({ title: projectTitle }),
-              })
-              projectId = validateScriptId(project.scriptId)
-              storeScriptId(catalogId, projectTitle, projectId)
-            }
-
-            showStatus(
-              'info',
-              `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Uploading files for <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
-            )
-
-            // All scripts use an hourly trigger. Schedule logic lives in config.gs.
-            const setupSource = buildSetupSource(script.triggerFn)
-
-            // Upload source files: manifest + setup.gs + code.gs + config.gs (template).
-            await apiFetch(`${APPS_SCRIPT_API}/projects/${projectId}/content`, {
-              method: 'PUT',
-              body: JSON.stringify({
-                files: [
-                  {
-                    name: 'appsscript',
-                    type: 'JSON',
-                    source: APPSSCRIPT_MANIFEST,
-                  },
-                  {
-                    name: 'setup',
-                    type: 'SERVER_JS',
-                    source: setupSource,
-                  },
-                  ...files.map((f) => ({
-                    name: f.name,
-                    type: 'SERVER_JS',
-                    source: f.source,
-                  })),
-                ],
-              }),
-            })
-
-            deployedProjects.push({
-              scriptId: projectId,
-              title: projectTitle,
-              catalogId,
-            })
-            deployedScripts.set(catalogId, {
-              scriptId: projectId,
-              title: projectTitle,
-            })
+            const deployed = await deployOneScript(selectedIds[i], i, total)
+            // A null result means the selection was invalid and an error was
+            // already shown — abort the whole deploy.
+            if (!deployed) return
+            deployedProjects.push(deployed)
           }
 
           // Refresh Step 2 to show deployment badges
@@ -1986,30 +1901,7 @@
           // Show Step 3 config cards
           renderConfigCards(deployedProjects)
         } catch (err) {
-          const isApiDisabled =
-            err.message && err.message.includes('Apps Script API')
-          const errorDetail = err.stack || err.message || String(err)
-          const errorDetailBlock =
-            `<details style="margin-top:6px;font-size:12px;">` +
-            `<summary style="cursor:pointer;color:#888;">Error detail</summary>` +
-            `<div class="error-detail">${escapeHtml(errorDetail)}</div>` +
-            `<button class="copy-btn" data-copy="${encodeURIComponent(errorDetail)}"` +
-            ` onclick="navigator.clipboard.writeText(decodeURIComponent(this.dataset.copy)).catch(()=>{})">` +
-            `📋 Copy error</button>` +
-            `</details>`
-          const errorHtml = isApiDisabled
-            ? '❌ Deployment failed: User has not enabled the Apps Script API.' +
-              '<a href="https://script.google.com/home/usersettings" target="_blank" rel="noopener"' +
-              ' style="display:block;margin-top:8px;">' +
-              '👉 Enable it at script.google.com/home/usersettings' +
-              '</a>' +
-              '<span style="font-size:12px;color:#888;display:block;margin-top:4px;">' +
-              'After enabling, wait a minute then try again.' +
-              '</span>' +
-              errorDetailBlock
-            : `❌ Deployment failed: ${escapeHtml(err.message)}` +
-              errorDetailBlock
-          showStatus('error', errorHtml)
+          showStatus('error', buildDeployErrorHtml(err))
         } finally {
           btn.disabled = false
           btn.innerHTML = 'Deploy to my account'
@@ -2018,6 +1910,134 @@
       }
 
       // ── Helpers ───────────────────────────────────────────────────────────────────
+
+      /**
+       * Deploys a single selected script: idempotently finds or creates its
+       * Apps Script project and uploads the manifest, setup.gs and source files.
+       * Returns a `{ scriptId, title, catalogId }` descriptor, or `null` when
+       * the selection is invalid (an error status has already been shown).
+       */
+      async function deployOneScript(catalogId, i, total) {
+        const script = SCRIPT_CATALOG.find((s) => s.id === catalogId)
+        if (!script) {
+          showStatus(
+            'error',
+            `❌ Unknown script selection: ${escapeHtml(catalogId)}`
+          )
+          return null
+        }
+        const projectTitle = `Petry-Projects – ${script.name}`
+        const progress = total > 1 ? ` (${i + 1}/${total})` : ''
+
+        showStatus(
+          'info',
+          `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Fetching source files for <strong>${escapeHtml(script.name)}</strong>${progress}…`
+        )
+
+        // Fetch source files for the selected script.
+        const files = await fetchScriptFiles(catalogId)
+
+        // ── Idempotent project lookup / creation ────────────────────────
+        let projectId = null
+        const storedId = getStoredScriptId(catalogId, projectTitle)
+        if (storedId) {
+          showStatus(
+            'info',
+            `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Verifying existing project <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
+          )
+          try {
+            await apiFetch(`${APPS_SCRIPT_API}/projects/${storedId}`)
+            projectId = storedId
+          } catch {
+            // Project no longer exists — fall through to creation.
+          }
+        }
+
+        if (!projectId) {
+          showStatus(
+            'info',
+            `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Creating project <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
+          )
+          const project = await apiFetch(`${APPS_SCRIPT_API}/projects`, {
+            method: 'POST',
+            body: JSON.stringify({ title: projectTitle }),
+          })
+          projectId = validateScriptId(project.scriptId)
+          storeScriptId(catalogId, projectTitle, projectId)
+        }
+
+        showStatus(
+          'info',
+          `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Uploading files for <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
+        )
+
+        // All scripts use an hourly trigger. Schedule logic lives in config.gs.
+        const setupSource = buildSetupSource(script.triggerFn)
+
+        // Upload source files: manifest + setup.gs + code.gs + config.gs (template).
+        await apiFetch(`${APPS_SCRIPT_API}/projects/${projectId}/content`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            files: [
+              {
+                name: 'appsscript',
+                type: 'JSON',
+                source: APPSSCRIPT_MANIFEST,
+              },
+              {
+                name: 'setup',
+                type: 'SERVER_JS',
+                source: setupSource,
+              },
+              ...files.map((f) => ({
+                name: f.name,
+                type: 'SERVER_JS',
+                source: f.source,
+              })),
+            ],
+          }),
+        })
+
+        deployedScripts.set(catalogId, {
+          scriptId: projectId,
+          title: projectTitle,
+        })
+
+        return { scriptId: projectId, title: projectTitle, catalogId }
+      }
+
+      /**
+       * Builds the HTML status message shown when a deployment fails, including
+       * a collapsible error-detail block and special guidance when the Apps
+       * Script API has not been enabled for the account.
+       */
+      function buildDeployErrorHtml(err) {
+        const errMsg = err && err.message ? err.message : ''
+        const isApiDisabled = errMsg.includes('Apps Script API')
+        const errorDetail = (err && err.stack) || errMsg || String(err)
+        const errorDetailBlock =
+          `<details style="margin-top:6px;font-size:12px;">` +
+          `<summary style="cursor:pointer;color:#888;">Error detail</summary>` +
+          `<div class="error-detail">${escapeHtml(errorDetail)}</div>` +
+          `<button class="copy-btn" data-copy="${encodeURIComponent(errorDetail)}"` +
+          ` onclick="navigator.clipboard.writeText(decodeURIComponent(this.dataset.copy)).catch(()=>{})">` +
+          `📋 Copy error</button>` +
+          `</details>`
+        if (isApiDisabled) {
+          return (
+            '❌ Deployment failed: User has not enabled the Apps Script API.' +
+            '<a href="https://script.google.com/home/usersettings" target="_blank" rel="noopener"' +
+            ' style="display:block;margin-top:8px;">' +
+            '👉 Enable it at script.google.com/home/usersettings' +
+            '</a>' +
+            '<span style="font-size:12px;color:#888;display:block;margin-top:4px;">' +
+            'After enabling, wait a minute then try again.' +
+            '</span>' +
+            errorDetailBlock
+          )
+        }
+        return `❌ Deployment failed: ${escapeHtml(errMsg)}` + errorDetailBlock
+      }
 
       /**
        * Fetches the code.gs and config.gs source files for `scriptId` from GitHub.

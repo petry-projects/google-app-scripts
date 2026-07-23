@@ -106,6 +106,80 @@ function ensureHeader(sheet) {
   }
 }
 
+/**
+ * Applies in-place updates for events that already exist in the sheet and
+ * collects rows that need to be inserted.
+ *
+ * @param {Object} sheet - Sheet object
+ * @param {Map} desiredMap - Map of event id -> desired row
+ * @param {Map} existingMap - Map of event id -> { rowIndex, values }
+ * @returns {{updateCount: number, rowsToInsert: Array}}
+ */
+function applyUpdatesAndCollectInserts(sheet, desiredMap, existingMap) {
+  let updateCount = 0
+  const rowsToInsert = []
+
+  for (const [id, row] of desiredMap.entries()) {
+    const ex = existingMap.get(id)
+    if (!ex) {
+      rowsToInsert.push(row)
+      continue
+    }
+    if (!rowsEqual(row, ex.values)) {
+      console.log('[syncCalendarToSheet] Updating row for event:', id)
+      sheet.getRange(ex.rowIndex, 1, 1, row.length).setValues([row])
+      updateCount++
+    }
+  }
+
+  return { updateCount, rowsToInsert }
+}
+
+/**
+ * Collects the 1-based row indices to delete for events that no longer exist,
+ * preserving historical rows that fall outside the sync window or lack valid dates.
+ *
+ * @param {Map} existingMap - Map of event id -> { rowIndex, values }
+ * @param {Map} desiredMap - Map of event id -> desired row
+ * @param {Date} start - Sync window start
+ * @param {Date} end - Sync window end
+ * @returns {number[]} Row indices to delete
+ */
+function collectRowsToDelete(existingMap, desiredMap, start, end) {
+  const toDelete = []
+  for (const [id, ex] of existingMap.entries()) {
+    if (desiredMap.has(id)) continue
+    // Only delete if the row has start/end columns and falls within [start,end]
+    // Otherwise, preserve historical rows outside the sync window
+    const rowStart = ex.values[2] // start is at index 2
+    const rowEnd = ex.values[3] // end is at index 3
+    if (!rowStart || !rowEnd) {
+      // If no valid date columns, don't delete (preserve historical data)
+      console.log(
+        '[syncCalendarToSheet] Preserving event with invalid dates:',
+        id
+      )
+      continue
+    }
+    const rowStartTime = new Date(rowStart)
+    // Only delete if row's event time falls within our sync window
+    if (
+      !isNaN(rowStartTime.getTime()) &&
+      rowStartTime >= start &&
+      rowStartTime <= end
+    ) {
+      console.log('[syncCalendarToSheet] Marking event for deletion:', id)
+      toDelete.push(ex.rowIndex)
+    } else {
+      console.log(
+        '[syncCalendarToSheet] Preserving event outside sync window:',
+        id
+      )
+    }
+  }
+  return toDelete
+}
+
 async function syncCalendarToSheet(
   calendar,
   sheet,
@@ -133,23 +207,11 @@ async function syncCalendarToSheet(
   const existingMap = rowsToMap(body)
 
   // Upsert
-  let updateCount = 0
-  const rowsToInsert = []
-
-  for (const [id, row] of desiredMap.entries()) {
-    if (existingMap.has(id)) {
-      const ex = existingMap.get(id)
-      if (!rowsEqual(row, ex.values)) {
-        // update
-        console.log('[syncCalendarToSheet] Updating row for event:', id)
-        const rowIndex = ex.rowIndex
-        sheet.getRange(rowIndex, 1, 1, row.length).setValues([row])
-        updateCount++
-      }
-    } else {
-      rowsToInsert.push(row)
-    }
-  }
+  const { updateCount, rowsToInsert } = applyUpdatesAndCollectInserts(
+    sheet,
+    desiredMap,
+    existingMap
+  )
 
   if (rowsToInsert.length > 0) {
     console.log(
@@ -179,38 +241,7 @@ async function syncCalendarToSheet(
 
   // Delete rows for events that no longer exist, but only if they fall within
   // the synced time window to avoid deleting rows from events outside [start,end]
-  const toDelete = []
-  for (const [id, ex] of existingMap.entries()) {
-    if (!desiredMap.has(id)) {
-      // Only delete if the row has start/end columns and falls within [start,end]
-      // Otherwise, preserve historical rows outside the sync window
-      const rowStart = ex.values[2] // start is at index 2
-      const rowEnd = ex.values[3] // end is at index 3
-      if (rowStart && rowEnd) {
-        const rowStartTime = new Date(rowStart)
-        // Only delete if row's event time falls within our sync window
-        if (
-          !isNaN(rowStartTime) &&
-          rowStartTime >= start &&
-          rowStartTime <= end
-        ) {
-          console.log('[syncCalendarToSheet] Marking event for deletion:', id)
-          toDelete.push(ex.rowIndex)
-        } else {
-          console.log(
-            '[syncCalendarToSheet] Preserving event outside sync window:',
-            id
-          )
-        }
-      } else {
-        // If no valid date columns, don't delete (preserve historical data)
-        console.log(
-          '[syncCalendarToSheet] Preserving event with invalid dates:',
-          id
-        )
-      }
-    }
-  }
+  const toDelete = collectRowsToDelete(existingMap, desiredMap, start, end)
   // delete from bottom to top
   console.log('[syncCalendarToSheet] Deleting rows:', toDelete.length)
   toDelete.sort((a, b) => b - a).forEach((r) => sheet.deleteRow(r))
