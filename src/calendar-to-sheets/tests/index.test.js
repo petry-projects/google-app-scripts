@@ -262,6 +262,42 @@ test('rowsToMap skips empty rows and sync uses default date range', async () => 
   expect(rows.find((r) => r[0] === 'e5')).toBeTruthy()
 })
 
+test('syncCalendarToSheet deletes stale row for event that overlaps sync window but started before it', async () => {
+  const calendar = CalendarApp.getDefaultCalendar()
+  const ss = SpreadsheetApp.openById('ss1')
+  const sheet = ss.getSheetByName('Sheet1')
+
+  // Event starts before the narrow sync window but ends within it (overnight)
+  const overlappingEvt = createCalendarEvent({
+    id: 'e_overlap',
+    title: 'Overnight Meeting',
+    start: new Date('2026-03-01T23:00:00Z'),
+    end: new Date('2026-03-02T01:00:00Z'),
+    description: '',
+    location: '',
+    attendees: [],
+  })
+  calendar.__addEvent(overlappingEvt)
+
+  // Wide window: event start (23:00) falls inside — row gets added to sheet
+  await syncCalendarToSheet(calendar, sheet, {
+    start: new Date('2026-03-01T00:00:00Z'),
+    end: new Date('2026-03-03T00:00:00Z'),
+  })
+  expect(sheet.__getRows().some((r) => r[0] === 'e_overlap')).toBe(true)
+
+  // Remove the event from the calendar (simulate deletion)
+  calendar.__reset()
+
+  // Narrow window: windowStart (00:00) is AFTER the event's start (23:00 prev day).
+  // The row is stale and should be deleted because the event overlaps this window.
+  await syncCalendarToSheet(calendar, sheet, {
+    start: new Date('2026-03-02T00:00:00Z'),
+    end: new Date('2026-03-03T00:00:00Z'),
+  })
+  expect(sheet.__getRows().some((r) => r[0] === 'e_overlap')).toBe(false)
+})
+
 test('eventToRow handles null guest list and sync handles empty data array', async () => {
   // eventToRow with null guest list
   const evt = {
