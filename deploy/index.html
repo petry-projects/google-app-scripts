@@ -2034,7 +2034,7 @@
 
           for (let i = 0; i < total; i++) {
             const descriptor = await deployOneScript(selectedIds[i], i, total)
-            if (!descriptor) return
+            if (!descriptor) continue
             deployedProjects.push(descriptor)
           }
 

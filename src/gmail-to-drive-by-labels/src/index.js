@@ -143,6 +143,64 @@ function resolveAttachmentName(folder, fileName, newFileBlob, options) {
 }
 
 /**
+ * Process a single attachment: check for duplicates, save to Drive if new, and
+ * insert a reference paragraph in the document. Returns the updated index.
+ *
+ * @param {Object} att - Attachment blob from Gmail message
+ * @param {Object} body - Document body object
+ * @param {Object} folder - Drive folder object
+ * @param {number} currentIndex - Current paragraph insertion index
+ * @param {Object} options - GAS services passed through (Logger, Utilities, Session)
+ * @param {number} attIndex - Zero-based index of this attachment (for logging)
+ * @param {number} totalCount - Total number of attachments (for logging)
+ * @returns {number} Updated paragraph insertion index
+ */
+function processSingleAttachment(
+  att,
+  body,
+  folder,
+  currentIndex,
+  options,
+  attIndex,
+  totalCount
+) {
+  const { Logger } = options
+  console.log(
+    '[processMessageToDoc] Processing attachment',
+    attIndex + 1,
+    'of',
+    totalCount,
+    ':',
+    att.getName()
+  )
+  const fileName = att.getName()
+  // In GAS environment, copyBlob() creates a copy; in test environment, att itself is the blob
+  const newFileBlob = att.copyBlob ? att.copyBlob() : att
+  const existingFiles = folder.getFilesByName(fileName)
+  console.log(
+    '[processMessageToDoc] Checking for existing files named:',
+    fileName
+  )
+  if (isDuplicateAttachment(existingFiles, newFileBlob)) {
+    if (Logger) Logger.log('Skipping exact duplicate: ' + fileName)
+    console.log('[processMessageToDoc] Skipping duplicate:', fileName)
+    body.insertParagraph(currentIndex++, '- [DUPLICATE SKIPPED] ' + fileName)
+  } else {
+    const finalName = resolveAttachmentName(
+      folder,
+      fileName,
+      newFileBlob,
+      options
+    )
+    console.log('[processMessageToDoc] Saving new file:', finalName)
+    const file = folder.createFile(newFileBlob)
+    body.insertParagraph(currentIndex++, '- ' + file.getName())
+    console.log('[processMessageToDoc] File saved successfully')
+  }
+  return currentIndex
+}
+
+/**
  * Process a single message and prepend its content to the document body.
  * Returns the number of paragraphs inserted.
  *
@@ -153,7 +211,7 @@ function resolveAttachmentName(folder, fileName, newFileBlob, options) {
  * @returns {number} Number of paragraphs inserted
  */
 function processMessageToDoc(message, body, folder, options = {}) {
-  const { DocumentApp, Utilities, Logger, Session } = options
+  const { DocumentApp, Utilities, Logger } = options
 
   const subject = message.getSubject()
   const rawContent = message.getPlainBody()
@@ -192,51 +250,16 @@ function processMessageToDoc(message, body, folder, options = {}) {
 
   if (attachments.length > 0) {
     body.insertParagraph(currentIndex++, '[Attachments]:')
-
     attachments.forEach((att, attIndex) => {
-      console.log(
-        '[processMessageToDoc] Processing attachment',
-        attIndex + 1,
-        'of',
-        attachments.length,
-        ':',
-        att.getName()
+      currentIndex = processSingleAttachment(
+        att,
+        body,
+        folder,
+        currentIndex,
+        options,
+        attIndex,
+        attachments.length
       )
-
-      const fileName = att.getName()
-      // In GAS environment, copyBlob() creates a copy; in test environment, att itself is the blob
-      const newFileBlob = att.copyBlob ? att.copyBlob() : att
-
-      // Check for duplicates by content hash
-      const existingFiles = folder.getFilesByName(fileName)
-      console.log(
-        '[processMessageToDoc] Checking for existing files named:',
-        fileName
-      )
-
-      if (isDuplicateAttachment(existingFiles, newFileBlob)) {
-        if (Logger) {
-          Logger.log('Skipping exact duplicate: ' + fileName)
-        }
-        console.log('[processMessageToDoc] Skipping duplicate:', fileName)
-        body.insertParagraph(
-          currentIndex++,
-          '- [DUPLICATE SKIPPED] ' + fileName
-        )
-      } else {
-        // Handle name conflicts (same name, different content)
-        const finalName = resolveAttachmentName(
-          folder,
-          fileName,
-          newFileBlob,
-          options
-        )
-
-        console.log('[processMessageToDoc] Saving new file:', finalName)
-        const file = folder.createFile(newFileBlob)
-        body.insertParagraph(currentIndex++, '- ' + file.getName())
-        console.log('[processMessageToDoc] File saved successfully')
-      }
     })
   }
 
