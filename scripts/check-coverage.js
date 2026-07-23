@@ -7,8 +7,8 @@
  * its minimum threshold, or 0 if all pass.
  */
 
-const fs = require('fs')
-const path = require('path')
+const fs = require('node:fs')
+const path = require('node:path')
 
 const coveragePath = path.join(process.cwd(), 'coverage', 'coverage-final.json')
 
@@ -44,9 +44,9 @@ for (const filePath in coverage) {
   if (fileCoverage.b) {
     for (const key in fileCoverage.b) {
       const branches = fileCoverage.b[key]
-      for (let i = 0; i < branches.length; i++) {
+      for (const hitCount of branches) {
         totals.branches.total++
-        if (branches[i] > 0) totals.branches.covered++
+        if (hitCount > 0) totals.branches.covered++
       }
     }
   }

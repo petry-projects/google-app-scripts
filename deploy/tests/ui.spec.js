@@ -272,9 +272,13 @@ test.describe('deploy index.html', () => {
   test('Step 3 stays hidden after sign-in when no projects in Drive', async ({
     page,
   }) => {
+    // Default mock returns empty files array; wait for the Drive lookup to
+    // actually complete rather than sleeping for a fixed interval.
+    const driveLookup = page.waitForResponse((resp) =>
+      resp.url().includes('drive/v3/files')
+    )
     await signIn(page)
-    // Default mock returns empty files array
-    await page.waitForTimeout(500)
+    await driveLookup
     await expect(page.locator('#step3-card')).toBeHidden()
   })
 

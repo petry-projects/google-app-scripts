@@ -408,37 +408,22 @@ describe('emailBriefing', () => {
 // ── shouldRunNow ─────────────────────────────────────────────────────────────
 
 describe('shouldRunNow', () => {
-  it('returns true on the configured weekly day and hour', () => {
+  it.each([
+    [
+      'configured weekly day and hour (Monday 7 AM)',
+      '2025-01-13T07:00:00',
+      true,
+    ],
+    ['wrong day (Tuesday 7 AM)', '2025-01-14T07:00:00', false],
+    ['wrong hour (Monday 8 AM)', '2025-01-13T08:00:00', false],
+  ])('returns %s -> %s', (_desc, nowIso, expected) => {
     const config = {
       scheduleFrequency: 'weekly',
       scheduleDay: 'MONDAY',
       scheduleHour: 7,
     }
-    // Monday at 7 AM
-    const now = new Date('2025-01-13T07:00:00')
-    expect(shouldRunNow(config, now, null)).toBe(true)
-  })
-
-  it('returns false on wrong day', () => {
-    const config = {
-      scheduleFrequency: 'weekly',
-      scheduleDay: 'MONDAY',
-      scheduleHour: 7,
-    }
-    // Tuesday at 7 AM
-    const now = new Date('2025-01-14T07:00:00')
-    expect(shouldRunNow(config, now, null)).toBe(false)
-  })
-
-  it('returns false on wrong hour', () => {
-    const config = {
-      scheduleFrequency: 'weekly',
-      scheduleDay: 'MONDAY',
-      scheduleHour: 7,
-    }
-    // Monday at 8 AM
-    const now = new Date('2025-01-13T08:00:00')
-    expect(shouldRunNow(config, now, null)).toBe(false)
+    const now = new Date(nowIso)
+    expect(shouldRunNow(config, now, null)).toBe(expected)
   })
 
   it('defaults to weekly Monday 7 AM when schedule fields are missing', () => {
