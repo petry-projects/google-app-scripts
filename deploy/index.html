@@ -1954,6 +1954,7 @@
       /** Builds the success banner HTML for a set of deployed projects. */
       // Tested in src/deploy/tests/index.test.js (buildDeploySuccessHtml suite)
       function buildDeploySuccessHtml(deployedProjects) {
+        if (!Array.isArray(deployedProjects)) return ''
         const projectLinksHtml = deployedProjects
           .map((p) => {
             const safeId = escapeHtml(p.scriptId)
@@ -1983,6 +1984,7 @@
 
       // Tested in src/deploy/tests/index.test.js (buildDeployErrorHtml suite)
       function buildDeployErrorHtml(err) {
+        if (!err) return '❌ Deployment failed: Unknown error'
         const isApiDisabled =
           err.message && err.message.includes('Apps Script API')
         const errorDetail = err.stack || err.message || String(err)
@@ -2008,7 +2010,8 @@
           )
         }
         return (
-          `❌ Deployment failed: ${escapeHtml(err.message)}` + errorDetailBlock
+          `❌ Deployment failed: ${escapeHtml(err.message || String(err))}` +
+          errorDetailBlock
         )
       }
 

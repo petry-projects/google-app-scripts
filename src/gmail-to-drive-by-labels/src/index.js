@@ -133,7 +133,7 @@ function resolveAttachmentName(folder, fileName, newFileBlob, options) {
     Utilities && Session
       ? Utilities.formatDate(new Date(), Session.getScriptTimeZone(), '_HHmmss')
       : '_' + Date.now()
-  const renamed = fileName.replace(/(\.[\w\d_-]+)$/i, timeTag + '$1')
+  const renamed = fileName.replace(/(\.[\w-]+)$/i, timeTag + '$1')
   const finalName = renamed === fileName ? fileName + timeTag : renamed
 
   if (newFileBlob.setName) {
