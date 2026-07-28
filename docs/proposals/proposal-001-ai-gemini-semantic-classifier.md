@@ -7,10 +7,11 @@ By calling the Gemini REST API (`gemini-1.5-flash` / `gemini-2.0-flash`) nativel
 
 ---
 
-## Critical Label Semantics & Inbox Preservation Rule
+## Clean Ingestion Marker: Single Global `Processed` Label
 
-- **Drive Ingestion Designator**: The label suffix `-Processed` (or `-Archived`) indicates **ingestion status into Google Drive**, NOT removal from the user's Inbox.
-- **Inbox Preservation**: Processing an email into Google Drive **MUST NOT remove the message from the user's INBOX**. The email thread remains visible in the Inbox for human review and reading until explicitly archived or deleted by the user.
+- **Eliminating Duplicate Labels**: Rather than creating parallel `-Processed` labels (which doubles sidebar labels from 20 to 40+), the script applies a **single global `Processed` label** (or Green Star badge) to indicate Drive ingestion completion.
+- **Category Preservation**: The thread retains its canonical category label (`Family/School-Toby`, `Finance/Taxes`).
+- **Inbox Preservation**: Processing an email into Google Drive **MUST NOT remove the message from the user's INBOX**. The email thread remains visible in the Inbox for human review until explicitly archived or deleted by the user.
 
 ---
 
@@ -36,8 +37,8 @@ The classifier operates against a standardized, mutually exclusive, collectively
    - Classifies incoming emails from unknown senders based on semantic intent, sender, subject, and body snippet into target canonical labels (`Family/School`, `Finance/Taxes`, `Household/Rentals`, etc.).
 2. **Self-Learning Gmail Filter Generation**:
    - When Gemini classifies a new sender with high confidence ($\ge 95\%$), the script automatically calls `Gmail.Users.Settings.Filters.create` to create a permanent static Gmail filter rule. Future emails from that sender are processed instantly by Gmail's fast native filter engine at $0$ cost.
-3. **Inbox Preservation**:
-   - Classifying and storing an email attachment in Google Drive updates the thread label to `[Label]-Processed` while preserving the thread in the user's INBOX.
+3. **Single Global `Processed` Marker**:
+   - Applies one single global `Processed` label across all ingested mail to keep sidebar labels clean and un-cluttered.
 4. **100% Cloud-Native & Serverless**:
    - Executes natively inside Google Apps Script via `UrlFetchApp.fetch()`. Requires zero external servers, Docker containers, or Python infrastructure.
 
