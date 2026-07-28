@@ -37,6 +37,10 @@ function validateClassification(classification, canonicalDomains) {
   return true
 }
 
+function _sleep(ms) {
+  if (typeof Utilities !== 'undefined') Utilities.sleep(ms)
+}
+
 /**
  * Calls the Gemini REST API and returns a validated classification object, or null.
  *
@@ -98,8 +102,7 @@ function classifyEmailWithGemini(
 
       if (statusCode === 429 || (statusCode >= 500 && statusCode < 600)) {
         if (attempt < MAX_ATTEMPTS - 1) {
-          if (typeof Utilities !== 'undefined')
-            Utilities.sleep(Math.pow(2, attempt) * 1000)
+          _sleep(Math.pow(2, attempt) * 1000)
           continue
         }
         console.error(
