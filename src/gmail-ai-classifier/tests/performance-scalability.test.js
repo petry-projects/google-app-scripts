@@ -3,7 +3,6 @@
  */
 
 describe('Performance and Scalability Benchmarks', () => {
-  
   test('Section-Aware Insertion Benchmark: Large 10,000 Line Document', () => {
     // Generate a 10,000 line mock markdown document string
     const lines = []
@@ -14,22 +13,29 @@ describe('Performance and Scalability Benchmarks', () => {
     lines.push('| Topic | Asset |')
     lines.push('## 3. Ingested Activity Logs')
     lines.push('<details open><summary>Logs</summary>')
-    
+
     for (let i = 1; i <= 10000; i++) {
-      lines.push(`### 2026-07-28 — Log Entry #${i}\n- **Source**: Automated Ingestion\n- **Subject**: Test Log #${i}`)
+      lines.push(
+        `### 2026-07-28 — Log Entry #${i}\n- **Source**: Automated Ingestion\n- **Subject**: Test Log #${i}`
+      )
     }
     lines.push('</details>')
 
     const largeDocContent = lines.join('\n')
-    const newEntry = '### 2026-07-28 — Benchmark Test Entry\n- **Source**: Benchmark Test'
+    const newEntry =
+      '### 2026-07-28 — Benchmark Test Entry\n- **Source**: Benchmark Test'
 
     const startTime = Date.now()
-    
+
     // Simulate section insertion logic
     const detailsMarker = '</details>'
     const detailsIndex = largeDocContent.indexOf(detailsMarker)
-    const updatedContent = largeDocContent.substring(0, detailsIndex) + newEntry + '\n' + largeDocContent.substring(detailsIndex)
-    
+    const updatedContent =
+      largeDocContent.substring(0, detailsIndex) +
+      newEntry +
+      '\n' +
+      largeDocContent.substring(detailsIndex)
+
     const elapsedTimeMs = Date.now() - startTime
 
     expect(updatedContent).toContain('Benchmark Test Entry')
@@ -39,7 +45,7 @@ describe('Performance and Scalability Benchmarks', () => {
 
   test('SHA Collision & Retry Logic Stress Test', () => {
     let attemptCount = 0
-    
+
     // Simulate a function that fails twice with 409 Conflict before succeeding on attempt 3
     const simulateCommitWithConflict = () => {
       attemptCount++
@@ -68,14 +74,14 @@ describe('Performance and Scalability Benchmarks', () => {
       id: `msg_${i}`,
       sender: `user_${i}@example.com`,
       subject: `Subject ${i}`,
-      snippet: `Plain body text snippet for email #${i}`
+      snippet: `Plain body text snippet for email #${i}`,
     }))
 
     const startTime = Date.now()
-    const processed = items.map(item => ({
+    const processed = items.map((item) => ({
       id: item.id,
       canonicalLabel: '04_Family_Health/Bowens',
-      confidence: 0.98
+      confidence: 0.98,
     }))
     const duration = Date.now() - startTime
 
