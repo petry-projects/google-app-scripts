@@ -7,6 +7,13 @@ By calling the Gemini REST API (`gemini-1.5-flash` / `gemini-2.0-flash`) nativel
 
 ---
 
+## Critical Label Semantics & Inbox Preservation Rule
+
+- **Drive Ingestion Designator**: The label suffix `-Processed` (or `-Archived`) indicates **ingestion status into Google Drive**, NOT removal from the user's Inbox.
+- **Inbox Preservation**: Processing an email into Google Drive **MUST NOT remove the message from the user's INBOX**. The email thread remains visible in the Inbox for human review and reading until explicitly archived or deleted by the user.
+
+---
+
 ## Standard 7-Domain Taxonomy Matrix (PARA / ISO 15489 / MECE Aligned)
 
 The classifier operates against a standardized, mutually exclusive, collectively exhaustive (MECE) 7-domain taxonomy:
@@ -29,10 +36,10 @@ The classifier operates against a standardized, mutually exclusive, collectively
    - Classifies incoming emails from unknown senders based on semantic intent, sender, subject, and body snippet into target canonical labels (`Family/School`, `Finance/Taxes`, `Household/Rentals`, etc.).
 2. **Self-Learning Gmail Filter Generation**:
    - When Gemini classifies a new sender with high confidence ($\ge 95\%$), the script automatically calls `Gmail.Users.Settings.Filters.create` to create a permanent static Gmail filter rule. Future emails from that sender are processed instantly by Gmail's fast native filter engine at $0$ cost.
-3. **100% Cloud-Native & Serverless**:
+3. **Inbox Preservation**:
+   - Classifying and storing an email attachment in Google Drive updates the thread label to `[Label]-Processed` while preserving the thread in the user's INBOX.
+4. **100% Cloud-Native & Serverless**:
    - Executes natively inside Google Apps Script via `UrlFetchApp.fetch()`. Requires zero external servers, Docker containers, or Python infrastructure.
-4. **Human-in-the-Loop Active Learning**:
-   - Detects manual label corrections made by the user in the Gmail Web/Mobile UI and updates future prompt context and filter rules.
 
 ---
 
