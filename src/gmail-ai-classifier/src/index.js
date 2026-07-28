@@ -52,9 +52,9 @@ function classifyEmailWithGemini(
   bodyText,
   urlFetchApp
 ) {
-  var url = config.modelEndpoint + '?key=' + config.geminiApiKey
+  const url = config.modelEndpoint + '?key=' + config.geminiApiKey
 
-  var prompt =
+  const prompt =
     'You are an executive email classifier.\n' +
     'Classify the following email into exactly ONE of these canonical domain labels:\n' +
     config.canonicalDomains.join('\n') +
@@ -72,12 +72,12 @@ function classifyEmailWithGemini(
     'Respond ONLY in JSON format with these exact fields:\n' +
     '{"canonical_label": "<one of the labels above>", "confidence": <0.0-1.0>, "reasoning": "<one sentence>"}'
 
-  var payload = {
+  const payload = {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: { response_mime_type: 'application/json' },
   }
 
-  var options = {
+  const options = {
     method: 'post',
     contentType: 'application/json',
     payload: JSON.stringify(payload),
@@ -85,11 +85,11 @@ function classifyEmailWithGemini(
   }
 
   try {
-    var response = urlFetchApp.fetch(url, options)
-    var jsonText = response.getContentText()
-    var parsed = JSON.parse(jsonText)
-    var outputText = parsed.candidates[0].content.parts[0].text
-    var classification = JSON.parse(outputText)
+    const response = urlFetchApp.fetch(url, options)
+    const jsonText = response.getContentText()
+    const parsed = JSON.parse(jsonText)
+    const outputText = parsed.candidates[0].content.parts[0].text
+    const classification = JSON.parse(outputText)
     if (!validateClassification(classification, config.canonicalDomains)) {
       console.error(
         '[classifyEmailWithGemini] Invalid classification response:',
@@ -115,7 +115,7 @@ function classifyEmailWithGemini(
  * @returns {Object|null} GmailLabel or null on failure
  */
 function ensureGmailLabel(labelName, gmailApp) {
-  var existing = gmailApp.getUserLabelByName(labelName)
+  const existing = gmailApp.getUserLabelByName(labelName)
   if (existing) return existing
   try {
     return gmailApp.createLabel(labelName)
@@ -147,21 +147,18 @@ function createPermanentGmailFilter(
   gmailService,
   gmailApp
 ) {
-  var cleanSender = senderEmail.replace(/.*<(.+)>/, '$1').trim()
-  var targetLabel = ensureGmailLabel(labelName, gmailApp)
+  // Use a non-backtracking character class to extract the address from "Name <addr>" format
+  const match = senderEmail.match(/<([^>]+)>/)
+  const cleanSender = (match ? match[1] : senderEmail).trim()
+  const targetLabel = ensureGmailLabel(labelName, gmailApp)
   if (!targetLabel) return false
 
-  if (
-    gmailService &&
-    gmailService.Users &&
-    gmailService.Users.Settings &&
-    gmailService.Users.Settings.Filters
-  ) {
+  if (gmailService?.Users?.Settings?.Filters) {
     try {
-      var existingFilters = gmailService.Users.Settings.Filters.list('me')
-      if (existingFilters && existingFilters.filter) {
-        var duplicate = existingFilters.filter.some(function (f) {
-          return f.criteria && f.criteria.from === cleanSender
+      const existingFilters = gmailService.Users.Settings.Filters.list('me')
+      if (existingFilters?.filter) {
+        const duplicate = existingFilters.filter.some(function (f) {
+          return f.criteria?.from === cleanSender
         })
         if (duplicate) {
           console.log(
@@ -178,7 +175,7 @@ function createPermanentGmailFilter(
       )
     }
 
-    var filterBody = {
+    const filterBody = {
       criteria: { from: cleanSender },
       action: { addLabelIds: [targetLabel.getId()] },
     }
@@ -216,27 +213,27 @@ function createPermanentGmailFilter(
  * @returns {Object[]} Array of result objects describing outcome per thread
  */
 function processThreadBatch(threads, config, services) {
-  var processedLabel = ensureGmailLabel(
+  const processedLabel = ensureGmailLabel(
     config.processedLabel,
     services.GmailApp
   )
-  var results = []
+  const results = []
 
   threads.forEach(function (thread) {
-    var messages = thread.getMessages()
+    const messages = thread.getMessages()
     if (!messages || messages.length === 0) {
       results.push({ threadId: thread.getId(), status: 'empty' })
       return
     }
 
-    var latestMsg = messages[messages.length - 1]
-    var sender = latestMsg.getFrom()
-    var subject = latestMsg.getSubject()
-    var bodySnippet = latestMsg.getPlainBody()
+    const latestMsg = messages[messages.length - 1]
+    const sender = latestMsg.getFrom()
+    const subject = latestMsg.getSubject()
+    const bodySnippet = latestMsg.getPlainBody()
       ? latestMsg.getPlainBody().substring(0, 1200)
       : ''
 
-    var classification = classifyEmailWithGemini(
+    const classification = classifyEmailWithGemini(
       config,
       sender,
       subject,
@@ -260,14 +257,14 @@ function processThreadBatch(threads, config, services) {
       ')'
     )
 
-    var categoryLabel = ensureGmailLabel(
+    const categoryLabel = ensureGmailLabel(
       classification.canonical_label,
       services.GmailApp
     )
     if (categoryLabel) thread.addLabel(categoryLabel)
     if (processedLabel) thread.addLabel(processedLabel)
 
-    var filterCreated = false
+    let filterCreated = false
     if (classification.confidence >= config.autoFilterConfidenceThreshold) {
       filterCreated = createPermanentGmailFilter(
         sender,
