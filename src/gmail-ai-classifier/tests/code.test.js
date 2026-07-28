@@ -15,7 +15,7 @@ const TEST_DOMAINS = [
 const makeConfig = (overrides = {}) => ({
   modelEndpoint:
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
-  geminiApiKey: 'TEST_KEY',
+  geminiApiKey: process.env.TEST_GEMINI_API_KEY || '',
   processedLabel: 'Processed',
   autoFilterConfidenceThreshold: 0.95,
   canonicalDomains: TEST_DOMAINS,
