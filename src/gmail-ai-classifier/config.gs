@@ -2,6 +2,7 @@
  * Configuration for Gmail AI Classifier & Auto-Filter Engine
  */
 function getAiClassifierConfig() {
+  var processedLabel = 'Processed'
   return {
     // Gemini API Key (stored in ScriptProperties or set here)
     geminiApiKey:
@@ -13,10 +14,10 @@ function getAiClassifierConfig() {
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
 
     // Trigger Label applied to unprocessed inbox items
-    unprocessedQuery: 'inbox -label:Processed',
+    unprocessedQuery: 'inbox -label:' + processedLabel,
 
     // Single Global Ingestion Marker Label
-    processedLabel: 'Processed',
+    processedLabel: processedLabel,
 
     // Minimum confidence threshold (0.0 - 1.0) required to auto-create permanent Gmail filter rules
     autoFilterConfidenceThreshold: 0.95,
