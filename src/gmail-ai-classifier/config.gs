@@ -4,10 +4,9 @@
 function getAiClassifierConfig() {
   var processedLabel = 'Processed'
   return {
-    // Gemini API Key (stored in ScriptProperties or set here)
+    // Gemini API Key — set via Project Settings → Script Properties → GEMINI_API_KEY
     geminiApiKey:
-      PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') ||
-      'YOUR_GEMINI_API_KEY',
+      PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY'),
 
     // Model Endpoint (Gemini 1.5 Flash)
     modelEndpoint:
