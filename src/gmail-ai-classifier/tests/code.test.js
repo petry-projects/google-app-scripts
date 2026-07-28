@@ -54,6 +54,7 @@ const makeThread = ({
 })
 
 const makeGeminiResponse = (classification) => ({
+  getResponseCode: () => 200,
   getContentText: () =>
     JSON.stringify({
       candidates: [
@@ -103,6 +104,19 @@ describe('validateClassification', () => {
     ).toBe(false)
   })
 
+  test('returns false when confidence is NaN', () => {
+    expect(
+      validateClassification(
+        {
+          canonical_label: '01_Household/Primary_House',
+          confidence: NaN,
+          reasoning: 'ok',
+        },
+        TEST_DOMAINS
+      )
+    ).toBe(false)
+  })
+
   test('returns false for null input', () => {
     expect(validateClassification(null, TEST_DOMAINS)).toBe(false)
   })
@@ -111,6 +125,28 @@ describe('validateClassification', () => {
     expect(
       validateClassification(
         { canonical_label: 'Unknown/Domain', confidence: 0.9, reasoning: 'ok' },
+        TEST_DOMAINS
+      )
+    ).toBe(false)
+  })
+
+  test('returns false when reasoning is missing', () => {
+    expect(
+      validateClassification(
+        { canonical_label: '01_Household/Primary_House', confidence: 0.9 },
+        TEST_DOMAINS
+      )
+    ).toBe(false)
+  })
+
+  test('returns false when reasoning is not a string', () => {
+    expect(
+      validateClassification(
+        {
+          canonical_label: '01_Household/Primary_House',
+          confidence: 0.9,
+          reasoning: 42,
+        },
         TEST_DOMAINS
       )
     ).toBe(false)
@@ -360,7 +396,10 @@ describe('classifyEmailWithGemini', () => {
 
   test('returns null when API response contains invalid JSON', () => {
     const urlFetchApp = {
-      fetch: jest.fn(() => ({ getContentText: () => 'not-json' })),
+      fetch: jest.fn(() => ({
+        getResponseCode: () => 200,
+        getContentText: () => 'not-json',
+      })),
     }
     expect(
       classifyEmailWithGemini(
@@ -411,6 +450,90 @@ describe('classifyEmailWithGemini', () => {
         urlFetchApp
       )
     ).toBeNull()
+  })
+
+  test('returns null after retrying a 429 response the maximum number of times', () => {
+    const urlFetchApp = {
+      fetch: jest.fn(() => ({
+        getResponseCode: () => 429,
+        getContentText: () => '{"error":"rate limited"}',
+      })),
+    }
+    expect(
+      classifyEmailWithGemini(
+        config,
+        'test@example.com',
+        'Subject',
+        'body',
+        urlFetchApp
+      )
+    ).toBeNull()
+    expect(urlFetchApp.fetch).toHaveBeenCalledTimes(3)
+  })
+
+  test('returns null after retrying a 500 response the maximum number of times', () => {
+    const urlFetchApp = {
+      fetch: jest.fn(() => ({
+        getResponseCode: () => 500,
+        getContentText: () => '{"error":"server error"}',
+      })),
+    }
+    expect(
+      classifyEmailWithGemini(
+        config,
+        'test@example.com',
+        'Subject',
+        'body',
+        urlFetchApp
+      )
+    ).toBeNull()
+    expect(urlFetchApp.fetch).toHaveBeenCalledTimes(3)
+  })
+
+  test('returns null immediately and does not retry a non-transient HTTP error', () => {
+    const urlFetchApp = {
+      fetch: jest.fn(() => ({
+        getResponseCode: () => 400,
+        getContentText: () => '{"error":"bad request"}',
+      })),
+    }
+    expect(
+      classifyEmailWithGemini(
+        config,
+        'test@example.com',
+        'Subject',
+        'body',
+        urlFetchApp
+      )
+    ).toBeNull()
+    expect(urlFetchApp.fetch).toHaveBeenCalledTimes(1)
+  })
+
+  test('returns classification on success after a transient failure', () => {
+    const classification = {
+      canonical_label: '01_Household/Primary_House',
+      confidence: 0.97,
+      reasoning: 'test',
+    }
+    const urlFetchApp = {
+      fetch: jest
+        .fn()
+        .mockReturnValueOnce({
+          getResponseCode: () => 429,
+          getContentText: () => '{}',
+        })
+        .mockReturnValueOnce(makeGeminiResponse(classification)),
+    }
+    expect(
+      classifyEmailWithGemini(
+        config,
+        'test@example.com',
+        'Subject',
+        'body',
+        urlFetchApp
+      )
+    ).toEqual(classification)
+    expect(urlFetchApp.fetch).toHaveBeenCalledTimes(2)
   })
 })
 
@@ -464,7 +587,16 @@ describe('processThreadBatch', () => {
         existingLabel: makeLabel('01_Household/Primary_House'),
       }),
       UrlFetchApp: { fetch: jest.fn(() => makeGeminiResponse(classification)) },
-      Gmail: { Users: { Settings: { Filters: { create: mockCreate } } } },
+      Gmail: {
+        Users: {
+          Settings: {
+            Filters: {
+              create: mockCreate,
+              list: jest.fn(() => ({ filter: [] })),
+            },
+          },
+        },
+      },
     }
     services.GmailApp.getUserLabelByName = jest.fn((name) => makeLabel(name))
 
@@ -552,6 +684,21 @@ describe('processThreadBatch', () => {
 
     expect(results[0].status).toBe('label_creation_failed')
     expect(thread.addLabel).not.toHaveBeenCalled()
+  })
+
+  test('returns empty array and aborts batch when processed label cannot be resolved', () => {
+    const thread = makeThread()
+    const services = {
+      GmailApp: makeGmailApp({ createFails: true }),
+      UrlFetchApp: { fetch: jest.fn() },
+      Gmail: null,
+    }
+
+    const results = processThreadBatch([thread], config, services)
+
+    expect(results).toEqual([])
+    expect(thread.addLabel).not.toHaveBeenCalled()
+    expect(services.UrlFetchApp.fetch).not.toHaveBeenCalled()
   })
 
   test('processes multiple threads independently', () => {

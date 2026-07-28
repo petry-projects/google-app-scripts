@@ -21,8 +21,13 @@ function validateClassification(classification, canonicalDomains) {
     typeof classification.canonical_label !== 'string'
   )
     return false
-  if (typeof classification.confidence !== 'number') return false
+  if (!Number.isFinite(classification.confidence)) return false
   if (classification.confidence < 0 || classification.confidence > 1)
+    return false
+  if (
+    classification.reasoning === undefined ||
+    typeof classification.reasoning !== 'string'
+  )
     return false
   if (
     canonicalDomains &&
@@ -37,6 +42,7 @@ function validateClassification(classification, canonicalDomains) {
  *
  * Returns null on network errors, malformed responses, refused responses, or
  * responses whose canonical_label does not match a configured domain.
+ * Retries transient 429/5xx responses with exponential backoff (up to 3 attempts).
  *
  * @param {Object} config - Classifier configuration (modelEndpoint, geminiApiKey, canonicalDomains)
  * @param {string} sender - Email sender address
@@ -84,27 +90,54 @@ function classifyEmailWithGemini(
     muteHttpExceptions: true,
   }
 
-  try {
-    const response = urlFetchApp.fetch(url, options)
-    const jsonText = response.getContentText()
-    const parsed = JSON.parse(jsonText)
-    const outputText = parsed.candidates[0].content.parts[0].text
-    const classification = JSON.parse(outputText)
-    if (!validateClassification(classification, config.canonicalDomains)) {
+  const MAX_ATTEMPTS = 3
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    try {
+      const response = urlFetchApp.fetch(url, options)
+      const statusCode = response.getResponseCode()
+
+      if (statusCode === 429 || (statusCode >= 500 && statusCode < 600)) {
+        if (attempt < MAX_ATTEMPTS - 1) {
+          if (typeof Utilities !== 'undefined')
+            Utilities.sleep(Math.pow(2, attempt) * 1000)
+          continue
+        }
+        console.error(
+          '[classifyEmailWithGemini] Transient error after retries, status:',
+          statusCode
+        )
+        return null
+      }
+
+      if (statusCode < 200 || statusCode >= 300) {
+        console.error(
+          '[classifyEmailWithGemini] HTTP error from Gemini API, status:',
+          statusCode
+        )
+        return null
+      }
+
+      const jsonText = response.getContentText()
+      const parsed = JSON.parse(jsonText)
+      const outputText = parsed.candidates[0].content.parts[0].text
+      const classification = JSON.parse(outputText)
+      if (!validateClassification(classification, config.canonicalDomains)) {
+        console.error(
+          '[classifyEmailWithGemini] Invalid classification response:',
+          JSON.stringify(classification)
+        )
+        return null
+      }
+      return classification
+    } catch (e) {
       console.error(
-        '[classifyEmailWithGemini] Invalid classification response:',
-        JSON.stringify(classification)
+        '[classifyEmailWithGemini] Error calling Gemini REST API:',
+        e.message
       )
       return null
     }
-    return classification
-  } catch (e) {
-    console.error(
-      '[classifyEmailWithGemini] Error calling Gemini REST API:',
-      e.message
-    )
-    return null
   }
+  return null
 }
 
 /**
@@ -165,8 +198,8 @@ function createPermanentGmailFilter(
         })
         if (duplicate) {
           console.log(
-            '[createPermanentGmailFilter] Filter already exists for:',
-            cleanSender
+            '[createPermanentGmailFilter] Filter already exists for label:',
+            labelName
           )
           return true
         }
@@ -186,9 +219,7 @@ function createPermanentGmailFilter(
     try {
       gmailService.Users.Settings.Filters.create(filterBody, 'me')
       console.log(
-        '[createPermanentGmailFilter] Permanent filter created:',
-        cleanSender,
-        '->',
+        '[createPermanentGmailFilter] Permanent filter created for label:',
         labelName
       )
       return true
@@ -220,6 +251,12 @@ function processThreadBatch(threads, config, services) {
     config.processedLabel,
     services.GmailApp
   )
+  if (!processedLabel) {
+    console.error(
+      '[processThreadBatch] Processed label unavailable; aborting batch to avoid reprocessing.'
+    )
+    return []
+  }
   const results = []
 
   threads.forEach(function (thread) {
@@ -276,7 +313,7 @@ function processThreadBatch(threads, config, services) {
       return
     }
     thread.addLabel(categoryLabel)
-    if (processedLabel) thread.addLabel(processedLabel)
+    thread.addLabel(processedLabel)
 
     let filterCreated = false
     if (classification.confidence >= config.autoFilterConfidenceThreshold) {

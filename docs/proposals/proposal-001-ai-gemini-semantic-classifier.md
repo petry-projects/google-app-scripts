@@ -17,14 +17,16 @@ The classifier requires explicit user opt-in before processing email content wit
 - A `GEMINI_CLASSIFIER_ENABLED` Script Property must be set to `true` to activate processing.
 - Users must acknowledge that email metadata (sender, subject, body snippet) is transmitted to the Gemini API.
 
+> **Not yet implemented:** The `GEMINI_CLASSIFIER_ENABLED` guard and user acknowledgment step are not present in the current version; `processEmailsWithAiClassifier()` runs unconditionally.
+
 ### 2. Data Minimization & Redaction Boundary
 
 Before sending email content to the Gemini API, the implementation applies:
 
 - **Sender**: Full sender address (required for filter generation accuracy).
 - **Subject**: Full subject line.
-- **Body snippet**: Maximum 1,200 characters of plain text; HTML tags and quoted-reply blocks are stripped via `getCleanBody()` before transmission.
-- Sensitive patterns (e.g., SSN-like strings, credit card numbers) should be redacted from the body snippet before it is sent.
+- **Body snippet**: Maximum 1,200 characters of plain text; HTML tags and quoted-reply blocks are stripped via `getCleanBody()` before transmission. _(Not yet implemented: the current version uses `getPlainBody().substring(0, 1200)` without quoted-reply stripping.)_
+- Sensitive patterns (e.g., SSN-like strings, credit card numbers) should be redacted from the body snippet before it is sent. _(Not yet implemented.)_
 
 ### 3. Gemini Provider Data-Retention
 

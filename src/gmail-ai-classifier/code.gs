@@ -12,6 +12,9 @@ function processEmailsWithAiClassifier() {
   var config = getAiClassifierConfig()
 
   var threads = GmailApp.search(config.unprocessedQuery, 0, 15)
+  threads.sort(function (a, b) {
+    return a.getLastMessageDate() - b.getLastMessageDate()
+  })
   console.log(
     '[processEmailsWithAiClassifier] Found',
     threads.length,
