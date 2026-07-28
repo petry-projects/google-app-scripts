@@ -1,9 +1,25 @@
-# Feature Proposal 001: Native Gemini AI Semantic Email Classifier & Auto-Filter Engine
+# Feature Proposal 001: Native Gemini AI Semantic Email Classifier & 7-Domain Taxonomy Engine
 
 ## Executive Summary
-This proposal introduces a native **Gemini AI Semantic Email Classifier** module into the `google-app-scripts` suite. 
+This proposal introduces a native **Gemini AI Semantic Email Classifier & Standard Taxonomy Engine** into the `google-app-scripts` suite. 
 
-By calling the Gemini REST API (`gemini-1.5-flash` / `gemini-2.0-flash`) natively via Google Apps Script's `UrlFetchApp.fetch()`, incoming unclassified emails are semantically categorized into target domain labels, and high-confidence classifications automatically generate permanent Gmail filter rules via the Advanced Gmail Service.
+By calling the Gemini REST API (`gemini-1.5-flash` / `gemini-2.0-flash`) natively via Google Apps Script's `UrlFetchApp.fetch()`, incoming unclassified emails are semantically categorized into **7 Standard Canonical Domains**, and high-confidence classifications automatically generate permanent Gmail filter rules via the Advanced Gmail Service.
+
+---
+
+## Standard 7-Domain Taxonomy Matrix (PARA / ISO 15489 / MECE Aligned)
+
+The classifier operates against a standardized, mutually exclusive, collectively exhaustive (MECE) 7-domain taxonomy:
+
+| 7 Canonical Domains | Standard PARA Area | Scope & Contents |
+| :--- | :--- | :--- |
+| **`01_Household`** | Real Estate & Living Space | Primary residence (2809 Five Oaks), shop build, rental (3535 Broken Bow), 18 Running Deer archive |
+| **`02_Finance_Legal`** | Financial & Legal Protections | Taxes, banking (Schwab/BoA), insurance policies, court records, custody, estate planning |
+| **`03_Vehicles`** | Transportation & Assets | Vehicle searches (2026 car hunt), vehicle titles, Mercedes logs, auto maintenance |
+| **`04_Family_Health`** | Family Welfare & Health | Children (Toby, Tide), school IEPs, speech/audiology reports, medical history, AYOP camps |
+| **`05_Tech_Infrastructure`**| IT & Home Automation | Home Assistant, NAS backups, Tasker scripts, network gear, software licenses |
+| **`06_Work_Career`** | Professional Life & Income | EY architecture, resumes, job interview decks, expense reports, admin notes |
+| **`07_Community_NonProfit`**| Civic Duty & Service | HelpingOneGuy 501(c)(3) charity, JeffCo Bees BOD, faith outreach |
 
 ---
 
@@ -17,36 +33,6 @@ By calling the Gemini REST API (`gemini-1.5-flash` / `gemini-2.0-flash`) nativel
    - Executes natively inside Google Apps Script via `UrlFetchApp.fetch()`. Requires zero external servers, Docker containers, or Python infrastructure.
 4. **Human-in-the-Loop Active Learning**:
    - Detects manual label corrections made by the user in the Gmail Web/Mobile UI and updates future prompt context and filter rules.
-
----
-
-## Architecture & Integration Flow
-
-```
-[Incoming Unclassified Email]
-              │
-              ▼
-┌──────────────────────────────────────────┐
-│ GOOGLE APPS SCRIPT TIME-DRIVEN TRIGGER   │
-│ • Searches: 'inbox -label:AI-Processed'  │
-└─────────────────────┬────────────────────┘
-                      │
-                      ▼
-┌──────────────────────────────────────────┐
-│ GEMINI REST API via UrlFetchApp.fetch()  │
-│ • Model: gemini-1.5-flash                │
-│ • Output: JSON Schema Classification     │
-└─────────────────────┬────────────────────┘
-                      │
-        ┌─────────────┴─────────────┐
-        ▼                           ▼
-┌───────────────────────┐  ┌─────────────────────────────────┐
-│ 1. Immediate Action   │  │ 2. Self-Learning Filter Rule    │
-│ • Apply Gmail Label   │  │ • If Confidence >= 95%, calls   │
-│ • Save Attachments    │  │   Gmail API to create permanent │
-│ • Append Text Log     │  │   filter rule for new sender    │
-└───────────────────────┘  └─────────────────────────────────┘
-```
 
 ---
 
@@ -66,6 +52,7 @@ src/gmail-ai-classifier/
 
 ---
 
-## Discussion & Feedback
+## Discussion & Tracking
 - Issue Tracked: [#491](https://github.com/petry-projects/google-app-scripts/issues/491)
+- Pull Request Tracked: [#492](https://github.com/petry-projects/google-app-scripts/pull/492)
 - Repository: `petry-projects/google-app-scripts`
