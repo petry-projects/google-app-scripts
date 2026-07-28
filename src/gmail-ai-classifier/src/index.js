@@ -264,7 +264,18 @@ function processThreadBatch(threads, config, services) {
       classification.canonical_label,
       services.GmailApp
     )
-    if (categoryLabel) thread.addLabel(categoryLabel)
+    if (!categoryLabel) {
+      console.error(
+        '[processThreadBatch] Failed to create category label:',
+        classification.canonical_label
+      )
+      results.push({
+        threadId: thread.getId(),
+        status: 'label_creation_failed',
+      })
+      return
+    }
+    thread.addLabel(categoryLabel)
     if (processedLabel) thread.addLabel(processedLabel)
 
     let filterCreated = false

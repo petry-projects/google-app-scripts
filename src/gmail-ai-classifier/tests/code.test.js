@@ -526,6 +526,34 @@ describe('processThreadBatch', () => {
     expect(results[0].status).toBe('empty')
   })
 
+  test('returns label_creation_failed and skips processed label when category label creation fails', () => {
+    const thread = makeThread()
+    const classification = {
+      canonical_label: '01_Household/Primary_House',
+      confidence: 0.97,
+      reasoning: 'ok',
+    }
+    const processedLabelObj = makeLabel('Processed')
+    const gmailApp = {
+      getUserLabelByName: jest.fn((name) =>
+        name === 'Processed' ? processedLabelObj : null
+      ),
+      createLabel: jest.fn(() => {
+        throw new Error('Label creation failed')
+      }),
+    }
+    const services = {
+      GmailApp: gmailApp,
+      UrlFetchApp: { fetch: jest.fn(() => makeGeminiResponse(classification)) },
+      Gmail: null,
+    }
+
+    const results = processThreadBatch([thread], config, services)
+
+    expect(results[0].status).toBe('label_creation_failed')
+    expect(thread.addLabel).not.toHaveBeenCalled()
+  })
+
   test('processes multiple threads independently', () => {
     const thread1 = makeThread({ id: 't1', sender: 'a@example.com' })
     const thread2 = makeThread({ id: 't2', sender: 'b@example.com' })
