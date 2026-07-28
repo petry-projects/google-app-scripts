@@ -4,10 +4,13 @@
 function getAiClassifierConfig() {
   return {
     // Gemini API Key (stored in ScriptProperties or set here)
-    geminiApiKey: PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') || 'YOUR_GEMINI_API_KEY',
+    geminiApiKey:
+      PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') ||
+      'YOUR_GEMINI_API_KEY',
 
-    // Model Endpoint (Gemini 1.5 Flash / Gemini 2.0 Flash)
-    modelEndpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
+    // Model Endpoint (Gemini 1.5 Flash)
+    modelEndpoint:
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
 
     // Trigger Label applied to unprocessed inbox items
     unprocessedQuery: 'inbox -label:Processed',
@@ -45,7 +48,7 @@ function getAiClassifierConfig() {
       '06_Work_Career/Career_Interviews',
       '06_Work_Career/Expenses_Admin',
       '07_Community_NonProfit/HelpingOneGuy',
-      '07_Community_NonProfit/JeffCo_Bees'
-    ]
-  };
+      '07_Community_NonProfit/JeffCo_Bees',
+    ],
+  }
 }
