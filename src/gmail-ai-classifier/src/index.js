@@ -53,6 +53,7 @@ function _sleep(ms) {
  * @param {string} subject - Email subject line
  * @param {string} bodyText - Plain-text body snippet (max 1,200 chars recommended)
  * @param {Object} urlFetchApp - GAS UrlFetchApp service (injected for testability)
+ * @param {Function} [sleepFn] - Sleep function for retry delays (injected for testability, defaults to _sleep)
  * @returns {Object|null} Validated classification or null
  */
 function classifyEmailWithGemini(
@@ -60,9 +61,11 @@ function classifyEmailWithGemini(
   sender,
   subject,
   bodyText,
-  urlFetchApp
+  urlFetchApp,
+  sleepFn
 ) {
   const url = config.modelEndpoint
+  const sleep = sleepFn || _sleep
 
   const prompt =
     'You are an executive email classifier.\n' +
@@ -105,7 +108,7 @@ function classifyEmailWithGemini(
 
       if (statusCode === 429 || (statusCode >= 500 && statusCode < 600)) {
         if (attempt < MAX_ATTEMPTS - 1) {
-          _sleep(Math.pow(2, attempt) * 1000)
+          sleep(Math.pow(2, attempt) * 1000)
           continue
         }
         console.error(

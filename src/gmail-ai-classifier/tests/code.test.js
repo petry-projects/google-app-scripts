@@ -459,16 +459,19 @@ describe('classifyEmailWithGemini', () => {
         getContentText: () => '{"error":"rate limited"}',
       })),
     }
+    const mockSleep = jest.fn()
     expect(
       classifyEmailWithGemini(
         config,
         'test@example.com',
         'Subject',
         'body',
-        urlFetchApp
+        urlFetchApp,
+        mockSleep
       )
     ).toBeNull()
     expect(urlFetchApp.fetch).toHaveBeenCalledTimes(3)
+    expect(mockSleep).toHaveBeenCalledTimes(2)
   })
 
   test('returns null after retrying a 500 response the maximum number of times', () => {
@@ -478,16 +481,19 @@ describe('classifyEmailWithGemini', () => {
         getContentText: () => '{"error":"server error"}',
       })),
     }
+    const mockSleep = jest.fn()
     expect(
       classifyEmailWithGemini(
         config,
         'test@example.com',
         'Subject',
         'body',
-        urlFetchApp
+        urlFetchApp,
+        mockSleep
       )
     ).toBeNull()
     expect(urlFetchApp.fetch).toHaveBeenCalledTimes(3)
+    expect(mockSleep).toHaveBeenCalledTimes(2)
   })
 
   test('returns null immediately and does not retry a non-transient HTTP error', () => {
@@ -524,16 +530,19 @@ describe('classifyEmailWithGemini', () => {
         })
         .mockReturnValueOnce(makeGeminiResponse(classification)),
     }
+    const mockSleep = jest.fn()
     expect(
       classifyEmailWithGemini(
         config,
         'test@example.com',
         'Subject',
         'body',
-        urlFetchApp
+        urlFetchApp,
+        mockSleep
       )
     ).toEqual(classification)
     expect(urlFetchApp.fetch).toHaveBeenCalledTimes(2)
+    expect(mockSleep).toHaveBeenCalledTimes(1)
   })
 })
 
