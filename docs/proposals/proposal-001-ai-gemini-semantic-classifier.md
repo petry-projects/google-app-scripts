@@ -7,6 +7,14 @@ By calling the Gemini REST API (`gemini-1.5-flash` / `gemini-2.0-flash`) nativel
 
 ---
 
+## Idempotency & Reprocessing Workflows
+
+- **Query Guard**: Ingestion routines process threads matching `label:Category -label:Processed`.
+- **Deduplication Safety Nets**: MD5 native checksums (`file.getMd5Checksum()`) prevent duplicate attachment saves; thread markers (`[THREAD:id]`) prevent duplicate text logs.
+- **Single-Click Reprocessing**: Removing the `Processed` label from an email thread in Gmail causes the script to re-evaluate, re-clean, and re-process the thread on its next run.
+
+---
+
 ## Clean Ingestion Marker: Single Global `Processed` Label
 
 - **Eliminating Duplicate Labels**: Rather than creating parallel `-Processed` labels (which doubles sidebar labels from 20 to 40+), the script applies a **single global `Processed` label** (or Green Star badge) to indicate Drive ingestion completion.
@@ -37,8 +45,8 @@ The classifier operates against a standardized, mutually exclusive, collectively
    - Classifies incoming emails from unknown senders based on semantic intent, sender, subject, and body snippet into target canonical labels (`Family/School`, `Finance/Taxes`, `Household/Rentals`, etc.).
 2. **Self-Learning Gmail Filter Generation**:
    - When Gemini classifies a new sender with high confidence ($\ge 95\%$), the script automatically calls `Gmail.Users.Settings.Filters.create` to create a permanent static Gmail filter rule. Future emails from that sender are processed instantly by Gmail's fast native filter engine at $0$ cost.
-3. **Single Global `Processed` Marker**:
-   - Applies one single global `Processed` label across all ingested mail to keep sidebar labels clean and un-cluttered.
+3. **Single-Click Reprocessing**:
+   - Simply remove the `Processed` label from any thread to re-run and re-ingest.
 4. **100% Cloud-Native & Serverless**:
    - Executes natively inside Google Apps Script via `UrlFetchApp.fetch()`. Requires zero external servers, Docker containers, or Python infrastructure.
 
