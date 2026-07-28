@@ -62,7 +62,7 @@ function classifyEmailWithGemini(
   bodyText,
   urlFetchApp
 ) {
-  const url = config.modelEndpoint + '?key=' + config.geminiApiKey
+  const url = config.modelEndpoint
 
   const prompt =
     'You are an executive email classifier.\n' +
@@ -90,6 +90,9 @@ function classifyEmailWithGemini(
   const options = {
     method: 'post',
     contentType: 'application/json',
+    headers: {
+      'x-goog-api-key': config.geminiApiKey,
+    },
     payload: JSON.stringify(payload),
     muteHttpExceptions: true,
   }
