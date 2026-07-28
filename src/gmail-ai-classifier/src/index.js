@@ -151,18 +151,39 @@ function createPermanentGmailFilter(
   var targetLabel = ensureGmailLabel(labelName, gmailApp)
   if (!targetLabel) return false
 
-  var filterBody = {
-    criteria: { from: cleanSender },
-    action: { addLabelIds: [targetLabel.getId()] },
-  }
+  if (
+    gmailService &&
+    gmailService.Users &&
+    gmailService.Users.Settings &&
+    gmailService.Users.Settings.Filters
+  ) {
+    try {
+      var existingFilters = gmailService.Users.Settings.Filters.list('me')
+      if (existingFilters && existingFilters.filter) {
+        var duplicate = existingFilters.filter.some(function (f) {
+          return f.criteria && f.criteria.from === cleanSender
+        })
+        if (duplicate) {
+          console.log(
+            '[createPermanentGmailFilter] Filter already exists for:',
+            cleanSender
+          )
+          return true
+        }
+      }
+    } catch (e) {
+      console.error(
+        '[createPermanentGmailFilter] Error checking existing filters:',
+        e.message
+      )
+    }
 
-  try {
-    if (
-      gmailService &&
-      gmailService.Users &&
-      gmailService.Users.Settings &&
-      gmailService.Users.Settings.Filters
-    ) {
+    var filterBody = {
+      criteria: { from: cleanSender },
+      action: { addLabelIds: [targetLabel.getId()] },
+    }
+
+    try {
       gmailService.Users.Settings.Filters.create(filterBody, 'me')
       console.log(
         '[createPermanentGmailFilter] Permanent filter created:',
@@ -171,18 +192,19 @@ function createPermanentGmailFilter(
         labelName
       )
       return true
+    } catch (e) {
+      console.error(
+        '[createPermanentGmailFilter] Error creating filter:',
+        e.message
+      )
+      return false
     }
-    console.log(
-      '[createPermanentGmailFilter] Advanced Gmail service not enabled. Skipped.'
-    )
-    return false
-  } catch (e) {
-    console.error(
-      '[createPermanentGmailFilter] Error creating filter:',
-      e.message
-    )
-    return false
   }
+
+  console.log(
+    '[createPermanentGmailFilter] Advanced Gmail service not enabled. Skipped.'
+  )
+  return false
 }
 
 /**

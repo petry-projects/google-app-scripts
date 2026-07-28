@@ -155,8 +155,11 @@ describe('ensureGmailLabel', () => {
 // createPermanentGmailFilter
 // ---------------------------------------------------------------------------
 describe('createPermanentGmailFilter', () => {
-  const makeGmailService = (createFn = jest.fn()) => ({
-    Users: { Settings: { Filters: { create: createFn } } },
+  const makeGmailService = (
+    createFn = jest.fn(),
+    listFn = jest.fn(() => ({ filter: [] }))
+  ) => ({
+    Users: { Settings: { Filters: { create: createFn, list: listFn } } },
   })
 
   test('creates filter via Gmail service and returns true', () => {
@@ -237,6 +240,78 @@ describe('createPermanentGmailFilter', () => {
         gmailApp
       )
     ).toBe(false)
+  })
+
+  test('returns true without creating a duplicate filter for the same sender', () => {
+    const gmailApp = makeGmailApp({
+      existingLabel: makeLabel('01_Household/Primary_House'),
+    })
+    const mockCreate = jest.fn()
+    const mockList = jest.fn(() => ({
+      filter: [{ criteria: { from: 'sender@example.com' } }],
+    }))
+    const result = createPermanentGmailFilter(
+      'sender@example.com',
+      '01_Household/Primary_House',
+      makeGmailService(mockCreate, mockList),
+      gmailApp
+    )
+    expect(result).toBe(true)
+    expect(mockCreate).not.toHaveBeenCalled()
+  })
+
+  test('extracts bare address before duplicate check with display-name format', () => {
+    const gmailApp = makeGmailApp({
+      existingLabel: makeLabel('01_Household/Primary_House'),
+    })
+    const mockCreate = jest.fn()
+    const mockList = jest.fn(() => ({
+      filter: [{ criteria: { from: 'john@example.com' } }],
+    }))
+    const result = createPermanentGmailFilter(
+      'John Doe <john@example.com>',
+      '01_Household/Primary_House',
+      makeGmailService(mockCreate, mockList),
+      gmailApp
+    )
+    expect(result).toBe(true)
+    expect(mockCreate).not.toHaveBeenCalled()
+  })
+
+  test('creates filter when no existing filter matches the sender', () => {
+    const gmailApp = makeGmailApp({
+      existingLabel: makeLabel('01_Household/Primary_House'),
+    })
+    const mockCreate = jest.fn()
+    const mockList = jest.fn(() => ({
+      filter: [{ criteria: { from: 'other@example.com' } }],
+    }))
+    const result = createPermanentGmailFilter(
+      'sender@example.com',
+      '01_Household/Primary_House',
+      makeGmailService(mockCreate, mockList),
+      gmailApp
+    )
+    expect(result).toBe(true)
+    expect(mockCreate).toHaveBeenCalled()
+  })
+
+  test('still creates filter when list call throws', () => {
+    const gmailApp = makeGmailApp({
+      existingLabel: makeLabel('01_Household/Primary_House'),
+    })
+    const mockCreate = jest.fn()
+    const throwingList = jest.fn(() => {
+      throw new Error('List failed')
+    })
+    const result = createPermanentGmailFilter(
+      'sender@example.com',
+      '01_Household/Primary_House',
+      makeGmailService(mockCreate, throwingList),
+      gmailApp
+    )
+    expect(result).toBe(true)
+    expect(mockCreate).toHaveBeenCalled()
   })
 })
 
