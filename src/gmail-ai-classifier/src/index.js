@@ -147,9 +147,12 @@ function createPermanentGmailFilter(
   gmailService,
   gmailApp
 ) {
-  // Use a non-backtracking character class to extract the address from "Name <addr>" format
-  const match = senderEmail.match(/<([^>]+)>/)
-  const cleanSender = (match ? match[1] : senderEmail).trim()
+  const ltIdx = senderEmail.indexOf('<')
+  const gtIdx = senderEmail.indexOf('>', ltIdx + 1)
+  const cleanSender =
+    ltIdx !== -1 && gtIdx !== -1
+      ? senderEmail.slice(ltIdx + 1, gtIdx).trim()
+      : senderEmail.trim()
   const targetLabel = ensureGmailLabel(labelName, gmailApp)
   if (!targetLabel) return false
 
