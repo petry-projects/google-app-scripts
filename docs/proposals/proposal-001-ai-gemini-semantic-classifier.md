@@ -64,6 +64,14 @@ The `Gmail.Users.Settings.Filters.create` call additionally requires the **Advan
 
 ---
 
+## Handling Unclassified & Edge-Case Mail
+
+- **Transactional & 2FA Passcodes**: Verification codes, password resets, and 2FA emails are skipped by Drive ingestion to prevent clogging Drive with 1-line passcodes.
+- **Inbox Safety Net**: Unclassified emails are **NEVER deleted or hidden**. They remain safely in the user's INBOX for standard reading and review.
+- **Optional `Unclassified` Badge**: Ambiguous emails can be tagged with an optional `Unclassified` label for easy visual filtering.
+
+---
+
 ## Idempotency & Reprocessing Workflows
 
 - **Query Guard**: Ingestion routines process threads matching `label:Category -label:Processed`.
