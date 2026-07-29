@@ -725,6 +725,46 @@ describe('processThreadBatch', () => {
     expect(services.UrlFetchApp.fetch).not.toHaveBeenCalled()
   })
 
+  test('uses first message (not last) for classification in multi-message threads', () => {
+    const originalSender = 'original@example.com'
+    const replierSender = 'replier@example.com'
+    const multiMessageThread = {
+      getId: () => 'multi-t1',
+      getMessages: () => [
+        {
+          getFrom: () => originalSender,
+          getSubject: () => 'Original subject',
+          getPlainBody: () => 'original body',
+        },
+        {
+          getFrom: () => replierSender,
+          getSubject: () => 'Re: Original subject',
+          getPlainBody: () => 'reply body',
+        },
+      ],
+      addLabel: jest.fn(),
+    }
+    const classification = {
+      canonical_label: '01_Household/Primary_House',
+      confidence: 0.97,
+      reasoning: 'ok',
+    }
+    const mockFetch = jest.fn(() => makeGeminiResponse(classification))
+    const services = {
+      GmailApp: { getUserLabelByName: jest.fn((name) => makeLabel(name)) },
+      UrlFetchApp: { fetch: mockFetch },
+      Gmail: null,
+    }
+
+    processThreadBatch([multiMessageThread], config, services)
+
+    const fetchCall = mockFetch.mock.calls[0]
+    const requestBody = JSON.parse(fetchCall[1].payload)
+    const promptText = requestBody.contents[0].parts[0].text
+    expect(promptText).toContain(originalSender)
+    expect(promptText).not.toContain(replierSender)
+  })
+
   test('processes multiple threads independently', () => {
     const thread1 = makeThread({ id: 't1', sender: 'a@example.com' })
     const thread2 = makeThread({ id: 't2', sender: 'b@example.com' })

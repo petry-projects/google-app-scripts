@@ -275,7 +275,7 @@ function processThreadBatch(threads, config, services) {
       return
     }
 
-    const latestMsg = messages[messages.length - 1]
+    const latestMsg = messages[0]
     const sender = latestMsg.getFrom()
     const subject = latestMsg.getSubject()
     const bodySnippet = latestMsg.getPlainBody()
