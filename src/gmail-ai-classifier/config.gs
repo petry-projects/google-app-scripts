@@ -3,7 +3,7 @@
  * Supports Multi-Account Household Deployment (Option A)
  */
 
-function getClassifierConfig() {
+function getAiClassifierConfig() {
   var props = PropertiesService.getScriptProperties()
 
   return {
@@ -14,6 +14,7 @@ function getClassifierConfig() {
       props.getProperty('USER_ACCOUNT_EMAIL') ||
       'household-member@gmail.com',
     processedLabel: 'Processed',
+    unprocessedQuery: 'in:inbox -label:Processed',
     autoFilterConfidenceThreshold: 0.95,
     modelEndpoint:
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
@@ -29,4 +30,12 @@ function getClassifierConfig() {
       '07_Community_NonProfit',
     ],
   }
+}
+
+function getClassifierConfig() {
+  return getAiClassifierConfig()
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { getAiClassifierConfig, getClassifierConfig }
 }

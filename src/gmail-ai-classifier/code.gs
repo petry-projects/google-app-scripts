@@ -1,42 +1,219 @@
-// @version 1.0.0
 /**
- * Main entry point for AI-Powered Semantic Email Classification and Auto-Filter Generation.
- *
- * Business logic lives in src/index.js (testable with Jest). This file is the
- * thin GAS entry point that wires GAS globals into the extracted functions.
+ * Main entry point for Gemini AI-Powered Semantic Email Classification and Auto-Filter Engine.
+ * Runs natively inside Google Apps Script (V8 runtime).
  */
+
 function processEmailsWithAiClassifier() {
   console.log(
-    '[processEmailsWithAiClassifier] Starting AI semantic email processing'
+    '[processEmailsWithAiClassifier] Starting AI semantic email processing...'
   )
   var config = getAiClassifierConfig()
 
+  if (!config.geminiApiKey) {
+    console.error(
+      '[processEmailsWithAiClassifier] GEMINI_API_KEY ScriptProperty is missing.'
+    )
+    return
+  }
+
   var threads = GmailApp.search(config.unprocessedQuery, 0, 15)
-  threads.sort(function (a, b) {
-    return a.getLastMessageDate() - b.getLastMessageDate()
-  })
   console.log(
-    '[processEmailsWithAiClassifier] Found',
-    threads.length,
-    'unprocessed threads'
+    '[processEmailsWithAiClassifier] Found ' +
+      threads.length +
+      ' unprocessed thread(s).'
   )
 
   if (threads.length === 0) {
     return
   }
 
-  var results = processThreadBatch(threads, config, {
-    GmailApp: GmailApp,
-    UrlFetchApp: UrlFetchApp,
-    Gmail: typeof Gmail !== 'undefined' ? Gmail : null,
-  })
+  var processedLabel = ensureUserLabel(config.processedLabel)
 
-  console.log(
-    '[processEmailsWithAiClassifier] AI processing batch completed. Results:',
-    results.length
-  )
+  for (var i = 0; i < threads.length; i++) {
+    var thread = threads[i]
+    var firstMessage = thread.getMessages()[0]
+    var sender = firstMessage.getFrom()
+    var subject = firstMessage.getSubject()
+    var snippet = firstMessage.getPlainBody().substring(0, 500)
+
+    console.log(
+      '[processEmailsWithAiClassifier] Processing: ' +
+        subject +
+        ' from ' +
+        sender
+    )
+
+    var classification = classifyWithGemini(sender, subject, snippet, config)
+    if (classification && classification.canonicalDomain) {
+      var targetLabel = ensureUserLabel(classification.canonicalDomain)
+      thread.addLabel(targetLabel)
+      console.log(
+        '[processEmailsWithAiClassifier] Tagged thread with label: ' +
+          classification.canonicalDomain
+      )
+
+      // Auto-Create Filter Rule if Confidence >= 0.95
+      if (classification.confidence >= config.autoFilterConfidenceThreshold) {
+        createGmailFilterRule(sender, classification.canonicalDomain)
+      }
+
+      // Sync Progressive Disclosure Summary to GitHub
+      if (config.githubToken) {
+        var notePath = getNotePathForDomain(classification.canonicalDomain)
+        if (notePath) {
+          var dateStr = Utilities.formatDate(
+            firstMessage.getDate(),
+            'GMT',
+            'yyyy-MM-dd'
+          )
+          var entryMd = formatProgressiveDisclosureEntry(
+            dateStr,
+            classification.title || subject,
+            sender,
+            subject,
+            classification.summary,
+            config.userAccountEmail
+          )
+          appendMarkdownEntryToGitHubRepo(
+            notePath,
+            entryMd,
+            'feat(ingestion): ' + subject
+          )
+        }
+      }
+    }
+
+    // Apply Single Global Processed Label (preserves INBOX visibility)
+    thread.addLabel(processedLabel)
+  }
+
+  console.log('[processEmailsWithAiClassifier] Batch processing complete.')
+}
+
+function classifyWithGemini(sender, subject, snippet, config) {
+  var prompt =
+    'Classify this email into one of these canonical domains: ' +
+    JSON.stringify(config.canonicalDomains) +
+    '.\n' +
+    'Sender: ' +
+    sender +
+    '\n' +
+    'Subject: ' +
+    subject +
+    '\n' +
+    'Body Snippet: ' +
+    snippet +
+    '\n\n' +
+    'Return JSON format ONLY: {"canonicalDomain": "...", "confidence": 0.98, "title": "Short Title", "summary": "2 sentence executive summary"}'
+
+  var payload = {
+    contents: [
+      {
+        parts: [{ text: prompt }],
+      },
+    ],
+  }
+
+  var url = config.modelEndpoint + '?key=' + config.geminiApiKey
+  var options = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true,
+  }
+
+  try {
+    var response = UrlFetchApp.fetch(url, options)
+    var jsonText = response.getContentText()
+    var resData = JSON.parse(jsonText)
+    var textOutput = resData.candidates[0].content.parts[0].text
+
+    // Clean markdown wrapper ```json ... ``` if present
+    textOutput = textOutput
+      .replace(/```json/g, '')
+      .replace(/```/g, '')
+      .trim()
+    return JSON.parse(textOutput)
+  } catch (e) {
+    console.error('[classifyWithGemini] Error calling Gemini API:', e.message)
+    return null
+  }
+}
+
+function ensureUserLabel(labelName) {
+  var label = GmailApp.getUserLabelByName(labelName)
+  if (!label) {
+    label = GmailApp.createLabel(labelName)
+    console.log('[ensureUserLabel] Created new label: ' + labelName)
+  }
+  return label
+}
+
+function createGmailFilterRule(senderEmail, targetLabelName) {
+  if (typeof Gmail === 'undefined' || !Gmail.Users || !Gmail.Users.Settings) {
+    console.log(
+      '[createGmailFilterRule] Advanced Gmail API service not enabled in script. Skipping filter creation.'
+    )
+    return
+  }
+
+  try {
+    var targetLabel = ensureUserLabel(targetLabelName)
+    var filter = {
+      criteria: { from: senderEmail },
+      action: { addLabelIds: [targetLabel.getId()] },
+    }
+    Gmail.Users.Settings.Filters.create(filter, 'me')
+    console.log(
+      '[createGmailFilterRule] Created permanent Gmail filter rule for sender: ' +
+        senderEmail
+    )
+  } catch (e) {
+    console.warn(
+      '[createGmailFilterRule] Filter rule creation skipped/failed:',
+      e.message
+    )
+  }
+}
+
+function getNotePathForDomain(domain) {
+  var map = {
+    '01_Household': 'petry-household/birmingham/index.md',
+    '02_Finance_Legal': 'petry-household/finances/index.md',
+    '03_Vehicles': 'petry-household/vehicles/index.md',
+    '04_Family_Health': 'petry-household/kids/index.md',
+    '05_Tech_Infrastructure':
+      'petry-household/our-technology/digital-backups/index.md',
+    '06_Work_Career': 'dp-work-notes/notes/index.md',
+    '07_Community_NonProfit':
+      'helpingoneguy/organization/organization/index.md',
+  }
+  return map[domain] || null
+}
+
+function formatProgressiveDisclosureEntry(
+  dateStr,
+  title,
+  sender,
+  subject,
+  summaryText,
+  accountEmail
+) {
+  var entry = '\n### ' + dateStr + ' — ' + title + '\n'
+  entry += '- **Account**: ' + accountEmail + '\n'
+  entry += '- **From**: ' + sender + '\n'
+  entry += '- **Subject**: ' + subject + '\n'
+  if (summaryText) {
+    entry += '- **Summary**:\n  > ' + summaryText.trim() + '\n'
+  }
+  return entry
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { processEmailsWithAiClassifier }
+  module.exports = {
+    processEmailsWithAiClassifier: processEmailsWithAiClassifier,
+    classifyWithGemini: classifyWithGemini,
+    ensureUserLabel: ensureUserLabel,
+    createGmailFilterRule: createGmailFilterRule,
+  }
 }
