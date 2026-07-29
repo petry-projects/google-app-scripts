@@ -153,13 +153,14 @@ function classifyWithGemini(sender, subject, snippet, config) {
     ],
   }
 
-  // Order from Highest-Level Model first down to Fallback Models
+  // Order with Gemini 3.5 Flash Lite as #1, followed by fallbacks
   var endpoints = [
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent',
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent',
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent',
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent',
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
   ]
 
@@ -192,8 +193,7 @@ function classifyWithGemini(sender, subject, snippet, config) {
             .replace(/```/g, '')
             .trim()
           console.log(
-            '[classifyWithGemini] Success using highest-level endpoint: ' +
-              endpoints[e]
+            '[classifyWithGemini] Success using endpoint: ' + endpoints[e]
           )
           return JSON.parse(textOutput)
         }
