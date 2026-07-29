@@ -146,11 +146,12 @@ function classifyWithGemini(sender, subject, snippet, config) {
     JSON.stringify(config.canonicalDomains) +
     '.\n\n' +
     'STRICT CLASSIFICATION RULES:\n' +
-    "1. MEDIA & NEWSLETTERS (Medium, NYT, Substack, News digests): Do NOT classify under '06_Work_Career'. Return null or 'Tech/AI-Updates'.\n" +
+    "1. MEDIA & GENERAL NEWSLETTERS (Medium, NYT, Substack, Epoch Times, News digests): Do NOT classify under '06_Work_Career' or '04_Family_Health'. Return null for canonicalDomain.\n" +
     "2. UTILITY & TECH BILLS (AT&T, Google Cloud, Electric, Water): Classify under '02_Finance_Legal' (sub-label 'Finance/Banking') or '05_Tech_Infrastructure' (sub-label 'Tech/Alerts-Monitoring').\n" +
     "3. MARRIAGE & ADULT FAMILY (WinShape, Marriage retreats, DJ & Rachel personal): Classify under '04_Family_Health' (sub-label 'Family/DJ-Rachel').\n" +
     "4. BEEKEEPING & NON-PROFIT (MyBroodMinder, HOG): Classify under '07_Community_NonProfit' (sub-label 'Community/Bees-BOD').\n" +
-    '5. E-COMMERCE PROMOTIONS & SOCIAL DIGESTS (Lowes, Nextdoor, American Meadows): Leave canonicalDomain as null.\n\n' +
+    "5. HEALTH NEWSLETTERS & MEDICAL BULLETINS (WebMD, Epoch Health, drug recall news digests): Treat as Newsletter and return null for canonicalDomain. Reserve '04_Family_Health' strictly for personal family medical records, doctor visits, patient portals, and school/kids health notes.\n" +
+    '6. E-COMMERCE PROMOTIONS & SOCIAL DIGESTS (Lowes, Nextdoor, American Meadows, Hydrobuilder): Return null for canonicalDomain.\n\n' +
     'Sender: ' +
     sender +
     '\n' +
