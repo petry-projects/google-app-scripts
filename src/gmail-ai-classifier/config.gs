@@ -4,15 +4,18 @@
  */
 
 function getClassifierConfig() {
-  var props = PropertiesService.getScriptProperties();
-  
+  var props = PropertiesService.getScriptProperties()
+
   return {
     geminiApiKey: props.getProperty('GEMINI_API_KEY') || '',
     githubToken: props.getProperty('GITHUB_PAT') || '',
-    userAccountEmail: Session.getEffectiveUser().getEmail() || props.getProperty('USER_ACCOUNT_EMAIL') || 'household-member@gmail.com',
+    userAccountEmail:
+      Session.getEffectiveUser().getEmail() ||
+      props.getProperty('USER_ACCOUNT_EMAIL') ||
+      'household-member@gmail.com',
     processedLabel: 'Processed',
     autoFilterConfidenceThreshold: 0.95,
-    
+
     // 7 Canonical Domain Folders & Label Tree
     canonicalDomains: [
       '01_Household',
@@ -21,7 +24,7 @@ function getClassifierConfig() {
       '04_Family_Health',
       '05_Tech_Infrastructure',
       '06_Work_Career',
-      '07_Community_NonProfit'
-    ]
-  };
+      '07_Community_NonProfit',
+    ],
+  }
 }

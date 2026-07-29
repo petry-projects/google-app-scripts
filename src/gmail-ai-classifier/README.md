@@ -9,9 +9,11 @@ A native Google Apps Script module that uses the Gemini REST API (`gemini-1.5-fl
 To run this classifier across multiple household Gmail accounts (`donpetry@gmail.com` and `rachel.l.petry@gmail.com`):
 
 ### 1. Share Google Drive Taxonomy Folders
+
 Share the 7 Canonical Domain folders in Google Drive (`01_Household` through `07_Community_NonProfit`) with full Editor access to `rachel.l.petry@gmail.com`.
 
 ### 2. Deploy Apps Script Worker Project
+
 1. Log into Google Apps Script under `rachel.l.petry@gmail.com`.
 2. Push or import this script repository (`google-app-scripts`).
 3. Set **Script Properties** under Project Settings:
