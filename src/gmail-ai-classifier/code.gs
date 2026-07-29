@@ -114,54 +114,63 @@ function classifyWithGemini(sender, subject, snippet, config) {
     ],
   }
 
-  var url = config.modelEndpoint + '?key=' + config.geminiApiKey
-  var options = {
-    method: 'post',
-    contentType: 'application/json',
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true,
-  }
+  var endpoints = [
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent',
+  ]
 
-  try {
-    var response = UrlFetchApp.fetch(url, options)
-    var statusCode = response.getResponseCode()
-    var jsonText = response.getContentText()
-
-    if (statusCode !== 200) {
-      console.error(
-        '[classifyWithGemini] Gemini API HTTP ' + statusCode + ' Error:',
-        jsonText
-      )
-      return null
+  for (var e = 0; e < endpoints.length; e++) {
+    var url = endpoints[e] + '?key=' + config.geminiApiKey
+    var options = {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true,
     }
 
-    var resData = JSON.parse(jsonText)
-    if (
-      !resData.candidates ||
-      !resData.candidates[0] ||
-      !resData.candidates[0].content ||
-      !resData.candidates[0].content.parts ||
-      !resData.candidates[0].content.parts[0]
-    ) {
-      console.error(
-        '[classifyWithGemini] Unexpected response structure from Gemini API:',
-        jsonText
+    try {
+      var response = UrlFetchApp.fetch(url, options)
+      var statusCode = response.getResponseCode()
+      var jsonText = response.getContentText()
+
+      if (statusCode === 200) {
+        var resData = JSON.parse(jsonText)
+        if (
+          resData.candidates &&
+          resData.candidates[0] &&
+          resData.candidates[0].content &&
+          resData.candidates[0].content.parts &&
+          resData.candidates[0].content.parts[0]
+        ) {
+          var textOutput = resData.candidates[0].content.parts[0].text
+          textOutput = textOutput
+            .replace(/```json/g, '')
+            .replace(/```/g, '')
+            .trim()
+          return JSON.parse(textOutput)
+        }
+      } else {
+        console.warn(
+          '[classifyWithGemini] Endpoint ' +
+            endpoints[e] +
+            ' returned HTTP ' +
+            statusCode +
+            '. Trying fallback...'
+        )
+      }
+    } catch (err) {
+      console.warn(
+        '[classifyWithGemini] Exception on endpoint ' +
+          endpoints[e] +
+          ': ' +
+          err.message
       )
-      return null
     }
-
-    var textOutput = resData.candidates[0].content.parts[0].text
-
-    // Clean markdown wrapper ```json ... ``` if present
-    textOutput = textOutput
-      .replace(/```json/g, '')
-      .replace(/```/g, '')
-      .trim()
-    return JSON.parse(textOutput)
-  } catch (e) {
-    console.error('[classifyWithGemini] Error calling Gemini API:', e.message)
-    return null
   }
+
+  console.error('[classifyWithGemini] All Gemini model endpoints failed.')
+  return null
 }
 
 function ensureUserLabel(labelName) {
