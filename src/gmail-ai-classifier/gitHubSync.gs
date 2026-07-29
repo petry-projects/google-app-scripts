@@ -1,12 +1,12 @@
 /**
- * Native Google Apps Script GitHub Sync Module (Optimized for Long Documents)
+ * Native Google Apps Script GitHub Sync Module (Auto-Create & Long Document Aware)
  * Calls GitHub REST API via UrlFetchApp to commit Markdown entries directly to self-private repo.
  *
  * Features:
+ * - Auto-creates missing target markdown files on GitHub (HTTP 404 handling)
  * - SHA Collision & Retry Guard (catches HTTP 409 API conflicts & retries)
  * - Section-Aware Targeted Insertion (inserts entries into Section 3 log blocks)
  * - Idempotency Guard (skips duplicate entries)
- * - Log Partitioning Support (routes to logs/YYYY.md when master index exceeds size limits)
  */
 
 var GITHUB_REPO_OWNER = 'don-petry'
@@ -14,7 +14,7 @@ var GITHUB_REPO_NAME = 'self-private'
 
 /**
  * Appends a Progressive Disclosure entry to a target markdown file in self-private via GitHub REST API.
- * Handles SHA collision retries for safe concurrency.
+ * Automatically creates the file with valid front-matter if it does not exist yet (HTTP 404).
  */
 function appendMarkdownEntryToGitHubRepo(filePath, entryMd, commitMessage) {
   var githubToken =
@@ -28,13 +28,13 @@ function appendMarkdownEntryToGitHubRepo(filePath, entryMd, commitMessage) {
 
   var maxRetries = 3
   for (var attempt = 1; attempt <= maxRetries; attempt++) {
-    var success = executeGitHubCommit(
+    var result = executeGitHubCommit(
       filePath,
       entryMd,
       commitMessage,
       githubToken
     )
-    if (success === true || success === 'IDEMPOTENT_SKIP') {
+    if (result === true || result === 'IDEMPOTENT_SKIP') {
       return true
     }
     console.log(
@@ -58,7 +58,7 @@ function appendMarkdownEntryToGitHubRepo(filePath, entryMd, commitMessage) {
 }
 
 /**
- * Performs a single commit transaction via GitHub REST API with SHA collision detection.
+ * Performs a single commit transaction via GitHub REST API with 404 Auto-Create & 409 SHA retry handling.
  */
 function executeGitHubCommit(filePath, entryMd, commitMessage, githubToken) {
   var url =
@@ -75,52 +75,78 @@ function executeGitHubCommit(filePath, entryMd, commitMessage, githubToken) {
   }
 
   try {
-    // 1. Fetch current file content and latest SHA from GitHub REST API
     var getOptions = {
       method: 'get',
       headers: headers,
       muteHttpExceptions: true,
     }
     var res = UrlFetchApp.fetch(url, getOptions)
-    if (res.getResponseCode() !== 200) {
+    var statusCode = res.getResponseCode()
+
+    var sha = null
+    var rawContent = ''
+
+    if (statusCode === 404) {
+      // 1. File does not exist on GitHub -> Initialize with standard Front-Matter & 3-Layer Template
+      console.log(
+        '[gitHubSync] File not found on GitHub (HTTP 404). Initializing new note:',
+        filePath
+      )
+      var topicTitle = extractTopicTitleFromPath(filePath)
+      rawContent =
+        '---\ntitle: ' +
+        topicTitle +
+        '\ncreated: ' +
+        Utilities.formatDate(new Date(), 'GMT', 'yyyy-MM-dd') +
+        '\nnotebook: petry-household\nsection: general\n---\n\n' +
+        '# ' +
+        topicTitle +
+        '\n\n' +
+        '## 1. Executive Summary & Active Status\n- Ingested records log.\n\n' +
+        '## 2. Key References & Quick Links\n| Topic | Asset |\n| :--- | :--- |\n\n' +
+        '## 3. Ingested Activity Logs\n<details open><summary><b>Activity Logs</b></summary>\n</details>\n'
+    } else if (statusCode === 200) {
+      var fileData = JSON.parse(res.getContentText())
+      sha = fileData.sha
+      rawContent = Utilities.newBlob(
+        Utilities.base64Decode(fileData.content)
+      ).getDataAsString()
+
+      // Idempotency Check: Skip if entry already present
+      if (
+        rawContent.indexOf(entryMd.trim()) !== -1 ||
+        (commitMessage && rawContent.indexOf(commitMessage) !== -1)
+      ) {
+        console.log(
+          '[gitHubSync] Idempotent Skip: Entry already exists in',
+          filePath
+        )
+        return 'IDEMPOTENT_SKIP'
+      }
+    } else {
       console.error(
-        '[gitHubSync] Error fetching file from GitHub:',
-        filePath,
+        '[gitHubSync] Error fetching file from GitHub (HTTP ' +
+          statusCode +
+          '):',
         res.getContentText()
       )
       return false
     }
 
-    var fileData = JSON.parse(res.getContentText())
-    var sha = fileData.sha
-    var rawContent = Utilities.newBlob(
-      Utilities.base64Decode(fileData.content)
-    ).getDataAsString()
-
-    // 2. Idempotency Check: Skip if entry already present
-    if (
-      rawContent.indexOf(entryMd.trim()) !== -1 ||
-      (commitMessage && rawContent.indexOf(commitMessage) !== -1)
-    ) {
-      console.log(
-        '[gitHubSync] Idempotent Skip: Entry already exists in',
-        filePath
-      )
-      return 'IDEMPOTENT_SKIP'
-    }
-
-    // 3. Section-Aware Insertion (Inserts into Section 3 Activity Log block)
+    // 2. Section-Aware Insertion
     var updatedContent = insertEntryIntoLogSection(rawContent, entryMd)
     var base64Updated = Utilities.base64Encode(updatedContent)
 
-    // 4. Commit updated content back to GitHub
+    // 3. Commit updated content back to GitHub main branch
     var putPayload = {
       message:
         commitMessage ||
-        'feat(automation): append ingested document entry via Google Apps Script',
+        'feat(ingestion): append ingested document entry via Google Apps Script',
       content: base64Updated,
-      sha: sha,
       branch: 'main',
+    }
+    if (sha) {
+      putPayload.sha = sha
     }
 
     var putOptions = {
@@ -132,21 +158,20 @@ function executeGitHubCommit(filePath, entryMd, commitMessage, githubToken) {
     }
 
     var putRes = UrlFetchApp.fetch(url, putOptions)
-    var statusCode = putRes.getResponseCode()
+    var putStatus = putRes.getResponseCode()
 
-    if (statusCode === 200 || statusCode === 201) {
+    if (putStatus === 200 || putStatus === 201) {
       console.log(
         '[gitHubSync] Successfully committed markdown entry to GitHub:',
         filePath
       )
       return true
-    } else if (statusCode === 409) {
-      // 409 Conflict: SHA was updated by another process between fetch and commit -> retry
+    } else if (putStatus === 409) {
       console.warn('[gitHubSync] SHA collision (HTTP 409) on file:', filePath)
       return false
     } else {
       console.error(
-        '[gitHubSync] Error committing to GitHub (HTTP ' + statusCode + '):',
+        '[gitHubSync] Error committing to GitHub (HTTP ' + putStatus + '):',
         putRes.getContentText()
       )
       return false
@@ -157,9 +182,14 @@ function executeGitHubCommit(filePath, entryMd, commitMessage, githubToken) {
   }
 }
 
-/**
- * Inserts entry cleanly into Section 3 (Activity Log) or inside <details> collapsible block.
- */
+function extractTopicTitleFromPath(filePath) {
+  var parts = filePath.split('/')
+  var topic = parts.length > 1 ? parts[parts.length - 2] : parts[0]
+  return topic.replace(/-/g, ' ').replace(/\b\w/g, function (l) {
+    return l.toUpperCase()
+  })
+}
+
 function insertEntryIntoLogSection(fullContent, newEntry) {
   var detailsMarker = '</details>'
   var detailsIndex = fullContent.indexOf(detailsMarker)
@@ -187,4 +217,13 @@ function insertEntryIntoLogSection(fullContent, newEntry) {
   }
 
   return fullContent + '\n' + newEntry
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    appendMarkdownEntryToGitHubRepo: appendMarkdownEntryToGitHubRepo,
+    executeGitHubCommit: executeGitHubCommit,
+    extractTopicTitleFromPath: extractTopicTitleFromPath,
+    insertEntryIntoLogSection: insertEntryIntoLogSection,
+  }
 }
