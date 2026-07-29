@@ -88,6 +88,9 @@ function processEmailsWithAiClassifier() {
 
     // Apply Single Global Processed Label (preserves INBOX visibility)
     thread.addLabel(processedLabel)
+
+    // Rate-Limit Safety: Sleep 1 second between email classifications to avoid API bursts
+    Utilities.sleep(1000)
   }
 
   console.log('[processEmailsWithAiClassifier] Batch processing complete.')
@@ -150,11 +153,13 @@ function classifyWithGemini(sender, subject, snippet, config) {
     ],
   }
 
+  // Order from Highest-Level Model first down to Fallback Models
   var endpoints = [
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent',
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent',
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
   ]
 
@@ -187,10 +192,17 @@ function classifyWithGemini(sender, subject, snippet, config) {
             .replace(/```/g, '')
             .trim()
           console.log(
-            '[classifyWithGemini] Success using endpoint: ' + endpoints[e]
+            '[classifyWithGemini] Success using highest-level endpoint: ' +
+              endpoints[e]
           )
           return JSON.parse(textOutput)
         }
+      } else if (statusCode === 429) {
+        console.warn(
+          '[classifyWithGemini] Endpoint ' +
+            endpoints[e] +
+            ' HTTP 429 Rate Limit. Failing over to next model...'
+        )
       } else {
         console.warn(
           '[classifyWithGemini] Endpoint ' +
@@ -211,7 +223,9 @@ function classifyWithGemini(sender, subject, snippet, config) {
     }
   }
 
-  console.error('[classifyWithGemini] All Gemini model endpoints failed.')
+  console.error(
+    '[classifyWithGemini] All Gemini model endpoints failed or rate-limited.'
+  )
   return null
 }
 
