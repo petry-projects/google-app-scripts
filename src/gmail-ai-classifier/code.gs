@@ -153,15 +153,12 @@ function classifyWithGemini(sender, subject, snippet, config) {
     ],
   }
 
-  // Endpoint Priority Matrix: #1 Gemini 3.5 Flash Lite, #2 Gemini 3.1 Flash Lite
+  // Modern Gemini 3.x Models ONLY (Deprecated 1.x and 2.x removed)
   var endpoints = [
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent',
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent',
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent',
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent',
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-pro:generateContent',
   ]
 
   for (var e = 0; e < endpoints.length; e++) {

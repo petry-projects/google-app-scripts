@@ -17,7 +17,7 @@ function getAiClassifierConfig() {
     unprocessedQuery: 'in:inbox -label:Processed',
     autoFilterConfidenceThreshold: 0.95,
     modelEndpoint:
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent',
 
     // 7 Canonical Domain Folders & Label Tree
     canonicalDomains: [
