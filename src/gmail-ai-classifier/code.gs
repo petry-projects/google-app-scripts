@@ -124,8 +124,32 @@ function classifyWithGemini(sender, subject, snippet, config) {
 
   try {
     var response = UrlFetchApp.fetch(url, options)
+    var statusCode = response.getResponseCode()
     var jsonText = response.getContentText()
+
+    if (statusCode !== 200) {
+      console.error(
+        '[classifyWithGemini] Gemini API HTTP ' + statusCode + ' Error:',
+        jsonText
+      )
+      return null
+    }
+
     var resData = JSON.parse(jsonText)
+    if (
+      !resData.candidates ||
+      !resData.candidates[0] ||
+      !resData.candidates[0].content ||
+      !resData.candidates[0].content.parts ||
+      !resData.candidates[0].content.parts[0]
+    ) {
+      console.error(
+        '[classifyWithGemini] Unexpected response structure from Gemini API:',
+        jsonText
+      )
+      return null
+    }
+
     var textOutput = resData.candidates[0].content.parts[0].text
 
     // Clean markdown wrapper ```json ... ``` if present
