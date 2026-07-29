@@ -107,6 +107,31 @@ function processEmailsWithAiClassifier() {
   console.log('[processEmailsWithAiClassifier] Batch processing complete.')
 }
 
+/**
+ * Creates an automatic Cloud Trigger that runs email classification every 5 minutes 24/7.
+ */
+function setupFiveMinuteTrigger() {
+  stopAllTriggers()
+  ScriptApp.newTrigger('processEmailsWithAiClassifier')
+    .timeBased()
+    .everyMinutes(5)
+    .create()
+  console.log(
+    '[setupFiveMinuteTrigger] Successfully established 5-minute recurring cloud trigger.'
+  )
+}
+
+/**
+ * Clears all active time-driven triggers for this script.
+ */
+function stopAllTriggers() {
+  var triggers = ScriptApp.getProjectTriggers()
+  for (var i = 0; i < triggers.length; i++) {
+    ScriptApp.deleteTrigger(triggers[i])
+  }
+  console.log('[stopAllTriggers] All script triggers removed.')
+}
+
 function listAvailableGeminiModels(config) {
   var url =
     'https://generativelanguage.googleapis.com/v1beta/models?key=' +
@@ -146,7 +171,7 @@ function classifyWithGemini(sender, subject, snippet, config) {
     JSON.stringify(config.canonicalDomains) +
     '.\n\n' +
     'STRICT CLASSIFICATION RULES:\n' +
-    "1. MEDIA & GENERAL NEWSLETTERS (Medium, NYT, Substack, Epoch Times, News digests): Do NOT classify under '06_Work_Career' or '04_Family_Health'. Return null for canonicalDomain.\n" +
+    "1. MEDIA & PLATFORM NEWSLETTERS (Medium, NYT, Substack, Epoch Times, LinkedIn digests, event/news blasts): Treat strictly as Promotional / Newsletter and return null for canonicalDomain. Do NOT classify under '06_Work_Career' or '04_Family_Health'.\n" +
     "2. UTILITY & TECH BILLS (AT&T, Google Cloud, Electric, Water): Classify under '02_Finance_Legal' (sub-label 'Finance/Banking') or '05_Tech_Infrastructure' (sub-label 'Tech/Alerts-Monitoring').\n" +
     "3. MARRIAGE & ADULT FAMILY (WinShape, Marriage retreats, DJ & Rachel personal): Classify under '04_Family_Health' (sub-label 'Family/DJ-Rachel').\n" +
     "4. BEEKEEPING & NON-PROFIT (MyBroodMinder, HOG): Classify under '07_Community_NonProfit' (sub-label 'Community/Bees-BOD').\n" +
@@ -316,6 +341,8 @@ function formatProgressiveDisclosureEntry(
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     processEmailsWithAiClassifier: processEmailsWithAiClassifier,
+    setupFiveMinuteTrigger: setupFiveMinuteTrigger,
+    stopAllTriggers: stopAllTriggers,
     classifyWithGemini: classifyWithGemini,
     ensureUserLabel: ensureUserLabel,
     createGmailFilterRule: createGmailFilterRule,
