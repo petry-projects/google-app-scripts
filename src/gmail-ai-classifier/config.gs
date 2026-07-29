@@ -15,6 +15,8 @@ function getClassifierConfig() {
       'household-member@gmail.com',
     processedLabel: 'Processed',
     autoFilterConfidenceThreshold: 0.95,
+    modelEndpoint:
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
 
     // 7 Canonical Domain Folders & Label Tree
     canonicalDomains: [
