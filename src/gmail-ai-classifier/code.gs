@@ -51,13 +51,24 @@ function processEmailsWithAiClassifier() {
       var targetLabel = ensureUserLabel(classification.canonicalDomain)
       thread.addLabel(targetLabel)
       console.log(
-        '[processEmailsWithAiClassifier] Tagged thread with label: ' +
+        '[processEmailsWithAiClassifier] Tagged thread with domain label: ' +
           classification.canonicalDomain
       )
 
+      if (classification.subLabel) {
+        var subLabelObj = ensureUserLabel(classification.subLabel)
+        thread.addLabel(subLabelObj)
+        console.log(
+          '[processEmailsWithAiClassifier] Tagged thread with sub-label: ' +
+            classification.subLabel
+        )
+      }
+
       // Auto-Create Filter Rule if Confidence >= 0.95
       if (classification.confidence >= config.autoFilterConfidenceThreshold) {
-        createGmailFilterRule(sender, classification.canonicalDomain)
+        var ruleLabel =
+          classification.subLabel || classification.canonicalDomain
+        createGmailFilterRule(sender, ruleLabel)
       }
 
       // Sync Progressive Disclosure Summary to GitHub
@@ -131,9 +142,15 @@ function listAvailableGeminiModels(config) {
 
 function classifyWithGemini(sender, subject, snippet, config) {
   var prompt =
-    'Classify this email into one of these canonical domains: ' +
+    'Classify this email into ONE of these canonical domain keys: ' +
     JSON.stringify(config.canonicalDomains) +
-    '.\n' +
+    '.\n\n' +
+    'STRICT CLASSIFICATION RULES:\n' +
+    "1. MEDIA & NEWSLETTERS (Medium, NYT, Substack, News digests): Do NOT classify under '06_Work_Career'. Return null or 'Tech/AI-Updates'.\n" +
+    "2. UTILITY & TECH BILLS (AT&T, Google Cloud, Electric, Water): Classify under '02_Finance_Legal' (sub-label 'Finance/Banking') or '05_Tech_Infrastructure' (sub-label 'Tech/Alerts-Monitoring').\n" +
+    "3. MARRIAGE & ADULT FAMILY (WinShape, Marriage retreats, DJ & Rachel personal): Classify under '04_Family_Health' (sub-label 'Family/DJ-Rachel').\n" +
+    "4. BEEKEEPING & NON-PROFIT (MyBroodMinder, HOG): Classify under '07_Community_NonProfit' (sub-label 'Community/Bees-BOD').\n" +
+    '5. E-COMMERCE PROMOTIONS & SOCIAL DIGESTS (Lowes, Nextdoor, American Meadows): Leave canonicalDomain as null.\n\n' +
     'Sender: ' +
     sender +
     '\n' +
@@ -143,7 +160,7 @@ function classifyWithGemini(sender, subject, snippet, config) {
     'Body Snippet: ' +
     snippet +
     '\n\n' +
-    'Return JSON format ONLY: {"canonicalDomain": "...", "confidence": 0.98, "title": "Short Title", "summary": "2 sentence executive summary"}'
+    'Return JSON ONLY: {"canonicalDomain": "04_Family_Health", "subLabel": "Family/DJ-Rachel", "confidence": 0.98, "title": "Short Title", "summary": "2 sentence executive summary"}'
 
   var payload = {
     contents: [
@@ -153,7 +170,7 @@ function classifyWithGemini(sender, subject, snippet, config) {
     ],
   }
 
-  // Modern Gemini 3.x Models ONLY (Deprecated 1.x and 2.x removed)
+  // Endpoint Priority Matrix: #1 Gemini 3.5 Flash Lite, #2 Gemini 3.1 Flash Lite
   var endpoints = [
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent',
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent',
