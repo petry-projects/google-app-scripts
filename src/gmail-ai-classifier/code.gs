@@ -153,7 +153,7 @@ function classifyWithGemini(sender, subject, snippet, config) {
     ],
   }
 
-  // Order with Gemini 3.5 Flash Lite as #1, followed by fallbacks
+  // Endpoint Priority Matrix: #1 Gemini 3.5 Flash Lite, #2 Gemini 3.1 Flash Lite
   var endpoints = [
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent',
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent',
