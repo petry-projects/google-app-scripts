@@ -16,6 +16,9 @@ function processEmailsWithAiClassifier() {
     return
   }
 
+  // Debug helper: List available models for this API key
+  listAvailableGeminiModels(config)
+
   var threads = GmailApp.search(config.unprocessedQuery, 0, 15)
   console.log(
     '[processEmailsWithAiClassifier] Found ' +
@@ -90,6 +93,39 @@ function processEmailsWithAiClassifier() {
   console.log('[processEmailsWithAiClassifier] Batch processing complete.')
 }
 
+function listAvailableGeminiModels(config) {
+  var url =
+    'https://generativelanguage.googleapis.com/v1beta/models?key=' +
+    config.geminiApiKey
+  try {
+    var response = UrlFetchApp.fetch(url, { muteHttpExceptions: true })
+    if (response.getResponseCode() === 200) {
+      var data = JSON.parse(response.getContentText())
+      var modelNames = (data.models || []).map(function (m) {
+        return m.name
+      })
+      console.log(
+        '[listAvailableGeminiModels] Available models for key:',
+        JSON.stringify(modelNames)
+      )
+      return modelNames
+    } else {
+      console.warn(
+        '[listAvailableGeminiModels] HTTP ' +
+          response.getResponseCode() +
+          ': ' +
+          response.getContentText()
+      )
+    }
+  } catch (e) {
+    console.warn(
+      '[listAvailableGeminiModels] Error querying models:',
+      e.message
+    )
+  }
+  return []
+}
+
 function classifyWithGemini(sender, subject, snippet, config) {
   var prompt =
     'Classify this email into one of these canonical domains: ' +
@@ -115,9 +151,12 @@ function classifyWithGemini(sender, subject, snippet, config) {
   }
 
   var endpoints = [
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent',
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent',
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
   ]
 
   for (var e = 0; e < endpoints.length; e++) {
@@ -148,15 +187,19 @@ function classifyWithGemini(sender, subject, snippet, config) {
             .replace(/```json/g, '')
             .replace(/```/g, '')
             .trim()
+          console.log(
+            '[classifyWithGemini] Success using endpoint: ' + endpoints[e]
+          )
           return JSON.parse(textOutput)
         }
       } else {
         console.warn(
           '[classifyWithGemini] Endpoint ' +
             endpoints[e] +
-            ' returned HTTP ' +
+            ' HTTP ' +
             statusCode +
-            '. Trying fallback...'
+            ': ' +
+            jsonText
         )
       }
     } catch (err) {
