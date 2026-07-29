@@ -176,7 +176,8 @@ function classifyWithGemini(sender, subject, snippet, config) {
     "3. MARRIAGE & ADULT FAMILY (WinShape, Marriage retreats, DJ & Rachel personal): Classify under '04_Family_Health' (sub-label 'Family/DJ-Rachel').\n" +
     "4. BEEKEEPING & NON-PROFIT (MyBroodMinder, HOG): Classify under '07_Community_NonProfit' (sub-label 'Community/Bees-BOD').\n" +
     "5. HEALTH NEWSLETTERS & MEDICAL BULLETINS (WebMD, Epoch Health, drug recall news digests): Treat as Newsletter and return null for canonicalDomain. Reserve '04_Family_Health' strictly for personal family medical records, doctor visits, patient portals, and school/kids health notes.\n" +
-    '6. E-COMMERCE PROMOTIONS & SOCIAL DIGESTS (Lowes, Nextdoor, American Meadows, Hydrobuilder): Return null for canonicalDomain.\n\n' +
+    '6. E-COMMERCE PROMOTIONS & SOCIAL DIGESTS (Lowes, Nextdoor, American Meadows, Hydrobuilder): Return null for canonicalDomain.\n' +
+    "7. COLLEGE / CAREER PLANNING & SCHOOL MEETINGS (High school, college prep, student career/college planning meetings for Toby or Tide): Classify under '04_Family_Health' (sub-label 'Family/School-Toby' or 'Family/School-Tide').\n\n" +
     'Sender: ' +
     sender +
     '\n' +
@@ -186,7 +187,7 @@ function classifyWithGemini(sender, subject, snippet, config) {
     'Body Snippet: ' +
     snippet +
     '\n\n' +
-    'Return JSON ONLY: {"canonicalDomain": "04_Family_Health", "subLabel": "Family/DJ-Rachel", "confidence": 0.98, "title": "Short Title", "summary": "2 sentence executive summary"}'
+    'Return JSON ONLY: {"canonicalDomain": "04_Family_Health", "subLabel": "Family/School-Toby", "confidence": 0.98, "title": "Short Title", "summary": "2 sentence executive summary"}'
 
   var payload = {
     contents: [
