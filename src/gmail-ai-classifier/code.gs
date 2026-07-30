@@ -243,12 +243,15 @@ function classifyWithGemini(sender, subject, snippet, config) {
           return JSON.parse(textOutput)
         }
       } else if (statusCode === 429) {
+        var delayMs = parseRetryDelayMs(response)
         console.warn(
           '[classifyWithGemini] Endpoint ' +
             endpoints[e] +
-            ' HTTP 429 Rate Limit. Sleeping 2 seconds before fallback...'
+            ' HTTP 429 Rate Limit. Honoring Retry-After / retryDelay: sleeping ' +
+            delayMs / 1000 +
+            's before fallback...'
         )
-        Utilities.sleep(2000)
+        Utilities.sleep(delayMs)
       } else {
         console.warn(
           '[classifyWithGemini] Endpoint ' +
@@ -273,6 +276,37 @@ function classifyWithGemini(sender, subject, snippet, config) {
     '[classifyWithGemini] All Gemini model endpoints failed or rate-limited.'
   )
   return null
+}
+
+function parseRetryDelayMs(response) {
+  try {
+    var headers = response.getHeaders()
+    var retryHeader = headers['Retry-After'] || headers['retry-after']
+    if (retryHeader) {
+      var seconds = parseInt(retryHeader, 10)
+      if (!isNaN(seconds) && seconds > 0) {
+        return Math.min(seconds * 1000, 30000) // Cap max sleep at 30 seconds to prevent GAS execution timeout
+      }
+    }
+
+    var jsonText = response.getContentText()
+    var resData = JSON.parse(jsonText)
+    if (resData.error && resData.error.details) {
+      for (var i = 0; i < resData.error.details.length; i++) {
+        var detail = resData.error.details[i]
+        if (detail.retryDelay) {
+          var secStr = detail.retryDelay.replace('s', '')
+          var sec = parseFloat(secStr)
+          if (!isNaN(sec) && sec > 0) {
+            return Math.min(Math.ceil(sec * 1000), 30000)
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[parseRetryDelayMs] Failed to parse retry delay:', e.message)
+  }
+  return 5000 // 5-second default fallback
 }
 
 function ensureUserLabel(labelName) {
