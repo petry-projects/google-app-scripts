@@ -51,57 +51,80 @@ function processEmailsWithAiClassifier() {
     )
 
     var classification = classifyWithGemini(sender, subject, snippet, config)
-    if (classification && classification.canonicalDomain) {
-      var targetLabel = ensureUserLabel(classification.canonicalDomain)
-      thread.addLabel(targetLabel)
-      console.log(
-        '[processEmailsWithAiClassifier] Tagged thread with domain label: ' +
-          classification.canonicalDomain
-      )
-
-      if (classification.subLabel) {
-        var subLabelObj = ensureUserLabel(classification.subLabel)
-        thread.addLabel(subLabelObj)
+    if (classification) {
+      // 1. Domain & Sub-Label Tagging
+      if (classification.canonicalDomain) {
+        var targetLabel = ensureUserLabel(classification.canonicalDomain)
+        thread.addLabel(targetLabel)
         console.log(
-          '[processEmailsWithAiClassifier] Tagged thread with sub-label: ' +
-            classification.subLabel
+          '[processEmailsWithAiClassifier] Tagged thread with domain label: ' +
+            classification.canonicalDomain
+        )
+
+        if (classification.subLabel) {
+          var subLabelObj = ensureUserLabel(classification.subLabel)
+          thread.addLabel(subLabelObj)
+          console.log(
+            '[processEmailsWithAiClassifier] Tagged thread with sub-label: ' +
+              classification.subLabel
+          )
+        }
+
+        // Auto-Create Filter Rule if Confidence >= 0.95
+        if (classification.confidence >= config.autoFilterConfidenceThreshold) {
+          var ruleLabel =
+            classification.subLabel || classification.canonicalDomain
+          createGmailFilterRule(sender, ruleLabel)
+        }
+
+        // Sync Progressive Disclosure Summary to GitHub
+        if (config.githubToken) {
+          var notePath = getNotePathForDomain(classification.canonicalDomain)
+          if (notePath) {
+            var dateStr = Utilities.formatDate(
+              firstMessage.getDate(),
+              'GMT',
+              'yyyy-MM-dd'
+            )
+            var entryMd = formatProgressiveDisclosureEntry(
+              dateStr,
+              classification.title || subject,
+              sender,
+              subject,
+              classification.summary,
+              config.userAccountEmail
+            )
+            appendMarkdownEntryToGitHubRepo(
+              notePath,
+              entryMd,
+              'feat(ingestion): ' + subject
+            )
+          }
+        }
+      }
+
+      // 2. Action Handling (Trash, Archive, Mark Read)
+      if (classification.action === 'trash') {
+        thread.moveToTrash()
+        console.log(
+          '[processEmailsWithAiClassifier] Action: Moved spam/unwanted thread to TRASH.'
+        )
+      } else if (classification.action === 'archive') {
+        thread.moveToArchive()
+        console.log(
+          '[processEmailsWithAiClassifier] Action: Archived thread out of INBOX.'
         )
       }
 
-      // Auto-Create Filter Rule if Confidence >= 0.95
-      if (classification.confidence >= config.autoFilterConfidenceThreshold) {
-        var ruleLabel =
-          classification.subLabel || classification.canonicalDomain
-        createGmailFilterRule(sender, ruleLabel)
-      }
-
-      // Sync Progressive Disclosure Summary to GitHub
-      if (config.githubToken) {
-        var notePath = getNotePathForDomain(classification.canonicalDomain)
-        if (notePath) {
-          var dateStr = Utilities.formatDate(
-            firstMessage.getDate(),
-            'GMT',
-            'yyyy-MM-dd'
-          )
-          var entryMd = formatProgressiveDisclosureEntry(
-            dateStr,
-            classification.title || subject,
-            sender,
-            subject,
-            classification.summary,
-            config.userAccountEmail
-          )
-          appendMarkdownEntryToGitHubRepo(
-            notePath,
-            entryMd,
-            'feat(ingestion): ' + subject
-          )
-        }
+      if (classification.action === 'mark_read' || classification.markRead) {
+        thread.markRead()
+        console.log(
+          '[processEmailsWithAiClassifier] Action: Marked thread as READ.'
+        )
       }
     }
 
-    // Apply Single Global Processed Label (preserves INBOX visibility)
+    // Apply Single Global Processed Label (preserves INBOX visibility unless trashed/archived)
     thread.addLabel(processedLabel)
 
     // Sleep 2 seconds between emails to avoid hitting API rate limits
@@ -175,15 +198,17 @@ function classifyWithGemini(sender, subject, snippet, config) {
     JSON.stringify(config.canonicalDomains) +
     '.\n\n' +
     'STRICT CLASSIFICATION RULES:\n' +
-    "1. MEDIA & PLATFORM NEWSLETTERS (Medium, NYT, Substack, Epoch Times, LinkedIn digests, event/news blasts): Treat strictly as Promotional / Newsletter and return null for canonicalDomain. Do NOT classify under '06_Work_Career' or '04_Family_Health'.\n" +
-    "2. UTILITY & TECH BILLS (AT&T, Google Cloud, Electric, Water): Classify under '02_Finance_Legal' (sub-label 'Finance/Banking') or '05_Tech_Infrastructure' (sub-label 'Tech/Alerts-Monitoring').\n" +
-    "3. MARRIAGE & ADULT FAMILY (WinShape, Marriage retreats, DJ & Rachel personal): Classify under '04_Family_Health' (sub-label 'Family/DJ-Rachel').\n" +
-    "4. BEEKEEPING & MYBROODMINDER ALERTS (MyBroodMinder, Hive telemetry alerts, BOD): Classify under '07_Community_NonProfit' (sub-label 'Projects/Beekeeping').\n" +
+    "1. MEDIA & PLATFORM NEWSLETTERS (Medium, NYT, Substack, Epoch Times, LinkedIn digests, event/news blasts): Treat strictly as Promotional / Newsletter and return null for canonicalDomain. Do NOT classify under '06_Work_Career' or '04_Family_Health'. Set category to 'Promotions' or 'Social', action to 'keep'.\n" +
+    "2. UTILITY & TECH BILLS (AT&T, Google Cloud, Electric, Water): Classify under '02_Finance_Legal' (sub-label 'Finance/Banking') or '05_Tech_Infrastructure' (sub-label 'Tech/Alerts-Monitoring'). Set category to 'Updates', action to 'keep'.\n" +
+    "3. MARRIAGE & ADULT FAMILY (WinShape, Marriage retreats, DJ & Rachel personal): Classify under '04_Family_Health' (sub-label 'Family/DJ-Rachel'). Set category to 'Primary', action to 'keep'.\n" +
+    "4. BEEKEEPING & MYBROODMINDER ALERTS (MyBroodMinder, Hive telemetry alerts, BOD): Classify under '07_Community_NonProfit' (sub-label 'Projects/Beekeeping'). Set category to 'Updates', action to 'keep'.\n" +
     "5. HEALTH NEWSLETTERS & MEDICAL BULLETINS (WebMD, Epoch Health, drug recall news digests): Treat as Newsletter and return null for canonicalDomain. Reserve '04_Family_Health' strictly for personal family medical records, doctor visits, patient portals, and school/kids health notes.\n" +
-    '6. E-COMMERCE PROMOTIONS & SOCIAL DIGESTS (Lowes, Nextdoor, American Meadows, Hydrobuilder): Return null for canonicalDomain.\n' +
-    "7. SCHOOL PORTALS & PARENTSQUARE (ParentSquare, Magic City Acceptance Academy, MCAA, school shuttle notifications, school attendance): Classify under '04_Family_Health' (sub-label 'Family/School-Toby').\n" +
+    "6. E-COMMERCE PROMOTIONS & SOCIAL DIGESTS (Lowes, Nextdoor, American Meadows, Hydrobuilder): Return null for canonicalDomain. Set category to 'Promotions' or 'Social'.\n" +
+    "7. SCHOOL PORTALS & PARENTSQUARE (ParentSquare, Magic City Acceptance Academy, MCAA, school shuttle notifications, school attendance): Classify under '04_Family_Health' (sub-label 'Family/School-Toby'). Set category to 'Updates' or 'Primary', action to 'keep'.\n" +
     "8. TECH WEBINARS & PRODUCT MARKETING (Google Cloud webinars, 'Register Now', product marketing, tech promos): Treat as Promotional / Marketing and return null for canonicalDomain. Reserve '05_Tech_Infrastructure' strictly for active system alerts, security warnings, spend cap notifications, and project quota/outage alerts.\n" +
-    "9. HOBBY & STORE MARKETING (Lorob Bees, Foxhound Bee Company, e-commerce store newsletters, product announcements): Treat as Promotional / Marketing and return null for canonicalDomain. Reserve '07_Community_NonProfit' / 'Projects/Beekeeping' strictly for active hive telemetry alerts (MyBroodMinder) and official non-profit BOD communications.\n\n" +
+    "9. HOBBY & STORE MARKETING (Lorob Bees, Foxhound Bee Company, e-commerce store newsletters, product announcements): Treat as Promotional / Marketing and return null for canonicalDomain. Reserve '07_Community_NonProfit' / 'Projects/Beekeeping' strictly for active hive telemetry alerts (MyBroodMinder) and official non-profit BOD communications.\n" +
+    "10. SPAM & PHISHING & UNWANTED SOLICITATION: Set action to 'trash'.\n" +
+    "11. ROUTINE NOISY NOTIFICATIONS (Known daily digest notifications that require no reading): Set action to 'mark_read' or 'archive'.\n\n" +
     'Sender: ' +
     sender +
     '\n' +
@@ -193,7 +218,9 @@ function classifyWithGemini(sender, subject, snippet, config) {
     'Body Snippet: ' +
     snippet +
     '\n\n' +
-    'Return JSON ONLY: {"canonicalDomain": "04_Family_Health", "subLabel": "Family/School-Toby", "confidence": 0.98, "title": "Short Title", "summary": "2 sentence executive summary"}'
+    'Return JSON ONLY: {"canonicalDomain": "04_Family_Health", "subLabel": "Family/School-Toby", "category": "Primary", "action": "keep", "confidence": 0.98, "title": "Short Title", "summary": "2 sentence executive summary"}\n' +
+    "Valid categories: 'Primary', 'Updates', 'Promotions', 'Social', 'Forums'.\n" +
+    "Valid actions: 'keep', 'archive', 'trash', 'mark_read'."
 
   var payload = {
     contents: [
