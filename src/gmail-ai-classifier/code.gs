@@ -19,7 +19,7 @@ function processEmailsWithAiClassifier() {
   // Debug helper: List available models for this API key
   listAvailableGeminiModels(config)
 
-  var threads = GmailApp.search(config.unprocessedQuery, 0, 15)
+  var threads = GmailApp.search(config.unprocessedQuery, 0, 10)
   console.log(
     '[processEmailsWithAiClassifier] Found ' +
       threads.length +
@@ -40,7 +40,11 @@ function processEmailsWithAiClassifier() {
     var snippet = firstMessage.getPlainBody().substring(0, 500)
 
     console.log(
-      '[processEmailsWithAiClassifier] Processing: ' +
+      '[processEmailsWithAiClassifier] Processing (' +
+        (i + 1) +
+        '/' +
+        threads.length +
+        '): ' +
         subject +
         ' from ' +
         sender
@@ -100,8 +104,8 @@ function processEmailsWithAiClassifier() {
     // Apply Single Global Processed Label (preserves INBOX visibility)
     thread.addLabel(processedLabel)
 
-    // Rate-Limit Safety: Sleep 1 second between email classifications to avoid API bursts
-    Utilities.sleep(1000)
+    // Sleep 2 seconds between emails to avoid hitting API rate limits
+    Utilities.sleep(2000)
   }
 
   console.log('[processEmailsWithAiClassifier] Batch processing complete.')
@@ -197,12 +201,12 @@ function classifyWithGemini(sender, subject, snippet, config) {
     ],
   }
 
-  // Endpoint Priority Matrix: #1 Gemini 3.5 Flash Lite, #2 Gemini 3.1 Flash Lite
+  // Endpoint Priority Matrix with diverse model families
   var endpoints = [
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent',
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent',
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent',
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-pro:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b:generateContent',
   ]
 
   for (var e = 0; e < endpoints.length; e++) {
@@ -242,8 +246,9 @@ function classifyWithGemini(sender, subject, snippet, config) {
         console.warn(
           '[classifyWithGemini] Endpoint ' +
             endpoints[e] +
-            ' HTTP 429 Rate Limit. Failing over to next model...'
+            ' HTTP 429 Rate Limit. Sleeping 2 seconds before fallback...'
         )
+        Utilities.sleep(2000)
       } else {
         console.warn(
           '[classifyWithGemini] Endpoint ' +
