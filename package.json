@@ -16,7 +16,8 @@
     "**/*.{js,ts}": "eslint --fix"
   },
   "overrides": {
-    "js-yaml": "^4.2.0"
+    "js-yaml": "^4.2.0",
+    "brace-expansion": ">=5.0.8"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.0",
