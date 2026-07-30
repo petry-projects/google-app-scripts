@@ -135,6 +135,92 @@ function processEmailsWithAiClassifier() {
 }
 
 /**
+ * Automatically purges emails older than their category retention policy (2 years for Promotions/Social/Forums).
+ * Core household domains (01_Household - 07_Community_NonProfit), Primary, Updates, and Starred threads are 100% exempt.
+ */
+function purgeExpiredEmailsByRetentionPolicy() {
+  console.log(
+    '[purgeExpiredEmailsByRetentionPolicy] Starting weekly category retention cleanup...'
+  )
+  var config = getAiClassifierConfig()
+
+  var retentionQuery =
+    '(category:promotions OR category:social OR category:forums) older_than:2y -is:starred'
+
+  var threads = GmailApp.search(retentionQuery, 0, 50)
+  console.log(
+    '[purgeExpiredEmailsByRetentionPolicy] Found ' +
+      threads.length +
+      ' expired thread(s) matching 2-year retention query.'
+  )
+
+  if (threads.length === 0) {
+    return
+  }
+
+  var coreDomainLabels = config.canonicalDomains
+  var trashedCount = 0
+
+  for (var i = 0; i < threads.length; i++) {
+    var thread = threads[i]
+    var labels = thread.getLabels()
+    var isExempt = false
+
+    // Safety Shield: Check if thread contains any Core Household Domain label
+    for (var l = 0; l < labels.length; l++) {
+      var labelName = labels[l].getName()
+      for (var cd = 0; cd < coreDomainLabels.length; cd++) {
+        if (labelName.indexOf(coreDomainLabels[cd]) !== -1) {
+          isExempt = true
+          break
+        }
+      }
+      if (isExempt) break
+    }
+
+    if (!isExempt) {
+      thread.moveToTrash()
+      trashedCount++
+    } else {
+      console.log(
+        '[purgeExpiredEmailsByRetentionPolicy] Exempted thread from trash (contains core domain label): ' +
+          thread.getFirstMessageSubject()
+      )
+    }
+  }
+
+  console.log(
+    '[purgeExpiredEmailsByRetentionPolicy] Retention cleanup complete. Moved ' +
+      trashedCount +
+      ' expired thread(s) to Trash.'
+  )
+}
+
+/**
+ * Sets up a weekly cloud trigger to run purgeExpiredEmailsByRetentionPolicy every Sunday at 1:00 AM.
+ */
+function setupWeeklyRetentionTrigger() {
+  var triggers = ScriptApp.getProjectTriggers()
+  for (var i = 0; i < triggers.length; i++) {
+    if (
+      triggers[i].getHandlerFunction() === 'purgeExpiredEmailsByRetentionPolicy'
+    ) {
+      ScriptApp.deleteTrigger(triggers[i])
+    }
+  }
+
+  ScriptApp.newTrigger('purgeExpiredEmailsByRetentionPolicy')
+    .timeBased()
+    .onWeekDay(ScriptApp.WeekDay.SUNDAY)
+    .atHour(1)
+    .create()
+
+  console.log(
+    '[setupWeeklyRetentionTrigger] Established weekly Sunday 1:00 AM retention cleanup trigger.'
+  )
+}
+
+/**
  * Creates an automatic Cloud Trigger that runs email classification every 5 minutes 24/7.
  */
 function setupFiveMinuteTrigger() {
@@ -143,8 +229,9 @@ function setupFiveMinuteTrigger() {
     .timeBased()
     .everyMinutes(5)
     .create()
+  setupWeeklyRetentionTrigger()
   console.log(
-    '[setupFiveMinuteTrigger] Successfully established 5-minute recurring cloud trigger.'
+    '[setupFiveMinuteTrigger] Successfully established 5-minute recurring cloud trigger and weekly retention trigger.'
   )
 }
 
@@ -432,6 +519,8 @@ function formatProgressiveDisclosureEntry(
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     processEmailsWithAiClassifier: processEmailsWithAiClassifier,
+    purgeExpiredEmailsByRetentionPolicy: purgeExpiredEmailsByRetentionPolicy,
+    setupWeeklyRetentionTrigger: setupWeeklyRetentionTrigger,
     setupFiveMinuteTrigger: setupFiveMinuteTrigger,
     stopAllTriggers: stopAllTriggers,
     classifyWithGemini: classifyWithGemini,
