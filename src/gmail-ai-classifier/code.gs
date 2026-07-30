@@ -201,12 +201,12 @@ function classifyWithGemini(sender, subject, snippet, config) {
     ],
   }
 
-  // Endpoint Priority Matrix with diverse model families
+  // Modern Gemini 3.x Models ONLY (Strictly No Deprecated 1.x or 2.x Models)
   var endpoints = [
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent',
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-pro:generateContent',
   ]
 
   for (var e = 0; e < endpoints.length; e++) {
@@ -238,7 +238,7 @@ function classifyWithGemini(sender, subject, snippet, config) {
             .replace(/```/g, '')
             .trim()
           console.log(
-            '[classifyWithGemini] Success using endpoint: ' + endpoints[e]
+            '[classifyWithGemini] Success using 3.x endpoint: ' + endpoints[e]
           )
           return JSON.parse(textOutput)
         }
@@ -273,7 +273,7 @@ function classifyWithGemini(sender, subject, snippet, config) {
   }
 
   console.error(
-    '[classifyWithGemini] All Gemini model endpoints failed or rate-limited.'
+    '[classifyWithGemini] All Gemini 3.x model endpoints failed or rate-limited.'
   )
   return null
 }
