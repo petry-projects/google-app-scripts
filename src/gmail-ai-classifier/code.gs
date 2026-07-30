@@ -295,7 +295,8 @@ function classifyWithGemini(sender, subject, snippet, config) {
     "8. TECH WEBINARS & PRODUCT MARKETING (Google Cloud webinars, 'Register Now', product marketing, tech promos): Treat as Promotional / Marketing and return null for canonicalDomain. Reserve '05_Tech_Infrastructure' strictly for active system alerts, security warnings, spend cap notifications, and project quota/outage alerts.\n" +
     "9. HOBBY & STORE MARKETING (Lorob Bees, Foxhound Bee Company, e-commerce store newsletters, product announcements): Treat as Promotional / Marketing and return null for canonicalDomain. Reserve '07_Community_NonProfit' / 'Projects/Beekeeping' strictly for active hive telemetry alerts (MyBroodMinder) and official non-profit BOD communications.\n" +
     "10. SPAM & PHISHING & UNWANTED SOLICITATION: Set action to 'trash'.\n" +
-    "11. ROUTINE NOISY NOTIFICATIONS (Known daily digest notifications that require no reading): Set action to 'mark_read' or 'archive'.\n\n" +
+    "11. ROUTINE NOISY NOTIFICATIONS (Known daily digest notifications that require no reading): Set action to 'mark_read' or 'archive'.\n" +
+    "12. ORDER CONFIRMATIONS & RECEIPTS (Order confirmations, purchase receipts, invoices, delivery confirmations, payment receipts): Classify under '02_Finance_Legal' (sub-label 'Finance/Purchases') or '01_Household' / '03_Vehicles' as appropriate. Treat strictly as financial/purchase records (category 'Updates', action 'keep'). Do NOT classify as Promotional or Trash.\n\n" +
     'Sender: ' +
     sender +
     '\n' +
@@ -305,7 +306,7 @@ function classifyWithGemini(sender, subject, snippet, config) {
     'Body Snippet: ' +
     snippet +
     '\n\n' +
-    'Return JSON ONLY: {"canonicalDomain": "04_Family_Health", "subLabel": "Family/School-Toby", "category": "Primary", "action": "keep", "confidence": 0.98, "title": "Short Title", "summary": "2 sentence executive summary"}\n' +
+    'Return JSON ONLY: {"canonicalDomain": "02_Finance_Legal", "subLabel": "Finance/Purchases", "category": "Updates", "action": "keep", "confidence": 0.98, "title": "Short Title", "summary": "2 sentence executive summary"}\n' +
     "Valid categories: 'Primary', 'Updates', 'Promotions', 'Social', 'Forums'.\n" +
     "Valid actions: 'keep', 'archive', 'trash', 'mark_read'."
 
