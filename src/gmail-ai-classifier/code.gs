@@ -233,14 +233,13 @@ function classifyWithGemini(sender, subject, snippet, config) {
           resData.candidates[0].content.parts[0]
         ) {
           var textOutput = resData.candidates[0].content.parts[0].text
-          textOutput = textOutput
-            .replace(/```json/g, '')
-            .replace(/```/g, '')
-            .trim()
-          console.log(
-            '[classifyWithGemini] Success using endpoint: ' + endpoints[e]
-          )
-          return JSON.parse(textOutput)
+          var parsedObj = extractJsonSubstring(textOutput)
+          if (parsedObj) {
+            console.log(
+              '[classifyWithGemini] Success using endpoint: ' + endpoints[e]
+            )
+            return parsedObj
+          }
         }
       } else if (statusCode === 429) {
         var delayMs = parseRetryDelayMs(response)
@@ -275,6 +274,29 @@ function classifyWithGemini(sender, subject, snippet, config) {
   console.error(
     '[classifyWithGemini] All model endpoints failed or rate-limited.'
   )
+  return null
+}
+
+function extractJsonSubstring(text) {
+  if (!text) return null
+  text = text
+    .replace(/```json/gi, '')
+    .replace(/```/gi, '')
+    .trim()
+
+  var start = text.indexOf('{')
+  var end = text.lastIndexOf('}')
+  if (start !== -1 && end !== -1 && end > start) {
+    var rawJson = text.substring(start, end + 1)
+    try {
+      return JSON.parse(rawJson)
+    } catch (e) {
+      console.warn(
+        '[extractJsonSubstring] JSON parse error on raw substring:',
+        e.message
+      )
+    }
+  }
   return null
 }
 
