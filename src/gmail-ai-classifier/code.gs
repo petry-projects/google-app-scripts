@@ -335,13 +335,14 @@ function classifyWithGemini(sender, subject, snippet, config) {
     "3. MARRIAGE & ADULT FAMILY (WinShape, Marriage retreats, DJ & Rachel personal): Classify under '04_Family_Health' (sub-label 'Family/DJ-Rachel'). Set category to 'Primary', action to 'keep'.\n" +
     "4. BEEKEEPING & MYBROODMINDER ALERTS (MyBroodMinder, Hive telemetry alerts, BOD): Classify under '07_Community_NonProfit' (sub-label 'Projects/Beekeeping'). Set category to 'Updates', action to 'keep'.\n" +
     "5. HEALTH NEWSLETTERS & MEDICAL BULLETINS (WebMD, Epoch Health, drug recall news digests): Treat as Newsletter and return null for canonicalDomain. Reserve '04_Family_Health' strictly for personal family medical records, doctor visits, patient portals, and school/kids health notes.\n" +
-    "6. E-COMMERCE PROMOTIONS & SOCIAL DIGESTS (Lowes, Nextdoor, American Meadows, Hydrobuilder): Return null for canonicalDomain. Set category to 'Promotions' or 'Social'.\n" +
+    "6. E-COMMERCE PROMOTIONS & SOCIAL DIGESTS (Lowes, Nextdoor, American Meadows, Hydrobuilder, OpenAI pricing promos): Return null for canonicalDomain. Set category to 'Promotions' or 'Social'.\n" +
     "7. SCHOOL PORTALS & PARENTSQUARE (ParentSquare, Magic City Acceptance Academy, MCAA, school shuttle notifications, school attendance): Classify under '04_Family_Health' (sub-label 'Family/School-Toby'). Set category to 'Updates' or 'Primary', action to 'keep'.\n" +
     "8. TECH WEBINARS & PRODUCT MARKETING (Google Cloud webinars, 'Register Now', product marketing, tech promos): Treat as Promotional / Marketing and return null for canonicalDomain. Reserve '05_Tech_Infrastructure' strictly for active system alerts, security warnings, spend cap notifications, and project quota/outage alerts.\n" +
     "9. HOBBY & STORE MARKETING (Lorob Bees, Foxhound Bee Company, e-commerce store newsletters, product announcements): Treat as Promotional / Marketing and return null for canonicalDomain. Reserve '07_Community_NonProfit' / 'Projects/Beekeeping' strictly for active hive telemetry alerts (MyBroodMinder) and official non-profit BOD communications.\n" +
     "10. SPAM & PHISHING & UNWANTED SOLICITATION: Set action to 'trash'.\n" +
     "11. ROUTINE NOISY NOTIFICATIONS (Known daily digest notifications that require no reading): Set action to 'mark_read' or 'archive'.\n" +
-    "12. ORDER CONFIRMATIONS & RECEIPTS (Order confirmations, purchase receipts, invoices, delivery confirmations, payment receipts): Classify under '02_Finance_Legal' (sub-label 'Finance/Purchases') or '01_Household' / '03_Vehicles' as appropriate. Treat strictly as financial/purchase records (category 'Updates', action 'keep'). Do NOT classify as Promotional or Trash.\n\n" +
+    "12. ORDER CONFIRMATIONS & RECEIPTS (Order confirmations, purchase receipts, invoices, delivery confirmations, payment receipts): Classify under '02_Finance_Legal' (sub-label 'Finance/Purchases') or '01_Household' / '03_Vehicles' as appropriate. Treat strictly as financial/purchase records (category 'Updates', action 'keep'). Do NOT classify as Promotional or Trash.\n" +
+    "13. SINGLE SUB-LABEL RULE: Return AT MOST ONE subLabel string per email (the single best matching sub-label, e.g. 'Finance/Banking' or 'Family/School-Toby'). Do NOT stack multiple sub-labels.\n\n" +
     'Sender: ' +
     sender +
     '\n' +
