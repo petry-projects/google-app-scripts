@@ -104,15 +104,26 @@ function processEmailsWithAiClassifier() {
       }
 
       // 2. Action Handling (Trash, Archive, Mark Read)
-      if (classification.action === 'trash') {
-        thread.moveToTrash()
+      // Safety Shield: Never trash or archive threads sent/replied by the user!
+      var userSent = isThreadSentOrRepliedByUser(
+        thread,
+        config.userAccountEmail
+      )
+      if (!userSent) {
+        if (classification.action === 'trash') {
+          thread.moveToTrash()
+          console.log(
+            '[processEmailsWithAiClassifier] Action: Moved spam/unwanted thread to TRASH.'
+          )
+        } else if (classification.action === 'archive') {
+          thread.moveToArchive()
+          console.log(
+            '[processEmailsWithAiClassifier] Action: Archived thread out of INBOX.'
+          )
+        }
+      } else {
         console.log(
-          '[processEmailsWithAiClassifier] Action: Moved spam/unwanted thread to TRASH.'
-        )
-      } else if (classification.action === 'archive') {
-        thread.moveToArchive()
-        console.log(
-          '[processEmailsWithAiClassifier] Action: Archived thread out of INBOX.'
+          '[processEmailsWithAiClassifier] Shield: Preserved thread in INBOX because user sent/replied to it.'
         )
       }
 
@@ -136,7 +147,7 @@ function processEmailsWithAiClassifier() {
 
 /**
  * Automatically purges emails older than their category retention policy (2 years for Promotions/Social/Forums).
- * Core household domains (01_Household - 07_Community_NonProfit), Primary, Updates, and Starred threads are 100% exempt.
+ * Core household domains (01_Household - 07_Community_NonProfit), Primary, Updates, Starred, and User Replied/Sent threads are 100% EXEMPT.
  */
 function purgeExpiredEmailsByRetentionPolicy() {
   console.log(
@@ -144,8 +155,9 @@ function purgeExpiredEmailsByRetentionPolicy() {
   )
   var config = getAiClassifierConfig()
 
+  // Explicitly exclude threads sent by user or containing user replies
   var retentionQuery =
-    '(category:promotions OR category:social OR category:forums) older_than:2y -is:starred'
+    '(category:promotions OR category:social OR category:forums) older_than:2y -is:starred -from:me'
 
   var threads = GmailApp.search(retentionQuery, 0, 50)
   console.log(
@@ -166,7 +178,7 @@ function purgeExpiredEmailsByRetentionPolicy() {
     var labels = thread.getLabels()
     var isExempt = false
 
-    // Safety Shield: Check if thread contains any Core Household Domain label
+    // Safety Shield 1: Check if thread contains any Core Household Domain label
     for (var l = 0; l < labels.length; l++) {
       var labelName = labels[l].getName()
       for (var cd = 0; cd < coreDomainLabels.length; cd++) {
@@ -178,12 +190,19 @@ function purgeExpiredEmailsByRetentionPolicy() {
       if (isExempt) break
     }
 
+    // Safety Shield 2: Check if user sent a message or replied in this thread
+    if (!isExempt) {
+      if (isThreadSentOrRepliedByUser(thread, config.userAccountEmail)) {
+        isExempt = true
+      }
+    }
+
     if (!isExempt) {
       thread.moveToTrash()
       trashedCount++
     } else {
       console.log(
-        '[purgeExpiredEmailsByRetentionPolicy] Exempted thread from trash (contains core domain label): ' +
+        '[purgeExpiredEmailsByRetentionPolicy] Exempted thread from trash (contains core domain label or user reply): ' +
           thread.getFirstMessageSubject()
       )
     }
@@ -194,6 +213,31 @@ function purgeExpiredEmailsByRetentionPolicy() {
       trashedCount +
       ' expired thread(s) to Trash.'
   )
+}
+
+/**
+ * Checks if a thread contains any messages sent or replied by the account owner.
+ */
+function isThreadSentOrRepliedByUser(thread, userEmail) {
+  try {
+    var messages = thread.getMessages()
+    var primaryEmail = (userEmail || '').toLowerCase()
+    for (var m = 0; m < messages.length; m++) {
+      var fromAddr = messages[m].getFrom().toLowerCase()
+      if (
+        fromAddr.indexOf(primaryEmail) !== -1 ||
+        fromAddr.indexOf('donpetry@gmail.com') !== -1
+      ) {
+        return true
+      }
+    }
+  } catch (e) {
+    console.warn(
+      '[isThreadSentOrRepliedByUser] Error checking message senders:',
+      e.message
+    )
+  }
+  return false
 }
 
 /**
