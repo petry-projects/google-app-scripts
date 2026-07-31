@@ -221,13 +221,14 @@ function purgeExpiredEmailsByRetentionPolicy() {
 function isThreadSentOrRepliedByUser(thread, userEmail) {
   try {
     var messages = thread.getMessages()
-    var primaryEmail = (userEmail || '').toLowerCase()
+    var primaryEmail = (
+      userEmail ||
+      Session.getEffectiveUser().getEmail() ||
+      ''
+    ).toLowerCase()
     for (var m = 0; m < messages.length; m++) {
       var fromAddr = messages[m].getFrom().toLowerCase()
-      if (
-        fromAddr.indexOf(primaryEmail) !== -1 ||
-        fromAddr.indexOf('donpetry@gmail.com') !== -1
-      ) {
+      if (primaryEmail && fromAddr.indexOf(primaryEmail) !== -1) {
         return true
       }
     }
