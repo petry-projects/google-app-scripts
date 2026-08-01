@@ -5,14 +5,20 @@
 
 function getDriveIngesterConfig() {
   var props = PropertiesService.getScriptProperties()
+  var userEmail = 'user@example.com'
+  try {
+    userEmail =
+      Session.getEffectiveUser().getEmail() ||
+      props.getProperty('USER_ACCOUNT_EMAIL') ||
+      'user@example.com'
+  } catch (e) {
+    userEmail = props.getProperty('USER_ACCOUNT_EMAIL') || 'user@example.com'
+  }
 
   return {
     geminiApiKey: props.getProperty('GEMINI_API_KEY') || '',
     githubToken: props.getProperty('GITHUB_PAT') || '',
-    userAccountEmail:
-      Session.getEffectiveUser().getEmail() ||
-      props.getProperty('USER_ACCOUNT_EMAIL') ||
-      'user@example.com',
+    userAccountEmail: userEmail,
 
     // 7 Canonical Domain Folders & Label Tree
     canonicalDomains: [
