@@ -3,7 +3,7 @@
  * Runs natively inside Google Apps Script (V8 runtime).
  */
 
-var GMAIL_AI_CLASSIFIER_VERSION = 'v1.4.0-gmail'
+var GMAIL_AI_CLASSIFIER_VERSION = 'v1.5.0-gmail-strict-single-label'
 
 function processEmailsWithAiClassifier() {
   console.log(
@@ -58,7 +58,15 @@ function processEmailsWithAiClassifier() {
 
     var classification = classifyWithGemini(sender, subject, snippet, config)
     if (classification) {
-      // 1. Domain & Sub-Label Tagging
+      // Clean up any pre-existing conflicting core domain labels
+      cleanConflictingLabels(
+        thread,
+        classification.canonicalDomain,
+        classification.subLabel,
+        config
+      )
+
+      // 1. Single Domain & Single Sub-Label Tagging
       if (classification.canonicalDomain) {
         var targetLabel = ensureUserLabel(classification.canonicalDomain)
         thread.addLabel(targetLabel)
@@ -71,7 +79,7 @@ function processEmailsWithAiClassifier() {
           var subLabelObj = ensureUserLabel(classification.subLabel)
           thread.addLabel(subLabelObj)
           console.log(
-            '[processEmailsWithAiClassifier] Tagged thread with sub-label: ' +
+            '[processEmailsWithAiClassifier] Tagged thread with single sub-label: ' +
               classification.subLabel
           )
         }
@@ -149,6 +157,47 @@ function processEmailsWithAiClassifier() {
   }
 
   console.log('[processEmailsWithAiClassifier] Batch processing complete.')
+}
+
+/**
+ * Removes any pre-existing conflicting Core Domain labels or Sub-Labels to enforce strict 2-level hierarchy.
+ */
+function cleanConflictingLabels(thread, targetDomain, targetSubLabel, config) {
+  try {
+    var existingLabels = thread.getLabels()
+    var canonicalDomains = config.canonicalDomains
+
+    for (var j = 0; j < existingLabels.length; j++) {
+      var lName = existingLabels[j].getName()
+
+      // Check if label is a Core Domain label that doesn't match targetDomain
+      for (var d = 0; d < canonicalDomains.length; d++) {
+        var cd = canonicalDomains[d]
+        if (lName === cd && cd !== targetDomain) {
+          thread.removeLabel(existingLabels[j])
+          console.log(
+            '[cleanConflictingLabels] Removed conflicting domain label: ' +
+              lName
+          )
+          break
+        }
+      }
+
+      // Remove conflicting sub-labels if they don't match targetSubLabel
+      if (
+        lName.indexOf('/') !== -1 &&
+        lName !== targetSubLabel &&
+        lName.indexOf('Archives') === -1
+      ) {
+        thread.removeLabel(existingLabels[j])
+        console.log(
+          '[cleanConflictingLabels] Removed conflicting sub-label: ' + lName
+        )
+      }
+    }
+  } catch (e) {
+    console.warn('[cleanConflictingLabels] Error cleaning labels: ' + e.message)
+  }
 }
 
 /**
@@ -351,7 +400,8 @@ function classifyWithGemini(sender, subject, snippet, config) {
     "13. SINGLE SUB-LABEL RULE: Return AT MOST ONE subLabel string per email (the single best matching sub-label, e.g. 'Finance/Banking' or 'Family/School-Toby'). Do NOT stack multiple sub-labels.\n" +
     "14. UNSOLICITED REAL ESTATE & INVESTMENT SOLICITATION (Cold wholesaler property blasts, 'Off-Market Investment Opportunity', 'We Buy Houses', unsolicited real estate deal blasts): Treat as Promotional / Solicitation and return null for canonicalDomain. Do NOT classify under '02_Finance_Legal' or '01_Household'. Reserve '02_Finance_Legal' strictly for personal bank statements, mortgages, tax documents, credit cards, and active legal records.\n" +
     "15. HONEY BEEHAM & APIARY RECORDS (Honey BeeHam vendor inventories, wholesale price lists, apiary invoices, hive sales, FSA honeybee colony forms): Classify under '07_Community_NonProfit' (sub-label 'Projects/Beekeeping'). Set category to 'Updates', action to 'keep'.\n" +
-    "16. TAX FORMS, CHARITABLE DONATIONS & COURT ORDERS (1095-C, 1098, W2, tax returns, donation receipts, court orders, legal closing orders): Classify under '02_Finance_Legal' (sub-labels 'Finance/Taxes', 'Finance/Charitable-Donations', or 'Finance/Legal'). Set category to 'Updates', action to 'keep'.\n\n" +
+    "16. TAX FORMS, CHARITABLE DONATIONS & COURT ORDERS (1095-C, 1098, W2, tax returns, donation receipts, court orders, legal closing orders): Classify under '02_Finance_Legal' (sub-labels 'Finance/Taxes', 'Finance/Charitable-Donations', or 'Finance/Legal'). Set category to 'Updates', action to 'keep'.\n" +
+    "17. JOB POSTINGS, RESUMES & CAREER INTERVIEWS (Southern Power Company job announcements, interview schedules, resume feedback, ShePoint postings): Classify under '06_Work_Career' (sub-label 'Work/Career-Rachel' or 'Work/Career-DJ'). Set category to 'Primary' or 'Updates', action to 'keep'.\n\n" +
     'Sender: ' +
     sender +
     '\n' +
@@ -361,7 +411,7 @@ function classifyWithGemini(sender, subject, snippet, config) {
     'Body Snippet: ' +
     snippet +
     '\n\n' +
-    'Return JSON ONLY: {"canonicalDomain": "02_Finance_Legal", "subLabel": "Finance/Purchases", "category": "Updates", "action": "keep", "confidence": 0.98, "title": "Short Title", "summary": "2 sentence executive summary"}\n' +
+    'Return JSON ONLY: {"canonicalDomain": "06_Work_Career", "subLabel": "Work/Career-Rachel", "category": "Primary", "action": "keep", "confidence": 0.98, "title": "Short Title", "summary": "2 sentence executive summary"}\n' +
     "Valid categories: 'Primary', 'Updates', 'Promotions', 'Social', 'Forums'.\n" +
     "Valid actions: 'keep', 'archive', 'trash', 'mark_read'."
 
