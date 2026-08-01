@@ -1,10 +1,10 @@
 /**
  * Main entry point for Google Drive AI Ingestion & Dual-Layer Auto-Tagging Engine.
- * Scans ALL non-media files across Google Drive (in-place tagging without moving folders).
- * Runs natively inside Google Apps Script (V8 runtime).
+ * PROD RUNTIME: Runs autonomously 24/7 in Google Apps Script via 15-minute Cloud Trigger.
+ * Continuously iterates page-by-page over ALL non-media files across the ENTIRE Google Drive.
  */
 
-var DRIVE_AI_INGESTER_VERSION = 'v1.0.0-drive'
+var DRIVE_AI_INGESTER_VERSION = 'v1.1.0-drive-continuous'
 
 function processDriveFilesWithAiIngester() {
   console.log(
@@ -12,7 +12,7 @@ function processDriveFilesWithAiIngester() {
       DRIVE_AI_INGESTER_VERSION
   )
   console.log(
-    '[processDriveFilesWithAiIngester] Starting in-place AI tagging for all non-media Google Drive files...'
+    '[processDriveFilesWithAiIngester] Starting continuous in-place AI tagging across entire Google Drive...'
   )
   var config = getDriveIngesterConfig()
 
@@ -23,15 +23,16 @@ function processDriveFilesWithAiIngester() {
     return
   }
 
+  var props = PropertiesService.getScriptProperties()
   var processedCount = 0
   var inspectedCount = 0
-  var MAX_FILES_PER_RUN = 10
+  var MAX_FILES_PER_RUN = 10 // Process 10 files per 15-minute run for optimal safety
 
   try {
     console.log(
-      '[processDriveFilesWithAiIngester] Querying DriveApp.getFiles()...'
+      '[processDriveFilesWithAiIngester] Searching non-trashed document files across Drive...'
     )
-    var files = DriveApp.getFiles()
+    var files = DriveApp.searchFiles('trashed = false')
 
     while (files.hasNext() && processedCount < MAX_FILES_PER_RUN) {
       var file = files.next()
@@ -40,31 +41,12 @@ function processDriveFilesWithAiIngester() {
       var description = ''
       try {
         description = file.getDescription() || ''
-      } catch (e) {
-        console.warn(
-          '[processDriveFilesWithAiIngester] Could not read description for file: ' +
-            file.getName()
-        )
-      }
+      } catch (e) {}
 
       var isIndexed = description.indexOf('[AI_INDEXED]') !== -1
       var mime = file.getMimeType()
 
-      // Log first 15 files inspected
-      if (inspectedCount <= 15) {
-        console.log(
-          '[DEBUG #' +
-            inspectedCount +
-            '] File: "' +
-            file.getName() +
-            '" | Mime: ' +
-            mime +
-            ' | Indexed: ' +
-            isIndexed
-        )
-      }
-
-      // 1. Skip if already indexed
+      // 1. Skip if already tagged & indexed
       if (isIndexed) {
         continue
       }
@@ -88,18 +70,21 @@ function processDriveFilesWithAiIngester() {
           (processedCount + 1) +
           '/' +
           MAX_FILES_PER_RUN +
-          '): ' +
-          file.getName()
+          '): "' +
+          file.getName() +
+          '" (' +
+          mime +
+          ')'
       )
 
       var fileText = extractFileContentText(file)
       var metadata = analyzeDocumentWithAi(file.getName(), fileText, config)
 
       if (metadata) {
-        // 3. Apply Dual-Layer Tags
+        // 3. Apply Dual-Layer Metadata Tags (Drive Description + Embedded YAML Header)
         applyDualLayerTagsToDriveFile(file, metadata)
 
-        // 4. Sync to GitHub
+        // 4. Sync Executive Summary & Drive Link to GitHub self-private
         if (config.githubToken) {
           var notePath = getNotePathForDomain(
             metadata.canonicalDomain || '01_Household'
@@ -134,6 +119,7 @@ function processDriveFilesWithAiIngester() {
         processedCount++
       }
 
+      // Sleep 2 seconds between files to avoid rate limits
       Utilities.sleep(2000)
     }
   } catch (err) {
@@ -144,7 +130,7 @@ function processDriveFilesWithAiIngester() {
   }
 
   console.log(
-    '[processDriveFilesWithAiIngester] Execution complete. Inspected ' +
+    '[processDriveFilesWithAiIngester] Execution run complete. Inspected ' +
       inspectedCount +
       ' file(s), Tagged ' +
       processedCount +
@@ -304,9 +290,9 @@ function applyDualLayerTagsToDriveFile(file, metadata) {
     var currDesc = file.getDescription() || ''
     if (currDesc.indexOf('[AI_INDEXED]') === -1) {
       var tagBlock =
-        '[AI_INDEXED] domain: ' +
+        '[AI_INDEXED] [AI_DOMAIN: ' +
         domainStr +
-        ' | sublabel: ' +
+        '] sublabel: ' +
         sublabelStr +
         ' | people: ' +
         peopleStr +
