@@ -3,7 +3,7 @@
  * Runs natively inside Google Apps Script (V8 runtime).
  */
 
-var GMAIL_AI_CLASSIFIER_VERSION = 'v1.5.0-gmail-strict-single-label'
+var GMAIL_AI_CLASSIFIER_VERSION = 'v1.6.0-gmail-strict-single-label'
 
 function processEmailsWithAiClassifier() {
   console.log(
@@ -401,7 +401,8 @@ function classifyWithGemini(sender, subject, snippet, config) {
     "14. UNSOLICITED REAL ESTATE & INVESTMENT SOLICITATION (Cold wholesaler property blasts, 'Off-Market Investment Opportunity', 'We Buy Houses', unsolicited real estate deal blasts): Treat as Promotional / Solicitation and return null for canonicalDomain. Do NOT classify under '02_Finance_Legal' or '01_Household'. Reserve '02_Finance_Legal' strictly for personal bank statements, mortgages, tax documents, credit cards, and active legal records.\n" +
     "15. HONEY BEEHAM & APIARY RECORDS (Honey BeeHam vendor inventories, wholesale price lists, apiary invoices, hive sales, FSA honeybee colony forms): Classify under '07_Community_NonProfit' (sub-label 'Projects/Beekeeping'). Set category to 'Updates', action to 'keep'.\n" +
     "16. TAX FORMS, CHARITABLE DONATIONS & COURT ORDERS (1095-C, 1098, W2, tax returns, donation receipts, court orders, legal closing orders): Classify under '02_Finance_Legal' (sub-labels 'Finance/Taxes', 'Finance/Charitable-Donations', or 'Finance/Legal'). Set category to 'Updates', action to 'keep'.\n" +
-    "17. JOB POSTINGS, RESUMES & CAREER INTERVIEWS (Southern Power Company job announcements, interview schedules, resume feedback, ShePoint postings): Classify under '06_Work_Career' (sub-label 'Work/Career-Rachel' or 'Work/Career-DJ'). Set category to 'Primary' or 'Updates', action to 'keep'.\n\n" +
+    "17. JOB POSTINGS, RESUMES & CAREER INTERVIEWS (Southern Power Company job announcements, interview schedules, resume feedback, ShePoint postings): Classify under '06_Work_Career' (sub-label 'Work/Career-Rachel' or 'Work/Career-DJ'). Set category to 'Primary' or 'Updates', action to 'keep'.\n" +
+    "18. CAR RENTALS & TRAVEL RESERVATION CONFIRMATIONS (Hertz, Avis, Enterprise, National, Delta, United, Marriott, Airbnb, travel check-ins): Classify under '01_Household' (sub-label 'Household/Travel') or '03_Vehicles' (sub-label 'Vehicles/Rental-Cars'). Set category to 'Updates', action to 'keep'.\n\n" +
     'Sender: ' +
     sender +
     '\n' +
@@ -411,7 +412,7 @@ function classifyWithGemini(sender, subject, snippet, config) {
     'Body Snippet: ' +
     snippet +
     '\n\n' +
-    'Return JSON ONLY: {"canonicalDomain": "06_Work_Career", "subLabel": "Work/Career-Rachel", "category": "Primary", "action": "keep", "confidence": 0.98, "title": "Short Title", "summary": "2 sentence executive summary"}\n' +
+    'Return JSON ONLY: {"canonicalDomain": "01_Household", "subLabel": "Household/Travel", "category": "Updates", "action": "keep", "confidence": 0.98, "title": "Short Title", "summary": "2 sentence executive summary"}\n' +
     "Valid categories: 'Primary', 'Updates', 'Promotions', 'Social', 'Forums'.\n" +
     "Valid actions: 'keep', 'archive', 'trash', 'mark_read'."
 

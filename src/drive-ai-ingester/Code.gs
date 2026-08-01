@@ -4,7 +4,7 @@
  * Continuously iterates page-by-page over ALL non-media files across the ENTIRE Google Drive.
  */
 
-var DRIVE_AI_INGESTER_VERSION = 'v1.3.0-drive-continuous'
+var DRIVE_AI_INGESTER_VERSION = 'v1.4.0-drive-continuous'
 
 function processDriveFilesWithAiIngester() {
   console.log(
@@ -194,6 +194,8 @@ function analyzeDocumentWithAi(fileName, fileText, config) {
     "Classify Honey BeeHam vendor inventories, wholesale price lists, apiary invoices, hive sales, and FSA honeybee colony forms under '07_Community_NonProfit' (sub-label 'Projects/Beekeeping').\n\n" +
     'RULE 16 - TAX FORMS, CHARITABLE DONATIONS & COURT ORDERS:\n' +
     "Classify tax forms (1095-C, 1098, W2, tax returns), charitable donation receipts, court orders, and legal work orders under '02_Finance_Legal' (sub-labels 'Finance/Taxes', 'Finance/Charitable-Donations', or 'Finance/Legal').\n\n" +
+    'RULE 18 - CAR RENTALS & TRAVEL RESERVATION CONFIRMATIONS:\n' +
+    "Classify car rental agreements, Hertz/Avis/Enterprise check-ins, airline tickets, hotel reservations, and travel itineraries under '01_Household' (sub-label 'Household/Travel') or '03_Vehicles' (sub-label 'Vehicles/Rental-Cars').\n\n" +
     'DOCUMENT FILE NAME: ' +
     fileName +
     '\n' +
@@ -202,8 +204,8 @@ function analyzeDocumentWithAi(fileName, fileText, config) {
     '\n\n' +
     'Return JSON ONLY:\n' +
     '{\n' +
-    '  "canonicalDomain": "02_Finance_Legal",\n' +
-    '  "subLabel": "Finance/Taxes",\n' +
+    '  "canonicalDomain": "01_Household",\n' +
+    '  "subLabel": "Household/Travel",\n' +
     '  "title": "Short Document Title",\n' +
     '  "people": ["Full Name 1", "Full Name 2"],\n' +
     '  "organization": ["Org / Institution Name"],\n' +
