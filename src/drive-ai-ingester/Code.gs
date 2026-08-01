@@ -36,7 +36,8 @@ function processDriveFilesWithAiIngester() {
     var file = files.next()
     inspectedCount++
 
-    var isIndexed = file.getCustomProperty('indexed')
+    var description = file.getDescription() || ''
+    var isIndexed = description.indexOf('[AI_INDEXED]') !== -1
     var mime = file.getMimeType()
 
     // Debug logging for the first 15 files inspected
@@ -54,7 +55,7 @@ function processDriveFilesWithAiIngester() {
     }
 
     // 1. Check if file has already been indexed
-    if (isIndexed === 'true') {
+    if (isIndexed) {
       continue
     }
 
@@ -85,7 +86,7 @@ function processDriveFilesWithAiIngester() {
     var metadata = analyzeDocumentWithAi(file.getName(), fileText, config)
 
     if (metadata) {
-      // 3. Apply Dual-Layer Tags (Drive API Custom Properties + Embedded YAML Header)
+      // 3. Apply Dual-Layer Tags (Drive File Description Metadata + Embedded YAML Header)
       applyDualLayerTagsToDriveFile(file, metadata)
 
       // 4. Sync Executive Summary & Drive URL to GitHub self-private
@@ -116,8 +117,6 @@ function processDriveFilesWithAiIngester() {
         }
       }
 
-      // 5. Mark File as Indexed
-      file.setCustomProperty('indexed', 'true')
       console.log(
         '[processDriveFilesWithAiIngester] Successfully tagged & indexed file in-place: ' +
           file.getName()
@@ -283,11 +282,30 @@ function applyDualLayerTagsToDriveFile(file, metadata) {
   try {
     var tagsStr = (metadata.tags || []).join(', ')
     var peopleStr = (metadata.people || []).join(', ')
-    file.setCustomProperty('tags', tagsStr)
-    file.setCustomProperty('people', peopleStr)
-    file.setCustomProperty('domain', metadata.canonicalDomain || '')
-    file.setCustomProperty('sublabel', metadata.subLabel || '')
+    var domainStr = metadata.canonicalDomain || ''
+    var sublabelStr = metadata.subLabel || ''
 
+    // 1. Layer 1: Native Drive File Description Metadata Tagging (Works 100% natively in Apps Script)
+    var currDesc = file.getDescription() || ''
+    if (currDesc.indexOf('[AI_INDEXED]') === -1) {
+      var tagBlock =
+        '[AI_INDEXED] domain: ' +
+        domainStr +
+        ' | sublabel: ' +
+        sublabelStr +
+        ' | people: ' +
+        peopleStr +
+        ' | tags: ' +
+        tagsStr
+      var newDesc = currDesc ? currDesc + '\n\n' + tagBlock : tagBlock
+      file.setDescription(newDesc)
+      console.log(
+        '[applyDualLayerTagsToDriveFile] Set File Description metadata tags on: ' +
+          file.getName()
+      )
+    }
+
+    // 2. Layer 2: Embedded Document Front-Matter Header (Google Docs)
     if (file.getMimeType() === MimeType.GOOGLE_DOCS) {
       var doc = DocumentApp.openById(file.getId())
       var body = doc.getBody()
@@ -295,19 +313,19 @@ function applyDualLayerTagsToDriveFile(file, metadata) {
       var yamlHeader =
         '---\n' +
         'domain: ' +
-        (metadata.canonicalDomain || '') +
+        domainStr +
         '\n' +
         'sublabel: ' +
-        (metadata.subLabel || '') +
+        sublabelStr +
         '\n' +
         'people: [' +
-        (metadata.people || []).join(', ') +
+        peopleStr +
         ']\n' +
         'organization: [' +
         (metadata.organization || []).join(', ') +
         ']\n' +
         'tags: [' +
-        (metadata.tags || []).join(', ') +
+        tagsStr +
         ']\n' +
         'created: ' +
         Utilities.formatDate(file.getLastUpdated(), 'GMT', 'yyyy-MM-dd') +
