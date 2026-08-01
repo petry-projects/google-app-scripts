@@ -4,7 +4,7 @@
  * Continuously iterates page-by-page over ALL non-media files across the ENTIRE Google Drive.
  */
 
-var DRIVE_AI_INGESTER_VERSION = 'v1.1.0-drive-continuous'
+var DRIVE_AI_INGESTER_VERSION = 'v1.2.0-drive-continuous'
 
 function processDriveFilesWithAiIngester() {
   console.log(
@@ -23,10 +23,9 @@ function processDriveFilesWithAiIngester() {
     return
   }
 
-  var props = PropertiesService.getScriptProperties()
   var processedCount = 0
   var inspectedCount = 0
-  var MAX_FILES_PER_RUN = 10 // Process 10 files per 15-minute run for optimal safety
+  var MAX_FILES_PER_RUN = 10
 
   try {
     console.log(
@@ -192,6 +191,8 @@ function analyzeDocumentWithAi(fileName, fileText, config) {
     '.\n\n' +
     'MANDATORY HYBRID TAG DECOMPOSITION RULE:\n' +
     "For every compound/hyphenated tag (e.g. 'toby-petry', 'five-oaks', 'credit-card', 'google-cloud'), you MUST also include each individual word component ('toby', 'petry', 'five', 'oaks', 'credit', 'card', 'google', 'cloud') in the tags array.\n\n" +
+    'RULE 15 - HONEY BEEHAM & APIARY RECORDS:\n' +
+    "Classify Honey BeeHam vendor inventories, wholesale price lists, apiary invoices, hive sales, and FSA honeybee colony forms under '07_Community_NonProfit' (sub-label 'Projects/Beekeeping').\n\n" +
     'DOCUMENT FILE NAME: ' +
     fileName +
     '\n' +
@@ -200,8 +201,8 @@ function analyzeDocumentWithAi(fileName, fileText, config) {
     '\n\n' +
     'Return JSON ONLY:\n' +
     '{\n' +
-    '  "canonicalDomain": "02_Finance_Legal",\n' +
-    '  "subLabel": "Finance/Banking",\n' +
+    '  "canonicalDomain": "07_Community_NonProfit",\n' +
+    '  "subLabel": "Projects/Beekeeping",\n' +
     '  "title": "Short Document Title",\n' +
     '  "people": ["Full Name 1", "Full Name 2"],\n' +
     '  "organization": ["Org / Institution Name"],\n' +
