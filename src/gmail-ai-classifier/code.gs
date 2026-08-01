@@ -3,7 +3,13 @@
  * Runs natively inside Google Apps Script (V8 runtime).
  */
 
+var GMAIL_AI_CLASSIFIER_VERSION = 'v1.2.0-gmail'
+
 function processEmailsWithAiClassifier() {
+  console.log(
+    '[processEmailsWithAiClassifier] Engine Version: ' +
+      GMAIL_AI_CLASSIFIER_VERSION
+  )
   console.log(
     '[processEmailsWithAiClassifier] Starting AI semantic email processing...'
   )

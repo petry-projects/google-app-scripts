@@ -1,11 +1,18 @@
 /**
  * Main entry point for Google Drive AI Ingestion & Dual-Layer Auto-Tagging Engine.
+ * Scans ALL non-media files across Google Drive (in-place tagging without moving folders).
  * Runs natively inside Google Apps Script (V8 runtime).
  */
 
+var DRIVE_AI_INGESTER_VERSION = 'v1.0.0-drive'
+
 function processDriveFilesWithAiIngester() {
   console.log(
-    '[processDriveFilesWithAiIngester] Starting Google Drive AI file ingestion...'
+    '[processDriveFilesWithAiIngester] Engine Version: ' +
+      DRIVE_AI_INGESTER_VERSION
+  )
+  console.log(
+    '[processDriveFilesWithAiIngester] Starting in-place AI tagging for all non-media Google Drive files...'
   )
   var config = getDriveIngesterConfig()
 
@@ -16,86 +23,119 @@ function processDriveFilesWithAiIngester() {
     return
   }
 
-  // Scan 7 Canonical Domain Folders in Google Drive
-  for (var d = 0; d < config.canonicalDomains.length; d++) {
-    var domainFolder = config.canonicalDomains[d]
-    var folders = DriveApp.getFoldersByName(domainFolder)
+  var processedCount = 0
+  var inspectedCount = 0
+  var MAX_FILES_PER_RUN = 10 // Process 10 files per run to avoid script timeouts
 
-    while (folders.hasNext()) {
-      var folder = folders.next()
-      var files = folder.getFiles()
+  console.log(
+    '[processDriveFilesWithAiIngester] Querying DriveApp.getFiles()...'
+  )
+  var files = DriveApp.getFiles()
 
-      while (files.hasNext()) {
-        var file = files.next()
+  while (files.hasNext() && processedCount < MAX_FILES_PER_RUN) {
+    var file = files.next()
+    inspectedCount++
 
-        // Check if file has already been indexed
-        var isIndexed = file.getCustomProperty('indexed')
-        if (isIndexed === 'true') {
-          continue
-        }
+    var isIndexed = file.getCustomProperty('indexed')
+    var mime = file.getMimeType()
 
-        console.log(
-          '[processDriveFilesWithAiIngester] Ingesting file: ' +
-            file.getName() +
-            ' in folder: ' +
-            domainFolder
+    // Debug logging for the first 15 files inspected
+    if (inspectedCount <= 15) {
+      console.log(
+        '[DEBUG #' +
+          inspectedCount +
+          '] File: "' +
+          file.getName() +
+          '" | Mime: ' +
+          mime +
+          ' | Indexed: ' +
+          isIndexed
+      )
+    }
+
+    // 1. Check if file has already been indexed
+    if (isIndexed === 'true') {
+      continue
+    }
+
+    // 2. Filter non-media document types in JavaScript
+    var isDocument =
+      mime === MimeType.GOOGLE_DOCS ||
+      mime === MimeType.GOOGLE_SHEETS ||
+      mime === MimeType.PDF ||
+      mime === MimeType.PLAIN_TEXT ||
+      mime.indexOf('wordprocessingml') !== -1 ||
+      mime.indexOf('msword') !== -1 ||
+      mime.indexOf('spreadsheet') !== -1
+
+    if (!isDocument) {
+      continue
+    }
+
+    console.log(
+      '[processDriveFilesWithAiIngester] Tagging document (' +
+        (processedCount + 1) +
+        '/' +
+        MAX_FILES_PER_RUN +
+        '): ' +
+        file.getName()
+    )
+
+    var fileText = extractFileContentText(file)
+    var metadata = analyzeDocumentWithAi(file.getName(), fileText, config)
+
+    if (metadata) {
+      // 3. Apply Dual-Layer Tags (Drive API Custom Properties + Embedded YAML Header)
+      applyDualLayerTagsToDriveFile(file, metadata)
+
+      // 4. Sync Executive Summary & Drive URL to GitHub self-private
+      if (config.githubToken) {
+        var notePath = getNotePathForDomain(
+          metadata.canonicalDomain || '01_Household'
         )
-
-        var fileText = extractFileContentText(file)
-        var metadata = analyzeDocumentWithAi(
-          file.getName(),
-          fileText,
-          domainFolder,
-          config
-        )
-
-        if (metadata) {
-          // 1. Apply Dual-Layer Tags (Drive API Properties + Embedded YAML Header)
-          applyDualLayerTagsToDriveFile(file, metadata)
-
-          // 2. Sync Executive Summary & Drive URL to GitHub self-private
-          if (config.githubToken) {
-            var notePath = getNotePathForDomain(
-              metadata.canonicalDomain || domainFolder
-            )
-            if (notePath) {
-              var dateStr = Utilities.formatDate(
-                file.getLastUpdated(),
-                'GMT',
-                'yyyy-MM-dd'
-              )
-              var entryMd = formatDriveIngestionEntry(
-                dateStr,
-                metadata.title || file.getName(),
-                file.getUrl(),
-                metadata.summary,
-                metadata.tags,
-                metadata.people,
-                config.userAccountEmail
-              )
-              appendMarkdownEntryToGitHubRepo(
-                notePath,
-                entryMd,
-                'feat(drive-ingest): ' + file.getName()
-              )
-            }
-          }
-
-          // 3. Mark File as Indexed
-          file.setCustomProperty('indexed', 'true')
-          console.log(
-            '[processDriveFilesWithAiIngester] Successfully indexed and tagged file: ' +
-              file.getName()
+        if (notePath) {
+          var dateStr = Utilities.formatDate(
+            file.getLastUpdated(),
+            'GMT',
+            'yyyy-MM-dd'
+          )
+          var entryMd = formatDriveIngestionEntry(
+            dateStr,
+            metadata.title || file.getName(),
+            file.getUrl(),
+            metadata.summary,
+            metadata.tags,
+            metadata.people,
+            config.userAccountEmail
+          )
+          appendMarkdownEntryToGitHubRepo(
+            notePath,
+            entryMd,
+            'feat(drive-ingest): ' + file.getName()
           )
         }
-
-        // Sleep 2 seconds between files to avoid rate limits
-        Utilities.sleep(2000)
       }
+
+      // 5. Mark File as Indexed
+      file.setCustomProperty('indexed', 'true')
+      console.log(
+        '[processDriveFilesWithAiIngester] Successfully tagged & indexed file in-place: ' +
+          file.getName()
+      )
+      processedCount++
     }
+
+    // Sleep 2 seconds between files to avoid rate limits
+    Utilities.sleep(2000)
   }
 
-  console.log('[processDriveFilesWithAiIngester] Drive ingestion complete.')
+  console.log(
+    '[processDriveFilesWithAiIngester] Execution complete. Inspected ' +
+      inspectedCount +
+      ' file(s), Tagged ' +
+      processedCount +
+      ' document(s).'
+  )
 }
 
 /**
@@ -142,14 +182,14 @@ function extractFileContentText(file) {
         e.message
     )
   }
-  return file.getName() // Fallback to file name if binary/image
+  return file.getName()
 }
 
-function analyzeDocumentWithAi(fileName, fileText, domainFolder, config) {
+function analyzeDocumentWithAi(fileName, fileText, config) {
   var prompt =
-    "Analyze this document for household knowledge indexing into canonical domain: '" +
-    domainFolder +
-    "'.\n\n" +
+    'Analyze this document and determine its canonical domain out of: ' +
+    JSON.stringify(config.canonicalDomains) +
+    '.\n\n' +
     'MANDATORY HYBRID TAG DECOMPOSITION RULE:\n' +
     "For every compound/hyphenated tag (e.g. 'toby-petry', 'five-oaks', 'credit-card', 'google-cloud'), you MUST also include each individual word component ('toby', 'petry', 'five', 'oaks', 'credit', 'card', 'google', 'cloud') in the tags array.\n\n" +
     'DOCUMENT FILE NAME: ' +
@@ -160,9 +200,7 @@ function analyzeDocumentWithAi(fileName, fileText, domainFolder, config) {
     '\n\n' +
     'Return JSON ONLY:\n' +
     '{\n' +
-    '  "canonicalDomain": "' +
-    domainFolder +
-    '",\n' +
+    '  "canonicalDomain": "02_Finance_Legal",\n' +
     '  "subLabel": "Finance/Banking",\n' +
     '  "title": "Short Document Title",\n' +
     '  "people": ["Full Name 1", "Full Name 2"],\n' +
@@ -243,7 +281,6 @@ function analyzeDocumentWithAi(fileName, fileText, domainFolder, config) {
 
 function applyDualLayerTagsToDriveFile(file, metadata) {
   try {
-    // 1. Layer 1: Drive API Custom Properties
     var tagsStr = (metadata.tags || []).join(', ')
     var peopleStr = (metadata.people || []).join(', ')
     file.setCustomProperty('tags', tagsStr)
@@ -251,7 +288,6 @@ function applyDualLayerTagsToDriveFile(file, metadata) {
     file.setCustomProperty('domain', metadata.canonicalDomain || '')
     file.setCustomProperty('sublabel', metadata.subLabel || '')
 
-    // 2. Layer 2: Embedded Document Front-Matter Header (Google Docs)
     if (file.getMimeType() === MimeType.GOOGLE_DOCS) {
       var doc = DocumentApp.openById(file.getId())
       var body = doc.getBody()
@@ -278,7 +314,6 @@ function applyDualLayerTagsToDriveFile(file, metadata) {
         '\n' +
         '---\n\n'
 
-      // Check if header already exists
       var text = body.getText()
       if (text.indexOf('---') !== 0) {
         body.insertParagraph(0, yamlHeader)
