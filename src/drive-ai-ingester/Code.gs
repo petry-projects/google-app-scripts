@@ -4,7 +4,7 @@
  * Continuously iterates page-by-page over ALL non-media files across the ENTIRE Google Drive.
  */
 
-var DRIVE_AI_INGESTER_VERSION = 'v1.2.0-drive-continuous'
+var DRIVE_AI_INGESTER_VERSION = 'v1.3.0-drive-continuous'
 
 function processDriveFilesWithAiIngester() {
   console.log(
@@ -80,7 +80,7 @@ function processDriveFilesWithAiIngester() {
       var metadata = analyzeDocumentWithAi(file.getName(), fileText, config)
 
       if (metadata) {
-        // 3. Apply Dual-Layer Metadata Tags (Drive Description + Embedded YAML Header)
+        // 3. Apply Dual-Layer Metadata Tags
         applyDualLayerTagsToDriveFile(file, metadata)
 
         // 4. Sync Executive Summary & Drive Link to GitHub self-private
@@ -118,7 +118,6 @@ function processDriveFilesWithAiIngester() {
         processedCount++
       }
 
-      // Sleep 2 seconds between files to avoid rate limits
       Utilities.sleep(2000)
     }
   } catch (err) {
@@ -193,6 +192,8 @@ function analyzeDocumentWithAi(fileName, fileText, config) {
     "For every compound/hyphenated tag (e.g. 'toby-petry', 'five-oaks', 'credit-card', 'google-cloud'), you MUST also include each individual word component ('toby', 'petry', 'five', 'oaks', 'credit', 'card', 'google', 'cloud') in the tags array.\n\n" +
     'RULE 15 - HONEY BEEHAM & APIARY RECORDS:\n' +
     "Classify Honey BeeHam vendor inventories, wholesale price lists, apiary invoices, hive sales, and FSA honeybee colony forms under '07_Community_NonProfit' (sub-label 'Projects/Beekeeping').\n\n" +
+    'RULE 16 - TAX FORMS, CHARITABLE DONATIONS & COURT ORDERS:\n' +
+    "Classify tax forms (1095-C, 1098, W2, tax returns), charitable donation receipts, court orders, and legal work orders under '02_Finance_Legal' (sub-labels 'Finance/Taxes', 'Finance/Charitable-Donations', or 'Finance/Legal').\n\n" +
     'DOCUMENT FILE NAME: ' +
     fileName +
     '\n' +
@@ -201,8 +202,8 @@ function analyzeDocumentWithAi(fileName, fileText, config) {
     '\n\n' +
     'Return JSON ONLY:\n' +
     '{\n' +
-    '  "canonicalDomain": "07_Community_NonProfit",\n' +
-    '  "subLabel": "Projects/Beekeeping",\n' +
+    '  "canonicalDomain": "02_Finance_Legal",\n' +
+    '  "subLabel": "Finance/Taxes",\n' +
     '  "title": "Short Document Title",\n' +
     '  "people": ["Full Name 1", "Full Name 2"],\n' +
     '  "organization": ["Org / Institution Name"],\n' +

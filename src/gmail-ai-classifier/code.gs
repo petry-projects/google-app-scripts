@@ -3,7 +3,7 @@
  * Runs natively inside Google Apps Script (V8 runtime).
  */
 
-var GMAIL_AI_CLASSIFIER_VERSION = 'v1.3.0-gmail'
+var GMAIL_AI_CLASSIFIER_VERSION = 'v1.4.0-gmail'
 
 function processEmailsWithAiClassifier() {
   console.log(
@@ -350,7 +350,8 @@ function classifyWithGemini(sender, subject, snippet, config) {
     "12. ORDER CONFIRMATIONS & RECEIPTS (Order confirmations, purchase receipts, invoices, delivery confirmations, payment receipts): Classify under '02_Finance_Legal' (sub-label 'Finance/Purchases') or '01_Household' / '03_Vehicles' as appropriate. Treat strictly as financial/purchase records (category 'Updates', action 'keep'). Do NOT classify as Promotional or Trash.\n" +
     "13. SINGLE SUB-LABEL RULE: Return AT MOST ONE subLabel string per email (the single best matching sub-label, e.g. 'Finance/Banking' or 'Family/School-Toby'). Do NOT stack multiple sub-labels.\n" +
     "14. UNSOLICITED REAL ESTATE & INVESTMENT SOLICITATION (Cold wholesaler property blasts, 'Off-Market Investment Opportunity', 'We Buy Houses', unsolicited real estate deal blasts): Treat as Promotional / Solicitation and return null for canonicalDomain. Do NOT classify under '02_Finance_Legal' or '01_Household'. Reserve '02_Finance_Legal' strictly for personal bank statements, mortgages, tax documents, credit cards, and active legal records.\n" +
-    "15. HONEY BEEHAM & APIARY RECORDS (Honey BeeHam vendor inventories, wholesale price lists, apiary invoices, hive sales, FSA honeybee colony forms): Classify under '07_Community_NonProfit' (sub-label 'Projects/Beekeeping'). Set category to 'Updates', action to 'keep'.\n\n" +
+    "15. HONEY BEEHAM & APIARY RECORDS (Honey BeeHam vendor inventories, wholesale price lists, apiary invoices, hive sales, FSA honeybee colony forms): Classify under '07_Community_NonProfit' (sub-label 'Projects/Beekeeping'). Set category to 'Updates', action to 'keep'.\n" +
+    "16. TAX FORMS, CHARITABLE DONATIONS & COURT ORDERS (1095-C, 1098, W2, tax returns, donation receipts, court orders, legal closing orders): Classify under '02_Finance_Legal' (sub-labels 'Finance/Taxes', 'Finance/Charitable-Donations', or 'Finance/Legal'). Set category to 'Updates', action to 'keep'.\n\n" +
     'Sender: ' +
     sender +
     '\n' +
@@ -478,7 +479,7 @@ function parseRetryDelayMs(response) {
     if (retryHeader) {
       var seconds = parseInt(retryHeader, 10)
       if (!isNaN(seconds) && seconds > 0) {
-        return Math.min(seconds * 1000, 30000) // Cap max sleep at 30 seconds to prevent GAS execution timeout
+        return Math.min(seconds * 1000, 30000)
       }
     }
 
@@ -499,7 +500,7 @@ function parseRetryDelayMs(response) {
   } catch (e) {
     console.warn('[parseRetryDelayMs] Failed to parse retry delay:', e.message)
   }
-  return 5000 // 5-second default fallback
+  return 5000
 }
 
 function ensureUserLabel(labelName) {
