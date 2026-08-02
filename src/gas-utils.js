@@ -10,7 +10,6 @@ function getCleanBody(text) {
     /^\s*On\s.+\swrote:/m,
     /^\s*From:\s.+\sSent:\s+/m,
     /^\s*_{10,}/m,
-    /^\s*From:\s+.+<.+@.+>/m,
     /confidentiality notice/im,
   ]
 
@@ -19,10 +18,8 @@ function getCleanBody(text) {
     const match = text.match(pattern)
     if (match) {
       // Prefer splitting at the start of the line containing the match
-      const lineStart =
-        text.lastIndexOf('\n', match.index) === -1
-          ? 0
-          : text.lastIndexOf('\n', match.index) + 1
+      const nlIndex = text.lastIndexOf('\n', match.index)
+      const lineStart = nlIndex === -1 ? 0 : nlIndex + 1
       if (splitIndex === -1 || lineStart < splitIndex) {
         splitIndex = lineStart
       }
@@ -53,7 +50,7 @@ function getFileHash(blob) {
     bytes = blob
   } else if (blob && typeof blob.getBytes === 'function') {
     bytes = Buffer.from(blob.getBytes())
-  } else if (blob && blob.bytes) {
+  } else if (blob?.bytes) {
     bytes = Buffer.from(blob.bytes)
   } else {
     throw new TypeError('Unsupported blob type')

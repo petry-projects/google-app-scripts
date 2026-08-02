@@ -95,7 +95,7 @@ function detectConflicts(eventTuples) {
  * @returns {string}
  */
 function formatConflictWarning(conflicts, formatTime) {
-  if (!conflicts || !conflicts.length) return ''
+  if (!conflicts?.length) return ''
   return conflicts
     .map((c) => {
       const aLabel = c.a.calendarName
@@ -249,7 +249,7 @@ function formatBriefing(title, groupedEvents, formatTime) {
  * @param {string} body - The full briefing text
  */
 function emailBriefing(gmailApp, recipients, subject, body) {
-  if (!recipients || !recipients.length) return
+  if (!recipients?.length) return
   for (const recipient of recipients) {
     gmailApp.sendEmail(recipient, subject, body)
   }
@@ -312,7 +312,7 @@ function generateBriefingForConfig(
   getDateKey,
   formatTime
 ) {
-  if (!config.emailRecipients || !config.emailRecipients.length) {
+  if (!config.emailRecipients?.length) {
     throw new Error('emailRecipients is required')
   }
 

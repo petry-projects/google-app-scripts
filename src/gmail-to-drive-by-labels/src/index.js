@@ -231,7 +231,7 @@ function processMessageToDoc(message, body, folder, options = {}) {
   let currentIndex = 0
 
   // Insert subject
-  const subjectText = 'Subject: ' + (subject ? subject : '(No Subject)')
+  const subjectText = 'Subject: ' + (subject || '(No Subject)')
   const headingPara = body.insertParagraph(currentIndex++, subjectText)
 
   // Try to set heading style (GAS only)
@@ -535,7 +535,7 @@ function processLabelGroup(config, services, helperFns) {
       // This ensures the most recent emails appear first.
       let currentIndex = 0
 
-      const subjectText = 'Subject: ' + (subject ? subject : '(No Subject)')
+      const subjectText = 'Subject: ' + (subject || '(No Subject)')
       const headingPara = body.insertParagraph(currentIndex++, subjectText)
 
       // Try to set heading, fallback to bold if Doc is busy
@@ -634,7 +634,7 @@ function processLabelGroup(config, services, helperFns) {
                 '_HHmmss'
               )
               // Insert timestamp before the file extension
-              let newName = fileName.replace(/(\.[\w\d_-]+)$/i, timeTag + '$1')
+              let newName = fileName.replace(/(\.[\w-]+)$/i, timeTag + '$1')
               // Fallback if regex fails (files without extension)
               if (newName === fileName) newName += timeTag
 
