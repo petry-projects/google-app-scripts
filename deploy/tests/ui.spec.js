@@ -274,8 +274,8 @@ test.describe('deploy index.html', () => {
   }) => {
     // Default mock returns empty files array; wait for the Drive lookup to
     // actually complete rather than sleeping for a fixed interval.
-    const driveLookup = page.waitForResponse((resp) =>
-      resp.url().includes('drive/v3/files')
+    const driveLookup = page.waitForResponse(
+      (resp) => resp.url().includes('drive/v3/files') && resp.ok()
     )
     await signIn(page)
     await driveLookup
