@@ -1,0 +1,89 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# SOURCE OF TRUTH: petry-projects/.github/standards/workflows/initiative-driver.yml
+# Standard:        petry-projects/.github/standards/ci-standards.md
+# Central driver:  petry-projects/.github-private/.github/workflows/initiative-driver.yml
+#
+# AGENTS — READ BEFORE EDITING:
+#   • This file is a THIN CALLER STUB. All dependency-aware release logic (the
+#     `initiative:auto` gate, the DAG / `blocked_by` resolution, max-in-flight,
+#     and the dev-lead label hand-off) lives in the CENTRAL driver above. This
+#     stub only DISPATCHES that central workflow with this repo as target_repo.
+#   • Unlike the initiative-planner stub there is NO reusable: the central driver
+#     is pure-bash (no claude-code-action), so this stub dispatches the central
+#     workflow_dispatch DIRECTLY with `gh workflow run`. No LLM runs here.
+#   • You MUST NOT change: the dispatch target
+#     (-R petry-projects/.github-private -f target_repo=${{ github.repository }}),
+#     the `initiative:auto` label filter, or the PAT guard.
+#   • If you need different release behaviour, open a PR against the central
+#     driver in petry-projects/.github-private — never by editing callers.
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Initiative Driver — per-repo dispatcher, thin caller for the central driver.
+#
+# On this repo's issues:[closed, labeled] (plus a safety-net off-peak schedule),
+# this stub dispatches the CENTRAL initiative-driver in
+# petry-projects/.github-private with target_repo=<this repo>. The central
+# driver then sweeps this repo's `initiative:auto` epics and releases their ready
+# sub-issues to dev-lead — so the central driver does not have to watch every
+# enrolled repo's events.
+#
+# To adopt:
+#   1. Copy this file verbatim to .github/workflows/initiative-driver.yml in your repo.
+#   2. Ensure the `initiative:auto` label exists on the repo.
+#   3. Confirm the org-level secret GH_PAT_WORKFLOWS is accessible **and its
+#      owner has write access to petry-projects/.github-private** (to dispatch
+#      the central workflow) **and to this repo** (the central driver applies the
+#      `dev-lead` label cross-repo with that PAT; a label applied with
+#      GITHUB_TOKEN would not trigger dev-lead).
+#
+# Standard: https://github.com/petry-projects/.github/blob/main/standards/ci-standards.md
+name: Initiative Driver — Dispatch Central
+
+on:
+  issues:
+    # closed:  a close may unblock successors — re-evaluate this repo's DAG.
+    # labeled: arming an epic with `initiative:auto` starts it immediately
+    #          (the job below filters to that label).
+    types: [closed, labeled]
+  schedule:
+    - cron: "41 3 * * *" # off-peak safety net for missed close events
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # One lane per repo so a close burst + the schedule does not fan out duplicate
+  # dispatches. cancel-in-progress=true cancels any pending/running redundant dispatches
+  # since the central driver sweeps all epics anyway.
+  group: initiative-driver-dispatch-${{ github.repository }}
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    # On a `labeled` event, only dispatch when the added label is the gate label
+    # (mirror the central driver) — otherwise every label change fans out a dispatch.
+    if: >-
+      github.event_name != 'issues' ||
+      github.event.action != 'labeled' ||
+      github.event.label.name == 'initiative:auto'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Guard — PAT present
+        # PAT required: a workflow_dispatch fired with GITHUB_TOKEN never starts a run.
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_DON_PETRY || secrets.GH_PAT_WORKFLOWS }}
+        run: |
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::error::GH_PAT_WORKFLOWS is required — a workflow_dispatch fired with GITHUB_TOKEN never starts a run."
+            exit 1
+          fi
+
+      - name: Dispatch central initiative-driver
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_DON_PETRY || secrets.GH_PAT_WORKFLOWS }}
+        run: |
+          gh workflow run initiative-driver.yml \
+            -R petry-projects/.github-private \
+            -f target_repo=${{ github.repository }}
