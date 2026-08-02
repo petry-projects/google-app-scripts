@@ -75,7 +75,7 @@ function getScriptCatalog() {
 function getScriptById(scriptId) {
   if (!scriptId) return null
   const catalog = getScriptCatalog()
-  return catalog.find((s) => s.id === scriptId) || null
+  return catalog.find((s) => s.id === scriptId) ?? null
 }
 
 /**
