@@ -32,7 +32,7 @@ function rowsToMap(rows) {
   const m = new Map()
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i]
-    if (!r || !r[0]) continue
+    if (!r?.[0]) continue
     m.set(r[0], { rowIndex: i + 2, values: r }) // assume header at row 1
   }
   return m
@@ -51,7 +51,8 @@ function rowsEqual(a, b) {
     // Handle Date comparison (a is ISO string, b is Date object from sheet)
     if (typeof valA === 'string' && valB instanceof Date) {
       const dateA = new Date(valA)
-      if (!isNaN(dateA) && dateA.getTime() === valB.getTime()) continue
+      if (!Number.isNaN(dateA.getTime()) && dateA.getTime() === valB.getTime())
+        continue
     }
 
     // Handle sanitized formula comparison (a has leading ', b does not)
@@ -260,7 +261,10 @@ async function syncCalendarToSheet(
   const toDelete = computeDeletableRows(existingMap, desiredMap, start, end)
   // delete from bottom to top
   console.log('[syncCalendarToSheet] Deleting rows:', toDelete.length)
-  toDelete.sort((a, b) => b - a).forEach((r) => sheet.deleteRow(r))
+  toDelete
+    .slice()
+    .sort((a, b) => b - a)
+    .forEach((r) => sheet.deleteRow(r))
   console.log('[syncCalendarToSheet] Sync complete')
 }
 
