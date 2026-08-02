@@ -3,6 +3,7 @@ const {
   storeEmailsAndAttachments: storeEmailsCore,
   processLabelGroup: processLabelGroupCore,
   removeExistingThread,
+  resolveAttachmentName,
   rebuildDoc: rebuildDocCore,
   rebuildAllDocs: rebuildAllDocsCore,
 } = require('../src/index.js')
@@ -645,5 +646,68 @@ On Mon, Jan 1, 2024 at 10:00 AM Someone <someone@example.com> wrote:
     expect(bodyText).toContain('This is the actual content')
     // Should NOT include the quoted reply
     expect(bodyText).not.toContain('This is quoted text that should be removed')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// resolveAttachmentName
+// ---------------------------------------------------------------------------
+
+describe('resolveAttachmentName', () => {
+  function makeFolder(existingNames = []) {
+    return {
+      getFilesByName: (name) => {
+        const matches = existingNames.filter((n) => n === name)
+        let i = 0
+        return { hasNext: () => i < matches.length, next: () => matches[i++] }
+      },
+    }
+  }
+
+  test('returns original name when no conflict', () => {
+    const folder = makeFolder([])
+    const blob = createBlob(Buffer.from('data'), 'doc.pdf')
+    expect(resolveAttachmentName(folder, 'doc.pdf', blob, {})).toBe('doc.pdf')
+  })
+
+  test('adds Date.now() suffix on conflict when GAS services not provided', () => {
+    const folder = makeFolder(['doc.pdf'])
+    const blob = createBlob(Buffer.from('data'), 'doc.pdf')
+    const result = resolveAttachmentName(folder, 'doc.pdf', blob, {})
+    expect(result).not.toBe('doc.pdf')
+    expect(result).toMatch(/^doc_\d+\.pdf$/)
+  })
+
+  test('uses Utilities.formatDate with millisecond format (_HHmmssSSS) on conflict', () => {
+    const folder = makeFolder(['doc.pdf'])
+    const blob = createBlob(Buffer.from('data'), 'doc.pdf')
+    const mockUtilities = {
+      formatDate: jest.fn().mockReturnValue('_103045123'),
+    }
+    const mockSession = { getScriptTimeZone: () => 'UTC' }
+    const result = resolveAttachmentName(folder, 'doc.pdf', blob, {
+      Utilities: mockUtilities,
+      Session: mockSession,
+    })
+    expect(mockUtilities.formatDate).toHaveBeenCalledWith(
+      expect.any(Date),
+      'UTC',
+      '_HHmmssSSS'
+    )
+    expect(result).toBe('doc_103045123.pdf')
+  })
+
+  test('renames the blob on conflict', () => {
+    const folder = makeFolder(['doc.pdf'])
+    const blob = createBlob(Buffer.from('data'), 'doc.pdf')
+    resolveAttachmentName(folder, 'doc.pdf', blob, {})
+    expect(blob.getName()).not.toBe('doc.pdf')
+  })
+
+  test('handles file without extension', () => {
+    const folder = makeFolder(['README'])
+    const blob = createBlob(Buffer.from('data'), 'README')
+    const result = resolveAttachmentName(folder, 'README', blob, {})
+    expect(result).not.toBe('README')
   })
 })

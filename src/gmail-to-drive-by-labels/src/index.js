@@ -131,7 +131,11 @@ function resolveAttachmentName(folder, fileName, newFileBlob, options) {
   const { Utilities, Session } = options
   const timeTag =
     Utilities && Session
-      ? Utilities.formatDate(new Date(), Session.getScriptTimeZone(), '_HHmmss')
+      ? Utilities.formatDate(
+          new Date(),
+          Session.getScriptTimeZone(),
+          '_HHmmssSSS'
+        )
       : '_' + Date.now()
   const renamed = fileName.replace(/(\.[\w-]+)$/i, timeTag + '$1')
   const finalName = renamed === fileName ? fileName + timeTag : renamed
@@ -910,6 +914,7 @@ module.exports = {
   processMessagesToDoc,
   sortThreadsByLastMessageDate,
   removeExistingThread,
+  resolveAttachmentName,
   storeEmailsAndAttachments,
   processLabelGroup,
   rebuildAllDocs,

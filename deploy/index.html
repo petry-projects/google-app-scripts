@@ -1867,6 +1867,18 @@
           }
         }
 
+        // Re-check localStorage in case another tab created the project while
+        // we were verifying or waiting — narrows the concurrent-tab race window.
+        const raceId = getStoredScriptId(catalogId, projectTitle)
+        if (raceId) {
+          try {
+            await apiFetch(`${APPS_SCRIPT_API}/projects/${raceId}`)
+            return raceId
+          } catch (raceErr) {
+            if (raceErr.httpStatus !== 404) throw raceErr
+          }
+        }
+
         showStatus(
           'info',
           `<span class="spinner" style="border-color:rgba(26,115,232,.3);border-top-color:#1a73e8;"></span> Creating project <strong>${escapeHtml(projectTitle)}</strong>${progress}…`
@@ -2034,8 +2046,8 @@
         btn.disabled = true
         btn.innerHTML = '<span class="spinner"></span> Deploying…'
 
+        const deployedProjects = []
         try {
-          const deployedProjects = []
           const total = selectedIds.length
 
           for (let i = 0; i < total; i++) {
@@ -2055,7 +2067,20 @@
             renderConfigCards(deployedProjects)
           }
         } catch (err) {
-          showStatus('error', buildDeployErrorHtml(err))
+          // Show any partial successes alongside the failure
+          if (deployedProjects.length > 0) {
+            renderScriptList()
+            renderConfigCards(deployedProjects)
+            showStatus(
+              'error',
+              buildDeploySuccessHtml(deployedProjects) +
+                '<div style="margin-top:12px;">' +
+                buildDeployErrorHtml(err) +
+                '</div>'
+            )
+          } else {
+            showStatus('error', buildDeployErrorHtml(err))
+          }
         } finally {
           btn.disabled = false
           btn.innerHTML = 'Deploy to my account'
