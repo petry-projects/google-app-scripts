@@ -1861,8 +1861,8 @@
         btn.disabled = true
         btn.innerHTML = '<span class="spinner"></span> Deploying…'
 
+        const deployedProjects = []
         try {
-          const deployedProjects = []
           const total = selectedIds.length
 
           for (let i = 0; i < total; i++) {
@@ -1901,7 +1901,31 @@
           // Show Step 3 config cards
           renderConfigCards(deployedProjects)
         } catch (err) {
-          showStatus('error', buildDeployErrorHtml(err))
+          if (deployedProjects.length > 0) {
+            renderScriptList()
+            const partialLinksHtml = deployedProjects
+              .map((p) => {
+                const safeId = escapeHtml(p.scriptId)
+                return (
+                  `<div style="border:1px solid #c8e6c9;border-radius:6px;padding:12px 16px;margin-top:8px;">` +
+                  `<div style="font-size:13px;font-weight:600;color:#137333;">✅ Deployed successfully</div>` +
+                  `<a class="result-link" href="https://script.google.com/d/${safeId}/edit" ` +
+                  `target="_blank" rel="noopener" style="margin-top:6px;display:block;">` +
+                  `${escapeHtml(p.title)} ↗</a>` +
+                  `</div>`
+                )
+              })
+              .join('')
+            renderConfigCards(deployedProjects)
+            showStatus(
+              'error',
+              buildDeployErrorHtml(err) +
+                `<div style="margin-top:12px;border-top:1px solid #f5c6cb;padding-top:8px;font-size:13px;font-weight:600;">${deployedProjects.length} script(s) deployed before the error:</div>` +
+                partialLinksHtml
+            )
+          } else {
+            showStatus('error', buildDeployErrorHtml(err))
+          }
         } finally {
           btn.disabled = false
           btn.innerHTML = 'Deploy to my account'
@@ -1939,6 +1963,7 @@
 
         // ── Idempotent project lookup / creation ────────────────────────
         let projectId = null
+        let isExistingProject = false
         const storedId = getStoredScriptId(catalogId, projectTitle)
         if (storedId) {
           showStatus(
@@ -1948,6 +1973,7 @@
           try {
             await apiFetch(`${APPS_SCRIPT_API}/projects/${storedId}`)
             projectId = storedId
+            isExistingProject = true
           } catch {
             // Project no longer exists — fall through to creation.
           }
@@ -1974,28 +2000,35 @@
         // All scripts use an hourly trigger. Schedule logic lives in config.gs.
         const setupSource = buildSetupSource(script.triggerFn)
 
-        // Upload source files: manifest + setup.gs + code.gs + config.gs (template).
+        // Upload source files: preserve user's config.gs when redeploying an existing project.
+        let uploadFiles
+        if (isExistingProject) {
+          const currentContent = await apiFetch(
+            `${APPS_SCRIPT_API}/projects/${projectId}/content`
+          )
+          const newCode = files.find((f) => f.name === 'code')
+          uploadFiles = currentContent.files.map((f) => {
+            if (f.name === 'appsscript')
+              return { ...f, source: APPSSCRIPT_MANIFEST }
+            if (f.name === 'setup') return { ...f, source: setupSource }
+            if (f.name === 'code' && newCode)
+              return { ...f, source: newCode.source }
+            return f // preserve config and any other user-modified files
+          })
+        } else {
+          uploadFiles = [
+            { name: 'appsscript', type: 'JSON', source: APPSSCRIPT_MANIFEST },
+            { name: 'setup', type: 'SERVER_JS', source: setupSource },
+            ...files.map((f) => ({
+              name: f.name,
+              type: 'SERVER_JS',
+              source: f.source,
+            })),
+          ]
+        }
         await apiFetch(`${APPS_SCRIPT_API}/projects/${projectId}/content`, {
           method: 'PUT',
-          body: JSON.stringify({
-            files: [
-              {
-                name: 'appsscript',
-                type: 'JSON',
-                source: APPSSCRIPT_MANIFEST,
-              },
-              {
-                name: 'setup',
-                type: 'SERVER_JS',
-                source: setupSource,
-              },
-              ...files.map((f) => ({
-                name: f.name,
-                type: 'SERVER_JS',
-                source: f.source,
-              })),
-            ],
-          }),
+          body: JSON.stringify({ files: uploadFiles }),
         })
 
         deployedScripts.set(catalogId, {
