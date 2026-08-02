@@ -23,9 +23,12 @@ describe('getCleanBody', () => {
     expect(getCleanBody(input)).toBe('My reply')
   })
 
-  test('cuts off at From: line with angle-bracket email address', () => {
-    const input = 'My reply\nFrom: Jane Doe <jane@example.com>\nQuoted content'
-    expect(getCleanBody(input)).toBe('My reply')
+  test('does not truncate at standalone From: line (forwarded content should be preserved)', () => {
+    const input =
+      'Please see the forwarded email below:\nFrom: Jane Doe <jane@example.com>\nHere is the content'
+    expect(getCleanBody(input)).toBe(
+      'Please see the forwarded email below:\nFrom: Jane Doe <jane@example.com>\nHere is the content'
+    )
   })
 
   test('cuts off at confidentiality notice', () => {

@@ -10,7 +10,6 @@ function getCleanBody(text) {
     /^\s*On\s.+\swrote:/m,
     /^\s*From:\s.+\sSent:\s+/m,
     /^\s*_{10,}/m,
-    /^\s*From:\s[^<]+<[^@]+@[^>]+>/m,
     /confidentiality notice/im,
   ]
 

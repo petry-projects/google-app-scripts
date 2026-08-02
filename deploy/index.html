@@ -1564,7 +1564,8 @@
           const lookahead = Number.parseInt(fields.lookaheadDays, 10) || 7
           const freq = JSON.stringify(fields.frequency || 'weekly')
           const day = JSON.stringify(fields.triggerDay || 'MONDAY')
-          const hour = Number.parseInt(fields.triggerHour, 10) || 7
+          const hourParsed = Number.parseInt(fields.triggerHour, 10)
+          const hour = Number.isNaN(hourParsed) ? 7 : hourParsed
           const interval = Number.parseInt(fields.triggerInterval, 10) || 1
           let scheduleLines =
             '    scheduleFrequency: ' +
