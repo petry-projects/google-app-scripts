@@ -45,14 +45,31 @@ function getRetentionConfig() {
         query: 'from:travel-provider@example.com',
       },
       {
-        taxonomyLabel: 'Family/Personal',
+        taxonomyLabel: 'Family/Personal-Health',
         retentionTag: 'Retention/Permanent',
-        query: 'from:(family@example.com OR relative@example.com)',
+        query: 'from:(health-provider@example.com OR wellness@example.com)',
+      },
+      {
+        taxonomyLabel: 'Family/Kids/Camp',
+        retentionTag: 'Retention/Permanent',
+        query: 'from:camp-provider@example.com',
+      },
+      {
+        taxonomyLabel: 'Projects/Business',
+        retentionTag: 'Retention/Archive-60-Days',
+        query: 'from:business-supplies@example.com OR from:etsy.com',
       },
       {
         taxonomyLabel: 'Finance/Purchases',
         retentionTag: 'Retention/Permanent',
-        query: 'from:(bank@example.com OR store-receipts@example.com)',
+        query:
+          'from:(store@example.com OR merchant@example.com) ("receipt" OR "order" OR "shipped" OR "delivered")',
+      },
+      {
+        taxonomyLabel: 'Finance/Bills',
+        retentionTag: 'Retention/Permanent',
+        query:
+          'from:utility@example.com ("statement" OR "bill" OR "payment" OR "due")',
       },
       {
         taxonomyLabel: 'Work/Core',
