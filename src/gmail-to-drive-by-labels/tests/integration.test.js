@@ -469,6 +469,31 @@ describe('Gmail to Drive integration with prepend behavior', () => {
     ).toBe(true)
   })
 
+  test('calls getFilesByName only once per attachment when a name conflict exists', () => {
+    // Pre-create a file with same name but different content
+    const existingBlob = createBlob('original content', 'once.txt')
+    folder.createFile(existingBlob)
+
+    const spy = jest.spyOn(folder, 'getFilesByName')
+
+    const newAttachment = createBlob('new content', 'once.txt')
+    const msg = createMessage({
+      subject: 'Test single Drive query',
+      body: 'Test body',
+      date: new Date('2024-01-01T10:00:00Z'),
+      attachments: [newAttachment],
+    })
+
+    processMessageToDoc(msg, body, folder)
+
+    // Should only call getFilesByName once per attachment, not twice
+    expect(spy).toHaveBeenCalledTimes(1)
+
+    // Name conflict should still be resolved: 2 files total
+    const files = folder.__getFiles()
+    expect(files).toHaveLength(2)
+  })
+
   test('handles name conflict with Utilities and Session options', () => {
     // Pre-create a file with same name but different content
     const existingBlob = createBlob('original content', 'conflict.txt')

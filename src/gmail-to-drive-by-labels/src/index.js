@@ -183,6 +183,7 @@ function processAttachment(
 
   // Check for duplicates by content hash
   const existingFiles = folder.getFilesByName(fileName)
+  const hasExistingByName = existingFiles.hasNext()
   console.log(
     '[processMessageToDoc] Checking for existing files named:',
     fileName
@@ -197,8 +198,9 @@ function processAttachment(
     return currentIndex + 1
   }
 
-  // Handle name conflicts (same name, different content)
-  if (folder.getFilesByName(fileName).hasNext()) {
+  // Handle name conflicts (same name, different content); reuse the pre-checked
+  // flag to avoid a second getFilesByName() call (quota + latency).
+  if (hasExistingByName) {
     fileName = resolveAttachmentName(fileName, newFileBlob, options)
   }
 
