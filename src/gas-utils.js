@@ -54,7 +54,7 @@ function getFileHash(blob) {
   } else if (blob?.bytes) {
     bytes = Buffer.from(blob.bytes)
   } else {
-    throw new Error('Unsupported blob type')
+    throw new TypeError('Unsupported blob type')
   }
 
   const hash = crypto.createHash('md5').update(bytes).digest('hex')

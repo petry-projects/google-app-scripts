@@ -122,7 +122,7 @@ function formatConflictWarning(conflicts, formatTime) {
 function groupEventsByDay(events, getDateKey) {
   const map = new Map()
   for (const item of events) {
-    const evt = item?.event ? item.event : item
+    const evt = item?.event ?? item
     const key = getDateKey(evt.getStartTime())
     if (!map.has(key)) map.set(key, [])
     map.get(key).push(item)
@@ -266,7 +266,7 @@ function emailBriefing(gmailApp, recipients, subject, body) {
  */
 function shouldRunNow(config, now, lastRunMs) {
   const hour = now.getHours()
-  const scheduleHour = config.scheduleHour != null ? config.scheduleHour : 7
+  const scheduleHour = config.scheduleHour ?? 7
 
   if (hour !== scheduleHour) return false
 

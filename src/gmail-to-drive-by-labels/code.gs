@@ -207,8 +207,10 @@ function rebuildDoc(config) {
     } catch (e) {
       console.error('[rebuildDoc] Error clearing document:', e.message)
       Logger.log('Error clearing document: ' + e.message)
-      properties.deleteProperty(stateKey)
-      return true // Error, consider done to avoid infinite loop
+      // Keep the state key so the next run retries the clear_doc phase.
+      throw new Error(
+        'rebuildDoc failed to clear document ' + config.docId + ': ' + e.message
+      )
     }
   }
 
@@ -663,4 +665,14 @@ function getFileHash(blob) {
       return ('0' + (byte & 0xff).toString(16)).slice(-2)
     })
     .join('')
+}
+
+// Export functions for testing (Node.js only)
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    rebuildDoc,
+    rebuildAllDocs,
+    processLabelGroup,
+    storeEmailsAndAttachments,
+  }
 }

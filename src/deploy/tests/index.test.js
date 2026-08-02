@@ -9,6 +9,9 @@ const {
   updateProjectContent,
   deployScript,
   createGmailLabel,
+  escapeHtml,
+  buildDeploySuccessHtml,
+  buildDeployErrorHtml,
 } = require('../index')
 
 // ---------------------------------------------------------------------------
@@ -517,6 +520,217 @@ describe('createGmailLabel', () => {
     await expect(createGmailLabel(fetchFn, 'token', 'label')).rejects.toThrow(
       'Failed to create Gmail label: 500'
     )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// escapeHtml
+// ---------------------------------------------------------------------------
+
+describe('escapeHtml', () => {
+  test('escapes ampersands', () => {
+    expect(escapeHtml('a & b')).toBe('a &amp; b')
+  })
+
+  test('escapes less-than signs', () => {
+    expect(escapeHtml('a < b')).toBe('a &lt; b')
+  })
+
+  test('escapes greater-than signs', () => {
+    expect(escapeHtml('a > b')).toBe('a &gt; b')
+  })
+
+  test('escapes double quotes', () => {
+    expect(escapeHtml('say "hello"')).toBe('say &quot;hello&quot;')
+  })
+
+  test('escapes single quotes', () => {
+    expect(escapeHtml("it's mine")).toBe('it&#x27;s mine')
+  })
+
+  test('escapes multiple special characters', () => {
+    expect(escapeHtml('<script>alert("XSS")</script>')).toBe(
+      '&lt;script&gt;alert(&quot;XSS&quot;)&lt;/script&gt;'
+    )
+  })
+
+  test('handles null and undefined by returning empty string', () => {
+    expect(escapeHtml(null)).toBe('')
+    expect(escapeHtml(undefined)).toBe('')
+  })
+
+  test('converts non-string inputs to string before escaping', () => {
+    expect(escapeHtml(123)).toBe('123')
+    expect(escapeHtml({})).toContain('object')
+  })
+
+  test('leaves normal text unchanged', () => {
+    expect(escapeHtml('Hello World')).toBe('Hello World')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// buildDeploySuccessHtml
+// ---------------------------------------------------------------------------
+
+describe('buildDeploySuccessHtml', () => {
+  test('returns empty string for non-array input', () => {
+    expect(buildDeploySuccessHtml(null)).toBe('')
+    expect(buildDeploySuccessHtml(undefined)).toBe('')
+    expect(buildDeploySuccessHtml('not-an-array')).toBe('')
+  })
+
+  test('builds success HTML for single deployed project', () => {
+    const projects = [
+      { scriptId: 'abc123', title: 'My Script', catalogId: 'test' },
+    ]
+    const html = buildDeploySuccessHtml(projects)
+
+    expect(html).toContain('✅')
+    expect(html).toContain('Script deployed!')
+    expect(html).toContain('My Script')
+    expect(html).toContain('https://script.google.com/d/abc123/edit')
+    expect(html).toContain('Now configure each script below')
+  })
+
+  test('builds success HTML for multiple deployed projects', () => {
+    const projects = [
+      { scriptId: 'id1', title: 'Script 1', catalogId: 'test1' },
+      { scriptId: 'id2', title: 'Script 2', catalogId: 'test2' },
+      { scriptId: 'id3', title: 'Script 3', catalogId: 'test3' },
+    ]
+    const html = buildDeploySuccessHtml(projects)
+
+    expect(html).toContain('3 scripts deployed!')
+    expect(html).toContain('Script 1')
+    expect(html).toContain('Script 2')
+    expect(html).toContain('Script 3')
+  })
+
+  test('escapes HTML in project titles', () => {
+    const projects = [
+      {
+        scriptId: 'id',
+        title: '<script>alert("xss")</script>',
+        catalogId: 'test',
+      },
+    ]
+    const html = buildDeploySuccessHtml(projects)
+
+    expect(html).not.toContain('<script>')
+    expect(html).toContain('&lt;script&gt;')
+  })
+
+  test('escapes HTML in script IDs', () => {
+    const projects = [
+      {
+        scriptId: '<img src=x onerror=alert(1)>',
+        title: 'My Script',
+        catalogId: 'test',
+      },
+    ]
+    const html = buildDeploySuccessHtml(projects)
+
+    expect(html).not.toContain('<img')
+    expect(html).toContain('&lt;img')
+  })
+
+  test('includes deployed successfully styling for each project', () => {
+    const projects = [
+      { scriptId: 'id1', title: 'Script 1', catalogId: 'test1' },
+      { scriptId: 'id2', title: 'Script 2', catalogId: 'test2' },
+    ]
+    const html = buildDeploySuccessHtml(projects)
+
+    expect(html.match(/Deployed successfully/g) || []).toHaveLength(2)
+  })
+
+  test('handles empty array with 0 scripts message', () => {
+    const html = buildDeploySuccessHtml([])
+    expect(html).toContain('0 scripts deployed!')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// buildDeployErrorHtml
+// ---------------------------------------------------------------------------
+
+describe('buildDeployErrorHtml', () => {
+  test('returns error message for null input', () => {
+    const html = buildDeployErrorHtml(null)
+    expect(html).toContain('❌')
+    expect(html).toContain('Unknown error')
+  })
+
+  test('builds error HTML from error message', () => {
+    const err = new Error('Something went wrong')
+    const html = buildDeployErrorHtml(err)
+
+    expect(html).toContain('❌')
+    expect(html).toContain('Deployment failed')
+    expect(html).toContain('Something went wrong')
+  })
+
+  test('escapes error message to prevent XSS', () => {
+    const err = new Error('<script>alert("xss")</script>')
+    const html = buildDeployErrorHtml(err)
+
+    expect(html).not.toContain('<script>')
+    expect(html).toContain('&lt;script&gt;')
+  })
+
+  test('includes error detail block with stack trace', () => {
+    const err = new Error('Test error')
+    err.stack = 'Error: Test error\n  at line 42'
+    const html = buildDeployErrorHtml(err)
+
+    expect(html).toContain('<details')
+    expect(html).toContain('Error detail')
+    expect(html).toContain('at line 42')
+  })
+
+  test('falls back to message if stack is unavailable', () => {
+    const err = new Error('Just a message')
+    const html = buildDeployErrorHtml(err)
+
+    expect(html).toContain('Just a message')
+  })
+
+  test('detects Apps Script API disabled error', () => {
+    const err = new Error('The following error occurred: Apps Script API...')
+    const html = buildDeployErrorHtml(err)
+
+    expect(html).toContain('User has not enabled the Apps Script API')
+    expect(html).toContain('script.google.com/home/usersettings')
+    expect(html).toContain('Enable it at')
+    expect(html).toContain('wait a minute then try again')
+  })
+
+  test('includes copy button for error details', () => {
+    const err = new Error('Test error')
+    const html = buildDeployErrorHtml(err)
+
+    expect(html).toContain('Copy error')
+    expect(html).toContain('copy-btn')
+  })
+
+  test('copy button decodes HTML entities via innerHTML before writing to clipboard', () => {
+    const err = new Error('<script>alert("xss")</script>')
+    const html = buildDeployErrorHtml(err)
+
+    // data-copy must hold the HTML-escaped value so quotes in the attribute are safe
+    expect(html).toContain('data-copy="')
+    expect(html).toContain('&lt;script&gt;')
+    // onclick must use div.innerHTML decode trick so the clipboard receives unescaped text
+    expect(html).toContain('d.innerHTML=this.dataset.copy')
+    expect(html).toContain('d.textContent')
+  })
+
+  test('handles errors with string representation', () => {
+    const err = { message: 'Object error' }
+    const html = buildDeployErrorHtml(err)
+
+    expect(html).toContain('Object error')
   })
 })
 
