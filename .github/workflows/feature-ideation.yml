@@ -107,7 +107,7 @@ jobs:
         # A workflow_dispatch fired with GITHUB_TOKEN is accepted but never starts
         # a run (loop prevention), so a PAT is required (same as initiative-planner).
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT_WORKFLOWS }}
+          GH_TOKEN: ${{ secrets.GH_PAT_DON_PETRY || secrets.GH_PAT_WORKFLOWS }}
         run: |
           if [ -z "${GH_TOKEN}" ]; then
             echo "::error::GH_PAT_WORKFLOWS is required — a workflow_dispatch fired with GITHUB_TOKEN will not start a run."
@@ -115,7 +115,7 @@ jobs:
           fi
       - name: Re-dispatch under workflow_dispatch
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT_WORKFLOWS }}
+          GH_TOKEN: ${{ secrets.GH_PAT_DON_PETRY || secrets.GH_PAT_WORKFLOWS }}
           REPO: ${{ github.repository }}
           DISCUSSION_NUMBER: ${{ github.event.discussion.number }}
         run: |
