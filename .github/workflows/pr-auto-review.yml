@@ -28,16 +28,9 @@ on:
   # workflow_run fires when a named GitHub Actions workflow completes.
   # check_suite does NOT trigger for GitHub Actions runs, so this is required
   # to catch CI turning green on a PR.
+  # Trigger after the repository's CI workflow completes.
   workflow_run:
-    workflows:
-      [
-        'CI Pipeline',
-        'Node.js Tests',
-        'Coverage',
-        'Playwright UI Tests',
-        'AgentShield',
-        'Dependency audit',
-      ]
+    workflows: ["CI Pipeline"]
     types: [completed]
   # check_suite covers third-party CI checks (e.g. SonarCloud, external apps).
   check_suite:
@@ -57,7 +50,7 @@ jobs:
       pull-requests: read
       checks: read
       actions: read
-    uses: petry-projects/.github/.github/workflows/pr-auto-review-reusable.yml@pr-auto-review/v1-stable # NOSONAR(githubactions:S7637) first-party channel ref
+    uses: petry-projects/.github/.github/workflows/pr-auto-review-reusable.yml@pr-auto-review/v1-stable  # NOSONAR(githubactions:S7637) first-party channel ref
     secrets:
       # Canonical-first fallback (.github-private#1326). The reusable resolves this
       # secret BY NAME, so only the VALUE changes — the passed key stays named
