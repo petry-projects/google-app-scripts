@@ -615,10 +615,9 @@ function getCleanBody(text) {
 
   // 1. FIRST PASS: Cut off at headers or footers
   var headerPatterns = [
-    /^\s*On\s+.+\s+wrote:/m, // Gmail Reply Header
-    /^\s*From:\s+.+\s+Sent:\s+/m, // Outlook Reply Header
-    /^\s*_{10,}/m, // Underscore Separators
-    /^\s*From:\s+.+<.+@.+>/m, // Generic Header
+    /^[^\S\r\n]*On[^\S\r\n].+[^\S\r\n]wrote:/m, // Gmail Reply Header
+    /^[^\S\r\n]*From:[^\S\r\n].+[^\S\r\n]Sent:[^\S\r\n]+/m, // Outlook Reply Header
+    /^[^\S\r\n]*_{10,}[^\S\r\n]*$/m, // Underscore Separators
     /confidentiality notice/im, // Legal Footer (Case Insensitive)
   ]
 
@@ -627,8 +626,10 @@ function getCleanBody(text) {
   headerPatterns.forEach((pattern) => {
     var match = text.match(pattern)
     if (match) {
-      if (splitIndex === -1 || match.index < splitIndex) {
-        splitIndex = match.index
+      var nlIndex = text.lastIndexOf('\n', match.index)
+      var lineStart = nlIndex === -1 ? 0 : nlIndex + 1
+      if (splitIndex === -1 || lineStart < splitIndex) {
+        splitIndex = lineStart
       }
     }
   })
@@ -643,10 +644,10 @@ function getCleanBody(text) {
     return !(trimmed.startsWith('>') || trimmed.startsWith('<'))
   })
 
-  // 3. THIRD PASS: Normalize line breaks (convert 2+ consecutive to 1)
-  // This prevents excessive blank lines in Google Docs where each \n creates a paragraph break
+  // 3. THIRD PASS: Normalize line breaks (collapse 3+ consecutive newlines to 2)
+  // This preserves intentional paragraph spacing while preventing excessive blank lines
   var result = cleanLines.join('\n').trim()
-  result = result.replace(/\n{2,}/g, '\n')
+  result = result.replace(/\n{3,}/g, '\n\n')
 
   return result
 }
