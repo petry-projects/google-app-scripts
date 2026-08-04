@@ -2,6 +2,8 @@
  * Performance and Scalability Benchmark Test Suite for Gmail AI Classifier & GitHub Sync
  */
 
+const { processThreadBatch } = require('../src/index.js')
+
 describe('Performance and Scalability Benchmarks', () => {
   test('Section-Aware Insertion Benchmark: Large 10,000 Line Document', () => {
     // Generate a 10,000 line mock markdown document string
@@ -69,23 +71,57 @@ describe('Performance and Scalability Benchmarks', () => {
   })
 
   test('Batch Processing Throughput Benchmark', () => {
-    // Benchmark 100 email items classification parsing
-    const items = Array.from({ length: 100 }, (_, i) => ({
-      id: `msg_${i}`,
-      sender: `user_${i}@example.com`,
-      subject: `Subject ${i}`,
-      snippet: `Plain body text snippet for email #${i}`,
+    const BATCH_SIZE = 100
+    const classification = {
+      canonical_label: '04_Family_Health/Bowens',
+      confidence: 0.98,
+      reasoning: 'benchmark classification',
+    }
+    const geminiResponse = {
+      getResponseCode: () => 200,
+      getContentText: () =>
+        JSON.stringify({
+          candidates: [
+            { content: { parts: [{ text: JSON.stringify(classification) }] } },
+          ],
+        }),
+    }
+    const makeLabel = (name) => ({
+      getName: () => name,
+      getId: () => `label-${name}`,
+    })
+    const threads = Array.from({ length: BATCH_SIZE }, (_, i) => ({
+      getId: () => `msg_${i}`,
+      getMessages: () => [
+        {
+          getFrom: () => `user_${i}@example.com`,
+          getSubject: () => `Subject ${i}`,
+          getPlainBody: () => `Plain body text snippet for email #${i}`,
+        },
+      ],
+      addLabel: jest.fn(),
     }))
+    const config = {
+      modelEndpoint: 'https://example.com/api',
+      geminiApiKey: 'test-key',
+      processedLabel: 'Processed',
+      autoFilterConfidenceThreshold: 0.99,
+      canonicalDomains: ['04_Family_Health/Bowens'],
+    }
+    const services = {
+      GmailApp: {
+        getUserLabelByName: jest.fn((name) => makeLabel(name)),
+        createLabel: jest.fn((name) => makeLabel(name)),
+      },
+      UrlFetchApp: { fetch: jest.fn(() => geminiResponse) },
+      Gmail: null,
+    }
 
     const startTime = Date.now()
-    const processed = items.map((item) => ({
-      id: item.id,
-      canonicalLabel: '04_Family_Health/Bowens',
-      confidence: 0.98,
-    }))
+    const processed = processThreadBatch(threads, config, services)
     const duration = Date.now() - startTime
 
-    expect(processed.length).toBe(100)
+    expect(processed.length).toBe(BATCH_SIZE)
     expect(duration).toBeLessThan(100) // 100 items benchmarked under 100ms
   })
 })
