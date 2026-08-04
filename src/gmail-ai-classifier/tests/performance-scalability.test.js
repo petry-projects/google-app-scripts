@@ -85,7 +85,7 @@ describe('Performance and Scalability Benchmarks', () => {
     }))
     const duration = Date.now() - startTime
 
-    expect(processed.length).toBe(100)
+    expect(processed).toHaveLength(100)
     expect(duration).toBeLessThan(100) // 100 items benchmarked under 100ms
   })
 })

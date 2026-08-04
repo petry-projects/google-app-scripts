@@ -1509,10 +1509,10 @@ describe('Checkpoint logic (GAS only)', () => {
     const configs = freshCode.getConfigs()
 
     // Should fall back to legacy mode when array is empty
-    expect(configs.length).toBe(1)
+    expect(configs).toHaveLength(1)
     expect(configs[0].sheetName).toBe('Sheet1')
-    expect(configs[0].spreadsheetId).toBe(null)
-    expect(configs[0].calendarId).toBe(null)
+    expect(configs[0].spreadsheetId).toBeNull()
+    expect(configs[0].calendarId).toBeNull()
 
     delete global.SYNC_CONFIGS
   })
