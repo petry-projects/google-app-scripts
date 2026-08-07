@@ -17,10 +17,18 @@ describe('getCleanBody', () => {
     expect(getCleanBody(input)).toBe('Line1')
   })
 
-  test('cuts off at Outlook-style From:/Sent: reply header', () => {
+  test('cuts off at Outlook-style From:/Sent: reply header on same line', () => {
+    const input =
+      'My reply\nFrom: Jane Doe Sent: Monday, Jan 1, 2020 9:00 AM\nQuoted'
+    expect(getCleanBody(input)).toBe('My reply')
+  })
+
+  test('does not truncate at multiline From:/Sent: (separate lines are preserved)', () => {
     const input =
       'My reply\nFrom: Jane Doe\nSent: Monday, Jan 1, 2020 9:00 AM\nQuoted'
-    expect(getCleanBody(input)).toBe('My reply')
+    expect(getCleanBody(input)).toBe(
+      'My reply\nFrom: Jane Doe\nSent: Monday, Jan 1, 2020 9:00 AM\nQuoted'
+    )
   })
 
   test('does not truncate at standalone From: line (forwarded content should be preserved)', () => {
@@ -28,6 +36,19 @@ describe('getCleanBody', () => {
       'Please see the forwarded email below:\nFrom: Jane Doe <jane@example.com>\nHere is the content'
     expect(getCleanBody(input)).toBe(
       'Please see the forwarded email below:\nFrom: Jane Doe <jane@example.com>\nHere is the content'
+    )
+  })
+
+  test('cuts off at underscore separator line', () => {
+    const input =
+      'My message\n________________________________________\nFrom: Jane\nSent: Monday'
+    expect(getCleanBody(input)).toBe('My message')
+  })
+
+  test('does not truncate at underscores that are part of text (not a separator line)', () => {
+    const input = '__________field description here\nMore content here'
+    expect(getCleanBody(input)).toBe(
+      '__________field description here\nMore content here'
     )
   })
 
@@ -49,18 +70,16 @@ describe('getCleanBody', () => {
     )
   })
 
-  test('normalizes multiple consecutive line breaks to single line break', () => {
+  test('collapses 3+ consecutive line breaks to 2', () => {
     const input = 'Paragraph 1\n\n\n\nParagraph 2'
     const result = getCleanBody(input)
-    // Should normalize to single line break (no blank lines)
-    expect(result).not.toContain('\n\n')
-    expect(result).toBe('Paragraph 1\nParagraph 2')
+    expect(result).toBe('Paragraph 1\n\nParagraph 2')
   })
 
   test('handles multiple occurrences of excessive line breaks', () => {
     const input = 'Line 1\n\n\nLine 2\n\n\n\n\nLine 3'
     const result = getCleanBody(input)
-    expect(result).toBe('Line 1\nLine 2\nLine 3')
+    expect(result).toBe('Line 1\n\nLine 2\n\nLine 3')
   })
 
   test('preserves single line breaks', () => {
@@ -68,17 +87,18 @@ describe('getCleanBody', () => {
     expect(getCleanBody(input)).toBe('Line 1\nLine 2\nLine 3')
   })
 
-  test('normalizes double line breaks to single (for signatures)', () => {
+  test('preserves double line breaks (intentional paragraph spacing)', () => {
     const input = 'Paragraph 1\n\nParagraph 2'
-    expect(getCleanBody(input)).toBe('Paragraph 1\nParagraph 2')
+    expect(getCleanBody(input)).toBe('Paragraph 1\n\nParagraph 2')
   })
 
-  test('handles email signature with excessive line breaks', () => {
+  test('collapses runs of 3+ line breaks but preserves double line breaks', () => {
     const input =
       'Thank you!\n\n\n\nJohn Doe\n\nSoftware Engineer\n\n\nAcme Corp'
     const result = getCleanBody(input)
-    expect(result).toBe('Thank you!\nJohn Doe\nSoftware Engineer\nAcme Corp')
-    expect(result).not.toContain('\n\n')
+    expect(result).toBe(
+      'Thank you!\n\nJohn Doe\n\nSoftware Engineer\n\nAcme Corp'
+    )
   })
 })
 
