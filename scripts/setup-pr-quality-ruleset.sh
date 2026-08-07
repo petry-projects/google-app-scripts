@@ -9,7 +9,9 @@
 #
 # What this script does:
 #   1. Checks whether the "pr-quality" ruleset already exists
-#   2. Creates it if missing (idempotent — safe to re-run)
+#   2. Creates it if missing, or updates it if present so drifted parameters
+#      (e.g. dismiss_stale_reviews_on_push) reconverge to the codified standard
+#      (idempotent — safe to re-run)
 #
 # Prerequisites: gh (authenticated with repo admin rights)
 # Usage:
@@ -88,6 +90,5 @@ echo "Creating '$RULESET_NAME' ruleset..."
 
 echo "$RULESET_PAYLOAD" | gh api "repos/$REPO/rulesets" --method POST --input -
 
-echo "  ✓ '$RULESET_NAME' ruleset created successfully."
 echo ""
 echo "=== Done ==="
