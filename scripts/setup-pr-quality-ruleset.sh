@@ -40,6 +40,7 @@ echo ""
 
 # ── Preflight ─────────────────────────────────────────────────────────────────
 command -v gh >/dev/null || { echo "Error: gh CLI is required" >&2; exit 1; }
+command -v jq >/dev/null || { echo "Error: jq is required" >&2; exit 1; }
 gh auth status >/dev/null 2>&1 || { echo "Error: gh not authenticated" >&2; exit 1; }
 
 # ── Check if ruleset already exists ───────────────────────────────────────────
