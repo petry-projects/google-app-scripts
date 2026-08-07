@@ -46,9 +46,9 @@ describe('setup-pr-quality-ruleset.sh codified ruleset', () => {
     expect(payload.conditions.ref_name.exclude).toEqual([])
   })
 
-  it('script updates existing rulesets via PATCH to enforce compliance', () => {
+  it('script updates existing rulesets via PUT to enforce compliance', () => {
     const scriptPath = path.join(__dirname, '..', 'setup-pr-quality-ruleset.sh')
     const script = fs.readFileSync(scriptPath, 'utf8')
-    expect(script).toMatch(/--method PATCH/)
+    expect(script).toMatch(/--method PUT/)
   })
 })
