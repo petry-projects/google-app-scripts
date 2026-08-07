@@ -7,7 +7,7 @@ const path = require('path')
 function loadRulesetPayload() {
   const scriptPath = path.join(__dirname, '..', 'setup-pr-quality-ruleset.sh')
   const script = fs.readFileSync(scriptPath, 'utf8')
-  const match = script.match(/<<'JSON'\n([\s\S]*?)\nJSON/)
+  const match = script.match(/<<'JSON'\r?\n([\s\S]*?)\r?\nJSON/)
   if (!match) {
     throw new Error('Could not locate the JSON heredoc payload in the script')
   }
@@ -24,6 +24,31 @@ describe('setup-pr-quality-ruleset.sh codified ruleset', () => {
   it('requires last-push approval on the pull_request rule', () => {
     const pullRequestRule = payload.rules.find((r) => r.type === 'pull_request')
     expect(pullRequestRule).toBeDefined()
-    expect(pullRequestRule.parameters.require_last_push_approval).toBe(true)
+    expect(pullRequestRule?.parameters?.require_last_push_approval).toBe(true)
+  })
+
+  it('has exactly one pull_request rule with all required parameters', () => {
+    const pullRequestRules = payload.rules.filter(
+      (r) => r.type === 'pull_request'
+    )
+    expect(pullRequestRules).toHaveLength(1)
+    expect(pullRequestRules[0]?.parameters).toEqual({
+      required_approving_review_count: 1,
+      dismiss_stale_reviews_on_push: true,
+      require_code_owner_review: false,
+      require_last_push_approval: true,
+      required_review_thread_resolution: true,
+    })
+  })
+
+  it('targets the default branch with correct conditions', () => {
+    expect(payload.conditions.ref_name.include).toEqual(['~DEFAULT_BRANCH'])
+    expect(payload.conditions.ref_name.exclude).toEqual([])
+  })
+
+  it('script updates existing rulesets via PATCH to enforce compliance', () => {
+    const scriptPath = path.join(__dirname, '..', 'setup-pr-quality-ruleset.sh')
+    const script = fs.readFileSync(scriptPath, 'utf8')
+    expect(script).toMatch(/--method PATCH/)
   })
 })
