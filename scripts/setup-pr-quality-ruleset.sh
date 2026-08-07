@@ -79,7 +79,7 @@ JSON
 
 if [[ -n "$EXISTING_ID" ]]; then
   echo "  ↻ '$RULESET_NAME' ruleset already exists (id: $EXISTING_ID) — updating to ensure compliance..."
-  echo "$RULESET_PAYLOAD" | gh api "repos/$REPO/rulesets/$EXISTING_ID" --method PUT --input -
+  printf '%s\n' "$RULESET_PAYLOAD" | gh api "repos/$REPO/rulesets/$EXISTING_ID" --method PUT --input -
   echo "  ✓ '$RULESET_NAME' ruleset updated successfully."
   echo ""
   echo "=== Done ==="
@@ -89,7 +89,7 @@ fi
 # ── Create the pr-quality ruleset ─────────────────────────────────────────────
 echo "Creating '$RULESET_NAME' ruleset..."
 
-echo "$RULESET_PAYLOAD" | gh api "repos/$REPO/rulesets" --method POST --input -
+printf '%s\n' "$RULESET_PAYLOAD" | gh api "repos/$REPO/rulesets" --method POST --input -
 
 echo ""
 echo "=== Done ==="
