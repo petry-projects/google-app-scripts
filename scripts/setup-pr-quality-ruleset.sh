@@ -41,19 +41,10 @@ command -v gh >/dev/null || { echo "Error: gh CLI is required" >&2; exit 1; }
 gh auth status >/dev/null 2>&1 || { echo "Error: gh not authenticated" >&2; exit 1; }
 
 # ── Check if ruleset already exists ───────────────────────────────────────────
-EXISTING_ID=$(gh api "repos/$REPO/rulesets" -q ".[] | select(.name == \"$RULESET_NAME\") | .id" 2>/dev/null || echo "")
+EXISTING_ID=$(gh api "repos/$REPO/rulesets?includes_parents=false" -q ".[] | select(.name == \"$RULESET_NAME\") | .id" 2>/dev/null || echo "")
 
-if [[ -n "$EXISTING_ID" ]]; then
-  echo "  ✓ '$RULESET_NAME' ruleset already exists (id: $EXISTING_ID) — nothing to do."
-  echo ""
-  echo "=== Done ==="
-  exit 0
-fi
-
-# ── Create the pr-quality ruleset ─────────────────────────────────────────────
-echo "Creating '$RULESET_NAME' ruleset..."
-
-gh api "repos/$REPO/rulesets" --method POST --input - <<'JSON'
+# ── Ruleset payload (used for both create and update) ─────────────────────────
+RULESET_PAYLOAD=$(cat <<'JSON'
 {
   "name": "pr-quality",
   "target": "branch",
@@ -71,7 +62,7 @@ gh api "repos/$REPO/rulesets" --method POST --input - <<'JSON'
         "required_approving_review_count": 1,
         "dismiss_stale_reviews_on_push": true,
         "require_code_owner_review": false,
-        "require_last_push_approval": false,
+        "require_last_push_approval": true,
         "required_review_thread_resolution": true
       }
     },
@@ -81,6 +72,21 @@ gh api "repos/$REPO/rulesets" --method POST --input - <<'JSON'
   ]
 }
 JSON
+)
+
+if [[ -n "$EXISTING_ID" ]]; then
+  echo "  ↻ '$RULESET_NAME' ruleset already exists (id: $EXISTING_ID) — updating to ensure compliance..."
+  echo "$RULESET_PAYLOAD" | gh api "repos/$REPO/rulesets/$EXISTING_ID" --method PUT --input -
+  echo "  ✓ '$RULESET_NAME' ruleset updated successfully."
+  echo ""
+  echo "=== Done ==="
+  exit 0
+fi
+
+# ── Create the pr-quality ruleset ─────────────────────────────────────────────
+echo "Creating '$RULESET_NAME' ruleset..."
+
+echo "$RULESET_PAYLOAD" | gh api "repos/$REPO/rulesets" --method POST --input -
 
 echo "  ✓ '$RULESET_NAME' ruleset created successfully."
 echo ""
