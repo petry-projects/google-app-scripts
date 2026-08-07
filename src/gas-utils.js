@@ -7,9 +7,9 @@ function getCleanBody(text) {
   if (!text) return ''
 
   const headerPatterns = [
-    /^\s*On\s.+\swrote:/m,
-    /^\s*From:\s.+\sSent:\s+/m,
-    /^\s*_{10,}/m,
+    /^[^\S\r\n]*On[^\S\r\n].+[^\S\r\n]wrote:/m,
+    /^[^\S\r\n]*From:[^\S\r\n].+[^\S\r\n]Sent:[^\S\r\n]+/m,
+    /^[^\S\r\n]*_{10,}[^\S\r\n]*$/m,
     /confidentiality notice/im,
   ]
 
@@ -33,10 +33,10 @@ function getCleanBody(text) {
     return !(trimmed.startsWith('>') || trimmed.startsWith('<'))
   })
 
-  // Join lines and normalize line breaks: replace 2+ consecutive line breaks with 1
-  // This prevents excessive blank lines in Google Docs where each \n creates a paragraph break
+  // Join lines and normalize line breaks: collapse 3+ consecutive newlines to 2
+  // This preserves intentional paragraph spacing while preventing excessive blank lines in Google Docs
   let result = cleanLines.join('\n').trim()
-  result = result.replace(/\n{2,}/g, '\n')
+  result = result.replace(/\n{3,}/g, '\n\n')
 
   return result
 }
