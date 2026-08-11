@@ -43,10 +43,6 @@ concurrency:
   group: dependabot-update-and-merge
   cancel-in-progress: false
 
-concurrency:
-  group: dependabot-update-and-merge
-  cancel-in-progress: false
-
 permissions: {}
 
 jobs:

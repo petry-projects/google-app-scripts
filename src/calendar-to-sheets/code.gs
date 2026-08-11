@@ -506,8 +506,3 @@ if (typeof module !== 'undefined' && module.exports) {
     fullResyncCalendarToSheetGAS,
   }
 }
-
-// Export for testing in Node environments
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { getConfigs, getConfig, eventToRowGAS, syncCalendarToSheetGAS, syncAllCalendarsToSheetsGAS };
-}
