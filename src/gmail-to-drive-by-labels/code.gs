@@ -609,15 +609,20 @@ function processLabelGroup(config) {
 
 /**
  * Helper function to remove quoted replies, specific line patterns, and footers.
+ * NOTE: This implementation is duplicated from src/gas-utils.js. Both versions must be
+ * kept in sync to prevent behavior divergence. The GAS-specific version exists because
+ * Google Apps Script cannot import from src/gas-utils.js during deployment.
+ * Tests for this function are in src/gmail-to-drive-by-labels/tests/gas-utils.test.js
+ * and validate both implementations' behavior.
  */
 function getCleanBody(text) {
   if (!text) return ''
 
   // 1. FIRST PASS: Cut off at headers or footers
   var headerPatterns = [
-    /^[^\S\r\n]*On[^\S\r\n].+[^\S\r\n]wrote:/m, // Gmail Reply Header
-    /^[^\S\r\n]*From:[^\S\r\n].+[^\S\r\n]Sent:[^\S\r\n]+/m, // Outlook Reply Header
-    /^[^\S\r\n]*_{10,}[^\S\r\n]*$/m, // Underscore Separators
+    /^[ \t ]*On[ \t ].+(?<=[ \t ])wrote:/m, // Gmail Reply Header
+    /^[ \t ]*From:[ \t ].+(?<=[ \t ])Sent:[ \t ]+/m, // Outlook Reply Header
+    /^[ \t ]*_{10,}[ \t ]*$/m, // Underscore Separators
     /confidentiality notice/im, // Legal Footer (Case Insensitive)
   ]
 
