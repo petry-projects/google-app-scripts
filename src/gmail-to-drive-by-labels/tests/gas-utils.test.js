@@ -70,35 +70,49 @@ describe('getCleanBody', () => {
     )
   })
 
-  test('collapses 3+ consecutive line breaks to 2', () => {
-    const input = 'Paragraph 1\n\n\n\nParagraph 2'
-    const result = getCleanBody(input)
-    expect(result).toBe('Paragraph 1\n\nParagraph 2')
+  test('cuts off at reply header with non-breaking space after On', () => {
+    const input = 'Line1\nOn Jan 1, 2020, John Doe wrote:\nQuoted'
+    expect(getCleanBody(input)).toBe('Line1')
   })
 
-  test('handles multiple occurrences of excessive line breaks', () => {
-    const input = 'Line 1\n\n\nLine 2\n\n\n\n\nLine 3'
-    const result = getCleanBody(input)
-    expect(result).toBe('Line 1\n\nLine 2\n\nLine 3')
+  test('cuts off at reply header with non-breaking space before wrote', () => {
+    const input = 'Line1\nOn Jan 1, 2020, John Doe wrote:\nQuoted'
+    expect(getCleanBody(input)).toBe('Line1')
   })
 
-  test('preserves single line breaks', () => {
-    const input = 'Line 1\nLine 2\nLine 3'
-    expect(getCleanBody(input)).toBe('Line 1\nLine 2\nLine 3')
+  test('cuts off at Outlook header with non-breaking space after From', () => {
+    const input = 'My reply\nFrom: Jane Doe Sent: Monday\nQuoted'
+    expect(getCleanBody(input)).toBe('My reply')
   })
 
-  test('preserves double line breaks (intentional paragraph spacing)', () => {
-    const input = 'Paragraph 1\n\nParagraph 2'
-    expect(getCleanBody(input)).toBe('Paragraph 1\n\nParagraph 2')
-  })
-
-  test('collapses runs of 3+ line breaks but preserves double line breaks', () => {
-    const input =
-      'Thank you!\n\n\n\nJohn Doe\n\nSoftware Engineer\n\n\nAcme Corp'
-    const result = getCleanBody(input)
-    expect(result).toBe(
-      'Thank you!\n\nJohn Doe\n\nSoftware Engineer\n\nAcme Corp'
-    )
+  test.each([
+    {
+      name: 'collapses 3+ consecutive line breaks to 2',
+      input: 'Paragraph 1\n\n\n\nParagraph 2',
+      expected: 'Paragraph 1\n\nParagraph 2',
+    },
+    {
+      name: 'handles multiple occurrences of excessive line breaks',
+      input: 'Line 1\n\n\nLine 2\n\n\n\n\nLine 3',
+      expected: 'Line 1\n\nLine 2\n\nLine 3',
+    },
+    {
+      name: 'preserves single line breaks',
+      input: 'Line 1\nLine 2\nLine 3',
+      expected: 'Line 1\nLine 2\nLine 3',
+    },
+    {
+      name: 'preserves double line breaks (intentional paragraph spacing)',
+      input: 'Paragraph 1\n\nParagraph 2',
+      expected: 'Paragraph 1\n\nParagraph 2',
+    },
+    {
+      name: 'collapses runs of 3+ line breaks but preserves double line breaks',
+      input: 'Thank you!\n\n\n\nJohn Doe\n\nSoftware Engineer\n\n\nAcme Corp',
+      expected: 'Thank you!\n\nJohn Doe\n\nSoftware Engineer\n\nAcme Corp',
+    },
+  ])('$name', ({ input, expected }) => {
+    expect(getCleanBody(input)).toBe(expected)
   })
 })
 
