@@ -615,9 +615,9 @@ function getCleanBody(text) {
 
   // 1. FIRST PASS: Cut off at headers or footers
   var headerPatterns = [
-    /^[^\S\r\n]*On[^\S\r\n].+[^\S\r\n]wrote:/m, // Gmail Reply Header
-    /^[^\S\r\n]*From:[^\S\r\n].+[^\S\r\n]Sent:[^\S\r\n]+/m, // Outlook Reply Header
-    /^[^\S\r\n]*_{10,}[^\S\r\n]*$/m, // Underscore Separators
+    /^[ \t]*On[ \t].+(?<=[ \t])wrote:/m, // Gmail Reply Header
+    /^[ \t]*From:[ \t].+(?<=[ \t])Sent:[ \t]+/m, // Outlook Reply Header
+    /^[ \t]*_{10,}[ \t]*$/m, // Underscore Separators
     /confidentiality notice/im, // Legal Footer (Case Insensitive)
   ]
 
