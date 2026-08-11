@@ -609,6 +609,11 @@ function processLabelGroup(config) {
 
 /**
  * Helper function to remove quoted replies, specific line patterns, and footers.
+ * NOTE: This implementation is duplicated from src/gas-utils.js. Both versions must be
+ * kept in sync to prevent behavior divergence. The GAS-specific version exists because
+ * Google Apps Script cannot import from src/gas-utils.js during deployment.
+ * Tests for this function are in src/gmail-to-drive-by-labels/tests/gas-utils.test.js
+ * and validate both implementations' behavior.
  */
 function getCleanBody(text) {
   if (!text) return ''
