@@ -682,3 +682,13 @@ if (typeof module !== 'undefined' && module.exports) {
     storeEmailsAndAttachments,
   }
 }
+
+// Export functions for testing (Node.js only)
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    rebuildDoc,
+    rebuildAllDocs,
+    processLabelGroup,
+    storeEmailsAndAttachments,
+  }
+}

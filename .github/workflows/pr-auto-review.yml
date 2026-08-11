@@ -28,6 +28,7 @@ on:
   # workflow_run fires when a named GitHub Actions workflow completes.
   # check_suite does NOT trigger for GitHub Actions runs, so this is required
   # to catch CI turning green on a PR.
+  # Matches the CI workflow declared in .github/workflows/ci.yml.
   workflow_run:
     workflows: ["CI Pipeline"]
     types: [completed]
