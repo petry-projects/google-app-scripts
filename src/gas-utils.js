@@ -7,9 +7,9 @@ function getCleanBody(text) {
   if (!text) return ''
 
   const headerPatterns = [
-    /^[ \t]*On[ \t].+(?<=[ \t])wrote:/m,
-    /^[ \t]*From:[ \t].+(?<=[ \t])Sent:[ \t]+/m,
-    /^[ \t]*_{10,}[ \t]*$/m,
+    /^[ \t ]*On[ \t ].+(?<=[ \t ])wrote:/m,
+    /^[ \t ]*From:[ \t ].+(?<=[ \t ])Sent:[ \t ]+/m,
+    /^[ \t ]*_{10,}[ \t ]*$/m,
     /confidentiality notice/im,
   ]
 

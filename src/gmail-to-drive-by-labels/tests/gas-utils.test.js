@@ -70,6 +70,21 @@ describe('getCleanBody', () => {
     )
   })
 
+  test('cuts off at reply header with non-breaking space after On', () => {
+    const input = 'Line1\nOn Jan 1, 2020, John Doe wrote:\nQuoted'
+    expect(getCleanBody(input)).toBe('Line1')
+  })
+
+  test('cuts off at reply header with non-breaking space before wrote', () => {
+    const input = 'Line1\nOn Jan 1, 2020, John Doe wrote:\nQuoted'
+    expect(getCleanBody(input)).toBe('Line1')
+  })
+
+  test('cuts off at Outlook header with non-breaking space after From', () => {
+    const input = 'My reply\nFrom: Jane Doe Sent: Monday\nQuoted'
+    expect(getCleanBody(input)).toBe('My reply')
+  })
+
   test.each([
     {
       name: 'collapses 3+ consecutive line breaks to 2',
