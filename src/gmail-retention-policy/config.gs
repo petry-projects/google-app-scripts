@@ -37,7 +37,7 @@ function getRetentionConfig() {
         taxonomyLabel: 'System/Alerts',
         retentionTag: 'Retention/2-Years',
         query:
-          'category:updates (from:notifications@example.com OR from:alerts@*) -bank -invoice -receipt -bill -billing -payment -statement -tax -order -purchase',
+          'category:updates from:notifications@example.com -bank -invoice -receipt -bill -billing -payment -statement -tax -order -purchase',
       },
       {
         taxonomyLabel: 'Travel/Bookings',

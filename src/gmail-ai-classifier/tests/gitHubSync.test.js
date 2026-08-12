@@ -272,21 +272,37 @@ describe('gitHubSync Module', () => {
       expect(fetchRulesFromGitHub()).toBeNull()
     })
 
-    test('fetchRulesFromGitHub returns null on HTTP error or exception', () => {
+    test('fetchRulesFromGitHub returns null on 404', () => {
       global.UrlFetchApp = {
         fetch: jest.fn(() => ({
-          getResponseCode: () => 500,
-          getContentText: () => 'Err',
+          getResponseCode: () => 404,
+          getContentText: () => 'Not Found',
         })),
       }
       expect(fetchRulesFromGitHub('rules.json', 'mock-token')).toBeNull()
+    })
 
+    test('fetchRulesFromGitHub throws on non-404 HTTP error', () => {
+      global.UrlFetchApp = {
+        fetch: jest.fn(() => ({
+          getResponseCode: () => 500,
+          getContentText: () => 'Internal Server Error',
+        })),
+      }
+      expect(() => fetchRulesFromGitHub('rules.json', 'mock-token')).toThrow(
+        'GitHub API returned status 500'
+      )
+    })
+
+    test('fetchRulesFromGitHub re-throws on network exception', () => {
       global.UrlFetchApp = {
         fetch: jest.fn(() => {
           throw new Error('API Exception')
         }),
       }
-      expect(fetchRulesFromGitHub('rules.json', 'mock-token')).toBeNull()
+      expect(() => fetchRulesFromGitHub('rules.json', 'mock-token')).toThrow(
+        'API Exception'
+      )
     })
 
     test('commitRulesToGitHub handles missing token', () => {
@@ -303,6 +319,50 @@ describe('gitHubSync Module', () => {
         }),
       }
       expect(commitRulesToGitHub({}, 'msg', 'token')).toBe(false)
+    })
+
+    test('commitRulesToGitHub uses knownSha and skips GET', () => {
+      const putSpy = jest.fn(() => ({
+        getResponseCode: () => 201,
+        getContentText: () => '{}',
+      }))
+      global.UrlFetchApp = { fetch: putSpy }
+      const result = commitRulesToGitHub({}, 'msg', 'token', 'known-sha-123')
+      expect(result).toBe(true)
+      // Only one fetch call (PUT) — no GET to re-fetch SHA
+      expect(putSpy).toHaveBeenCalledTimes(1)
+      const payload = JSON.parse(putSpy.mock.calls[0][1].payload)
+      expect(payload.sha).toBe('known-sha-123')
+    })
+
+    test('commitRulesToGitHub retries once on 409 SHA conflict', () => {
+      const base64 = Buffer.from(
+        JSON.stringify({ updatedAt: '2026-08-08T10:00:00Z' })
+      ).toString('base64')
+      const fetchSpy = jest
+        .fn()
+        // 1st call: initial PUT → 409
+        .mockImplementationOnce(() => ({
+          getResponseCode: () => 409,
+          getContentText: () => 'Conflict',
+        }))
+        // 2nd call: GET to refresh SHA
+        .mockImplementationOnce(() => ({
+          getResponseCode: () => 200,
+          getContentText: () =>
+            JSON.stringify({ content: base64, sha: 'fresh-sha' }),
+        }))
+        // 3rd call: retry PUT → 201
+        .mockImplementationOnce(() => ({
+          getResponseCode: () => 201,
+          getContentText: () => '{}',
+        }))
+      global.UrlFetchApp = { fetch: fetchSpy }
+      const result = commitRulesToGitHub({}, 'msg', 'token', 'stale-sha')
+      expect(result).toBe(true)
+      expect(fetchSpy).toHaveBeenCalledTimes(3)
+      const retryPayload = JSON.parse(fetchSpy.mock.calls[2][1].payload)
+      expect(retryPayload.sha).toBe('fresh-sha')
     })
 
     test('syncTwoWayRules initializes local ScriptProperty when empty', () => {
@@ -349,6 +409,8 @@ describe('gitHubSync Module', () => {
         'base64'
       )
 
+      // syncTwoWayRules passes remoteRules._sha to commitRulesToGitHub,
+      // so only 2 fetches: GET (sync read) + PUT (commit).
       const fetchSpy = jest
         .fn()
         .mockImplementationOnce(() => ({
@@ -357,12 +419,7 @@ describe('gitHubSync Module', () => {
             JSON.stringify({ content: mockBase64, sha: 'sha-old' }),
         }))
         .mockImplementationOnce(() => ({
-          getResponseCode: () => 200,
-          getContentText: () =>
-            JSON.stringify({ content: mockBase64, sha: 'sha-old' }),
-        }))
-        .mockImplementationOnce(() => ({
-          getResponseCode: () => 200,
+          getResponseCode: () => 201,
           getContentText: () => '{}',
         }))
 
@@ -383,6 +440,37 @@ describe('gitHubSync Module', () => {
       }
 
       expect(syncTwoWayRules()).toBe(true)
+      expect(fetchSpy).toHaveBeenCalledTimes(2)
+    })
+
+    test('syncTwoWayRules returns false on malformed local rules JSON', () => {
+      const remoteRules = {
+        version: '1.0.0',
+        updatedAt: '2026-08-08T10:00:00Z',
+      }
+      const mockBase64 = Buffer.from(JSON.stringify(remoteRules)).toString(
+        'base64'
+      )
+
+      global.UrlFetchApp = {
+        fetch: jest.fn(() => ({
+          getResponseCode: () => 200,
+          getContentText: () =>
+            JSON.stringify({ content: mockBase64, sha: 'sha-1' }),
+        })),
+      }
+      global.PropertiesService = {
+        getScriptProperties: () => ({
+          getProperty: (key) => {
+            if (key === 'GITHUB_PAT') return 'mock-pat'
+            if (key === 'CLASSIFICATION_RULES_JSON') return '{invalid json'
+            return null
+          },
+          setProperty: jest.fn(),
+        }),
+      }
+
+      expect(syncTwoWayRules()).toBe(false)
     })
 
     test('syncTwoWayRules logs up-to-date when timestamps match', () => {
@@ -427,6 +515,134 @@ describe('gitHubSync Module', () => {
       }
 
       expect(syncTwoWayRules()).toBe(false)
+    })
+
+    test('syncTwoWayRules returns false when fetchRulesFromGitHub throws', () => {
+      global.UrlFetchApp = {
+        fetch: jest.fn(() => ({
+          getResponseCode: () => 500,
+          getContentText: () => 'Internal Server Error',
+        })),
+      }
+      expect(syncTwoWayRules()).toBe(false)
+    })
+
+    test('syncTwoWayRules pulls remote when remote is newer', () => {
+      const remoteRules = {
+        version: '1.1.0',
+        updatedAt: '2026-08-09T10:00:00Z',
+      }
+      const mockBase64 = Buffer.from(JSON.stringify(remoteRules)).toString(
+        'base64'
+      )
+
+      global.UrlFetchApp = {
+        fetch: jest.fn(() => ({
+          getResponseCode: () => 200,
+          getContentText: () =>
+            JSON.stringify({ content: mockBase64, sha: 'sha-1' }),
+        })),
+      }
+      const setPropertySpy = jest.fn()
+      global.PropertiesService = {
+        getScriptProperties: () => ({
+          getProperty: (key) => {
+            if (key === 'GITHUB_PAT') return 'mock-pat'
+            if (key === 'CLASSIFICATION_RULES_JSON')
+              return JSON.stringify({
+                version: '1.0.0',
+                updatedAt: '2026-08-08T10:00:00Z',
+              })
+            return null
+          },
+          setProperty: setPropertySpy,
+        }),
+      }
+
+      expect(syncTwoWayRules()).toBe(true)
+      expect(setPropertySpy).toHaveBeenCalledWith(
+        'CLASSIFICATION_RULES_JSON',
+        expect.stringContaining('1.1.0')
+      )
+    })
+
+    test('syncTwoWayRules pulls remote when timestamps match but content differs', () => {
+      const remoteRules = {
+        version: '1.0.0',
+        updatedAt: '2026-08-08T10:00:00Z',
+        extra: 'remote-only-field',
+      }
+      const mockBase64 = Buffer.from(JSON.stringify(remoteRules)).toString(
+        'base64'
+      )
+
+      global.UrlFetchApp = {
+        fetch: jest.fn(() => ({
+          getResponseCode: () => 200,
+          getContentText: () =>
+            JSON.stringify({ content: mockBase64, sha: 'sha-1' }),
+        })),
+      }
+      const setPropertySpy = jest.fn()
+      global.PropertiesService = {
+        getScriptProperties: () => ({
+          getProperty: (key) => {
+            if (key === 'GITHUB_PAT') return 'mock-pat'
+            if (key === 'CLASSIFICATION_RULES_JSON')
+              return JSON.stringify({
+                version: '1.0.0',
+                updatedAt: '2026-08-08T10:00:00Z',
+              })
+            return null
+          },
+          setProperty: setPropertySpy,
+        }),
+      }
+
+      expect(syncTwoWayRules()).toBe(true)
+      expect(setPropertySpy).toHaveBeenCalled()
+    })
+
+    test('commitRulesToGitHub fetches SHA when knownSha not provided', () => {
+      const base64 = Buffer.from(JSON.stringify({ version: '1.0.0' })).toString(
+        'base64'
+      )
+      const fetchSpy = jest
+        .fn()
+        .mockImplementationOnce(() => ({
+          getResponseCode: () => 200,
+          getContentText: () =>
+            JSON.stringify({ content: base64, sha: 'fetched-sha' }),
+        }))
+        .mockImplementationOnce(() => ({
+          getResponseCode: () => 200,
+          getContentText: () => '{}',
+        }))
+      global.UrlFetchApp = { fetch: fetchSpy }
+      const result = commitRulesToGitHub({}, 'msg', 'token')
+      expect(result).toBe(true)
+      expect(fetchSpy).toHaveBeenCalledTimes(2)
+      const putPayload = JSON.parse(fetchSpy.mock.calls[1][1].payload)
+      expect(putPayload.sha).toBe('fetched-sha')
+    })
+
+    test('commitRulesToGitHub returns false on unexpected PUT status', () => {
+      global.UrlFetchApp = {
+        fetch: jest.fn(() => ({
+          getResponseCode: () => 403,
+          getContentText: () => 'Forbidden',
+        })),
+      }
+      expect(commitRulesToGitHub({}, 'msg', 'token', 'some-sha')).toBe(false)
+    })
+
+    test('commitRulesToGitHub returns false when PUT throws exception', () => {
+      global.UrlFetchApp = {
+        fetch: jest.fn(() => {
+          throw new Error('Network error during PUT')
+        }),
+      }
+      expect(commitRulesToGitHub({}, 'msg', 'token', 'some-sha')).toBe(false)
     })
   })
 })

@@ -255,7 +255,8 @@ function fetchRulesFromGitHub(filePath, githubToken) {
       headers: headers,
       muteHttpExceptions: true,
     })
-    if (res.getResponseCode() === 200) {
+    var status = res.getResponseCode()
+    if (status === 200) {
       var data = JSON.parse(res.getContentText())
       var decoded = Utilities.newBlob(
         Utilities.base64Decode(data.content)
@@ -263,20 +264,29 @@ function fetchRulesFromGitHub(filePath, githubToken) {
       var parsed = JSON.parse(decoded)
       parsed._sha = data.sha
       return parsed
+    } else if (status !== 404) {
+      throw new Error(
+        'GitHub API returned status ' + status + ': ' + res.getContentText()
+      )
     }
   } catch (e) {
     console.error(
       '[gitHubSync] Exception fetching rules from GitHub:',
       e.message
     )
+    throw e
   }
   return null
 }
 
 /**
  * 2-Way Sync Engine: Commits rules object back to self-private via GitHub REST API.
+ * @param {Object} rulesObj - Rules to commit (mutated in-place: _sha deleted, updatedAt set)
+ * @param {string} [commitMessage] - Git commit message
+ * @param {string} [githubToken] - GitHub PAT; falls back to script property GITHUB_PAT
+ * @param {string} [knownSha] - SHA of the current remote file; skips an extra GET when provided
  */
-function commitRulesToGitHub(rulesObj, commitMessage, githubToken) {
+function commitRulesToGitHub(rulesObj, commitMessage, githubToken, knownSha) {
   var targetPath =
     '05_Tech_Infrastructure/gmail-cleanup-and-label-taxonomy/rules.json'
   var token =
@@ -289,8 +299,16 @@ function commitRulesToGitHub(rulesObj, commitMessage, githubToken) {
     return false
   }
 
-  var currentRemote = fetchRulesFromGitHub(targetPath, token)
-  var sha = currentRemote ? currentRemote._sha : null
+  var sha = knownSha
+  if (!sha) {
+    try {
+      var currentRemote = fetchRulesFromGitHub(targetPath, token)
+      sha = currentRemote ? currentRemote._sha : null
+    } catch (e) {
+      console.error('[gitHubSync] Failed to fetch SHA for commit:', e.message)
+      return false
+    }
+  }
   delete rulesObj._sha
   rulesObj.updatedAt = Utilities.formatDate(
     new Date(),
@@ -313,26 +331,46 @@ function commitRulesToGitHub(rulesObj, commitMessage, githubToken) {
     Accept: 'application/vnd.github.v3+json',
     'User-Agent': 'Google-Apps-Script',
   }
+  var commitMsg =
+    commitMessage ||
+    'feat(taxonomy): update rules.json via 2-way Apps Script sync engine'
 
-  var payload = {
-    message:
-      commitMessage ||
-      'feat(taxonomy): update rules.json via 2-way Apps Script sync engine',
-    content: base64Content,
-    branch: 'main',
+  function buildPayload(currentSha) {
+    var p = { message: commitMsg, content: base64Content, branch: 'main' }
+    if (currentSha) p.sha = currentSha
+    return p
   }
-  if (sha) payload.sha = sha
 
   try {
     var putRes = UrlFetchApp.fetch(url, {
       method: 'put',
       headers: headers,
       contentType: 'application/json',
-      payload: JSON.stringify(payload),
+      payload: JSON.stringify(buildPayload(sha)),
       muteHttpExceptions: true,
     })
     var status = putRes.getResponseCode()
-    return status === 200 || status === 201
+    if (status === 200 || status === 201) return true
+    if (status === 409) {
+      // SHA conflict: refresh and retry once
+      var refreshed = fetchRulesFromGitHub(targetPath, token)
+      var freshSha = refreshed ? refreshed._sha : null
+      var retryRes = UrlFetchApp.fetch(url, {
+        method: 'put',
+        headers: headers,
+        contentType: 'application/json',
+        payload: JSON.stringify(buildPayload(freshSha)),
+        muteHttpExceptions: true,
+      })
+      var retryStatus = retryRes.getResponseCode()
+      return retryStatus === 200 || retryStatus === 201
+    }
+    console.error(
+      '[gitHubSync] Unexpected PUT status:',
+      status,
+      putRes.getContentText()
+    )
+    return false
   } catch (e) {
     console.error(
       '[gitHubSync] Exception committing rules to GitHub:',
@@ -347,7 +385,14 @@ function commitRulesToGitHub(rulesObj, commitMessage, githubToken) {
  */
 function syncTwoWayRules() {
   var props = PropertiesService.getScriptProperties()
-  var remoteRules = fetchRulesFromGitHub()
+
+  var remoteRules
+  try {
+    remoteRules = fetchRulesFromGitHub()
+  } catch (e) {
+    console.error('[gitHubSync] Failed to fetch remote rules:', e.message)
+    return false
+  }
   if (!remoteRules) return false
 
   var localJsonStr = props.getProperty('CLASSIFICATION_RULES_JSON')
@@ -358,9 +403,21 @@ function syncTwoWayRules() {
     return true
   }
 
-  var localRules = JSON.parse(localJsonStr)
-  var remoteDate = new Date(remoteRules.updatedAt || 0).getTime()
-  var localDate = new Date(localRules.updatedAt || 0).getTime()
+  var localRules
+  try {
+    localRules = JSON.parse(localJsonStr)
+  } catch (e) {
+    console.error(
+      '[gitHubSync] Invalid local rules JSON, skipping sync:',
+      e.message
+    )
+    return false
+  }
+
+  var remoteTs = new Date(remoteRules.updatedAt).getTime()
+  var localTs = new Date(localRules.updatedAt).getTime()
+  var remoteDate = isNaN(remoteTs) ? 0 : remoteTs
+  var localDate = isNaN(localTs) ? 0 : localTs
 
   if (remoteDate > localDate) {
     // GitHub rules are newer -> Update GAS Script Property
@@ -373,13 +430,28 @@ function syncTwoWayRules() {
     // GAS rules were tuned online -> Push back to GitHub
     var success = commitRulesToGitHub(
       localRules,
-      'feat(taxonomy): push live Apps Script rule tuning to GitHub rules.json'
+      'feat(taxonomy): push live Apps Script rule tuning to GitHub rules.json',
+      null,
+      remoteRules._sha
     )
     if (success)
       console.log(
         '[gitHubSync] Pushed live GAS rule tuning to GitHub rules.json.'
       )
     return success
+  }
+
+  // Equal timestamps: use content comparison as tie-breaker (exclude internal _sha field)
+  var remoteForCompare = JSON.parse(JSON.stringify(remoteRules))
+  delete remoteForCompare._sha
+  var localForCompare = JSON.parse(JSON.stringify(localRules))
+  delete localForCompare._sha
+  if (JSON.stringify(remoteForCompare) !== JSON.stringify(localForCompare)) {
+    props.setProperty('CLASSIFICATION_RULES_JSON', JSON.stringify(remoteRules))
+    console.log(
+      '[gitHubSync] Equal timestamps but content differed — pulled remote as canonical.'
+    )
+    return true
   }
 
   console.log('[gitHubSync] 2-Way Rules Sync is up-to-date.')
