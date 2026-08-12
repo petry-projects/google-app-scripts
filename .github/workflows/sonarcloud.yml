@@ -28,7 +28,11 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts
       - name: Generate coverage report
-        run: npm test -- --coverage
+        # Do not enforce Jest coverage thresholds here; that gate lives in
+        # coverage.yml (scripts/check-coverage.js). This step only needs to
+        # produce a coverage report for the scan, and should still fail on
+        # genuine test failures but not on threshold-only shortfalls.
+        run: npm test -- --coverage --coverageThreshold='{}'
       - name: SonarCloud Scan
         if: ${{ env.SONAR_TOKEN != '' }}
         uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
