@@ -121,7 +121,7 @@ describe('Performance and Scalability Benchmarks', () => {
     const processed = processThreadBatch(threads, config, services)
     const duration = Date.now() - startTime
 
-    expect(processed.length).toBe(BATCH_SIZE)
+    expect(processed).toHaveLength(BATCH_SIZE)
     expect(duration).toBeLessThan(100) // 100 items benchmarked under 100ms
   })
 })
