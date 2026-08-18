@@ -198,13 +198,13 @@ function classifyWithGemini(sender, subject, snippet, config) {
     JSON.stringify(config.canonicalDomains) +
     '.\n\n' +
     'STRICT CLASSIFICATION RULES:\n' +
-    "1. MEDIA & PLATFORM NEWSLETTERS (Medium, NYT, Substack, Epoch Times, LinkedIn digests, event/news blasts): Treat strictly as Promotional / Newsletter and return null for canonicalDomain. Do NOT classify under '06_Work_Career' or '04_Family_Health'. Set category to 'Promotions' or 'Social', action to 'keep'.\n" +
+    "1. MEDIA & PLATFORM NEWSLETTERS (Medium, NYT, Substack, Epoch Times, LinkedIn digests, event/news blasts): Treat strictly as Promotional / Newsletter and return null for canonicalDomain. Do NOT classify under '06_Work_Career' or '04_Family_Health_School'. Set category to 'Promotions' or 'Social', action to 'keep'.\n" +
     "2. UTILITY & TECH BILLS (AT&T, Google Cloud, Electric, Water): Classify under '02_Finance_Legal' (sub-label 'Finance/Banking') or '05_Tech_Infrastructure' (sub-label 'Tech/Alerts-Monitoring'). Set category to 'Updates', action to 'keep'.\n" +
-    "3. MARRIAGE & ADULT FAMILY (WinShape, Marriage retreats, DJ & Rachel personal): Classify under '04_Family_Health' (sub-label 'Family/DJ-Rachel'). Set category to 'Primary', action to 'keep'.\n" +
+    "3. MARRIAGE & ADULT FAMILY (WinShape, Marriage retreats, Spouse & Primary personal): Classify under '04_Family_Health_School' (sub-label 'Family/Spouse-Primary'). Set category to 'Primary', action to 'keep'.\n" +
     "4. BEEKEEPING & MYBROODMINDER ALERTS (MyBroodMinder, Hive telemetry alerts, BOD): Classify under '07_Community_NonProfit' (sub-label 'Projects/Beekeeping'). Set category to 'Updates', action to 'keep'.\n" +
-    "5. HEALTH NEWSLETTERS & MEDICAL BULLETINS (WebMD, Epoch Health, drug recall news digests): Treat as Newsletter and return null for canonicalDomain. Reserve '04_Family_Health' strictly for personal family medical records, doctor visits, patient portals, and school/kids health notes.\n" +
+    "5. HEALTH NEWSLETTERS & MEDICAL BULLETINS (WebMD, Epoch Health, drug recall news digests): Treat as Newsletter and return null for canonicalDomain. Reserve '04_Family_Health_School' strictly for personal family medical records, doctor visits, patient portals, and school/kids health notes.\n" +
     "6. E-COMMERCE PROMOTIONS & SOCIAL DIGESTS (Lowes, Nextdoor, American Meadows, Hydrobuilder): Return null for canonicalDomain. Set category to 'Promotions' or 'Social'.\n" +
-    "7. SCHOOL PORTALS & PARENTSQUARE (ParentSquare, Magic City Acceptance Academy, MCAA, school shuttle notifications, school attendance): Classify under '04_Family_Health' (sub-label 'Family/School-Toby'). Set category to 'Updates' or 'Primary', action to 'keep'.\n" +
+    "7. SCHOOL PORTALS & PARENTSQUARE (ParentSquare, Magic City Acceptance Academy, MCAA, school shuttle notifications, school attendance): Classify under '04_Family_Health_School' (sub-label 'Family/School-Child'). Set category to 'Updates' or 'Primary', action to 'keep'.\n" +
     "8. TECH WEBINARS & PRODUCT MARKETING (Google Cloud webinars, 'Register Now', product marketing, tech promos): Treat as Promotional / Marketing and return null for canonicalDomain. Reserve '05_Tech_Infrastructure' strictly for active system alerts, security warnings, spend cap notifications, and project quota/outage alerts.\n" +
     "9. HOBBY & STORE MARKETING (Lorob Bees, Foxhound Bee Company, e-commerce store newsletters, product announcements): Treat as Promotional / Marketing and return null for canonicalDomain. Reserve '07_Community_NonProfit' / 'Projects/Beekeeping' strictly for active hive telemetry alerts (MyBroodMinder) and official non-profit BOD communications.\n" +
     "10. SPAM & PHISHING & UNWANTED SOLICITATION: Set action to 'trash'.\n" +
@@ -218,7 +218,7 @@ function classifyWithGemini(sender, subject, snippet, config) {
     'Body Snippet: ' +
     snippet +
     '\n\n' +
-    'Return JSON ONLY: {"canonicalDomain": "04_Family_Health", "subLabel": "Family/School-Toby", "category": "Primary", "action": "keep", "confidence": 0.98, "title": "Short Title", "summary": "2 sentence executive summary"}\n' +
+    'Return JSON ONLY: {"canonicalDomain": "04_Family_Health_School", "subLabel": "Family/School-Child", "category": "Primary", "action": "keep", "confidence": 0.98, "title": "Short Title", "summary": "2 sentence executive summary"}\n' +
     "Valid categories: 'Primary', 'Updates', 'Promotions', 'Social', 'Forums'.\n" +
     "Valid actions: 'keep', 'archive', 'trash', 'mark_read'."
 
@@ -398,12 +398,12 @@ function createGmailFilterRule(senderEmail, targetLabelName) {
 
 function getNotePathForDomain(domain) {
   var map = {
-    '01_Household': 'petry-household/birmingham/index.md',
-    '02_Finance_Legal': 'petry-household/finances/index.md',
-    '03_Vehicles': 'petry-household/vehicles/index.md',
-    '04_Family_Health': 'petry-household/kids/index.md',
+    '01_Household': 'household-vault/birmingham/index.md',
+    '02_Finance_Legal': 'household-vault/finances/index.md',
+    '03_Vehicles': 'household-vault/vehicles/index.md',
+    '04_Family_Health_School': 'household-vault/kids/index.md',
     '05_Tech_Infrastructure':
-      'petry-household/our-technology/digital-backups/index.md',
+      'household-vault/our-technology/digital-backups/index.md',
     '06_Work_Career': 'dp-work-notes/notes/index.md',
     '07_Community_NonProfit':
       'helpingoneguy/organization/organization/index.md',

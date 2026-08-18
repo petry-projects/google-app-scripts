@@ -9,7 +9,7 @@
  * - Idempotency Guard (skips duplicate entries)
  */
 
-var GITHUB_REPO_OWNER = 'don-petry'
+var GITHUB_REPO_OWNER = 'user-org'
 var GITHUB_REPO_NAME = 'self-private'
 
 /**
@@ -98,7 +98,7 @@ function executeGitHubCommit(filePath, entryMd, commitMessage, githubToken) {
         topicTitle +
         '\ncreated: ' +
         Utilities.formatDate(new Date(), 'GMT', 'yyyy-MM-dd') +
-        '\nnotebook: petry-household\nsection: general\n---\n\n' +
+        '\nnotebook: household-vault\nsection: general\n---\n\n' +
         '# ' +
         topicTitle +
         '\n\n' +
@@ -219,11 +219,253 @@ function insertEntryIntoLogSection(fullContent, newEntry) {
   return fullContent + '\n' + newEntry
 }
 
+/**
+ * 2-Way Sync Engine: Fetches rules.json from self-private via GitHub REST API.
+ */
+function fetchRulesFromGitHub(filePath, githubToken) {
+  var targetPath =
+    filePath ||
+    '05_Tech_Infrastructure/gmail-cleanup-and-label-taxonomy/rules.json'
+  var token =
+    githubToken ||
+    PropertiesService.getScriptProperties().getProperty('GITHUB_PAT')
+  if (!token) {
+    console.log(
+      '[gitHubSync] GITHUB_PAT not set. Skipping fetchRulesFromGitHub.'
+    )
+    return null
+  }
+
+  var url =
+    'https://api.github.com/repos/' +
+    GITHUB_REPO_OWNER +
+    '/' +
+    GITHUB_REPO_NAME +
+    '/contents/' +
+    targetPath
+  var headers = {
+    Authorization: 'token ' + token,
+    Accept: 'application/vnd.github.v3+json',
+    'User-Agent': 'Google-Apps-Script',
+  }
+
+  try {
+    var res = UrlFetchApp.fetch(url, {
+      method: 'get',
+      headers: headers,
+      muteHttpExceptions: true,
+    })
+    var status = res.getResponseCode()
+    if (status === 200) {
+      var data = JSON.parse(res.getContentText())
+      var decoded = Utilities.newBlob(
+        Utilities.base64Decode(data.content)
+      ).getDataAsString()
+      var parsed = JSON.parse(decoded)
+      parsed._sha = data.sha
+      return parsed
+    } else if (status !== 404) {
+      throw new Error(
+        'GitHub API returned status ' + status + ': ' + res.getContentText()
+      )
+    }
+  } catch (e) {
+    console.error(
+      '[gitHubSync] Exception fetching rules from GitHub:',
+      e.message
+    )
+    throw e
+  }
+  return null
+}
+
+/**
+ * 2-Way Sync Engine: Commits rules object back to self-private via GitHub REST API.
+ * @param {Object} rulesObj - Rules to commit (mutated in-place: _sha deleted, updatedAt set)
+ * @param {string} [commitMessage] - Git commit message
+ * @param {string} [githubToken] - GitHub PAT; falls back to script property GITHUB_PAT
+ * @param {string} [knownSha] - SHA of the current remote file; skips an extra GET when provided
+ */
+function commitRulesToGitHub(rulesObj, commitMessage, githubToken, knownSha) {
+  var targetPath =
+    '05_Tech_Infrastructure/gmail-cleanup-and-label-taxonomy/rules.json'
+  var token =
+    githubToken ||
+    PropertiesService.getScriptProperties().getProperty('GITHUB_PAT')
+  if (!token) {
+    console.log(
+      '[gitHubSync] GITHUB_PAT not set. Skipping commitRulesToGitHub.'
+    )
+    return false
+  }
+
+  var sha = knownSha
+  if (!sha) {
+    try {
+      var currentRemote = fetchRulesFromGitHub(targetPath, token)
+      sha = currentRemote ? currentRemote._sha : null
+    } catch (e) {
+      console.error('[gitHubSync] Failed to fetch SHA for commit:', e.message)
+      return false
+    }
+  }
+  delete rulesObj._sha
+  rulesObj.updatedAt = Utilities.formatDate(
+    new Date(),
+    'GMT',
+    "yyyy-MM-dd'T'HH:mm:ss'Z'"
+  )
+
+  var rawJson = JSON.stringify(rulesObj, null, 2)
+  var base64Content = Utilities.base64Encode(rawJson)
+
+  var url =
+    'https://api.github.com/repos/' +
+    GITHUB_REPO_OWNER +
+    '/' +
+    GITHUB_REPO_NAME +
+    '/contents/' +
+    targetPath
+  var headers = {
+    Authorization: 'token ' + token,
+    Accept: 'application/vnd.github.v3+json',
+    'User-Agent': 'Google-Apps-Script',
+  }
+  var commitMsg =
+    commitMessage ||
+    'feat(taxonomy): update rules.json via 2-way Apps Script sync engine'
+
+  function buildPayload(currentSha) {
+    var p = { message: commitMsg, content: base64Content, branch: 'main' }
+    if (currentSha) p.sha = currentSha
+    return p
+  }
+
+  try {
+    var putRes = UrlFetchApp.fetch(url, {
+      method: 'put',
+      headers: headers,
+      contentType: 'application/json',
+      payload: JSON.stringify(buildPayload(sha)),
+      muteHttpExceptions: true,
+    })
+    var status = putRes.getResponseCode()
+    if (status === 200 || status === 201) return true
+    if (status === 409) {
+      // SHA conflict: refresh and retry once
+      var refreshed = fetchRulesFromGitHub(targetPath, token)
+      var freshSha = refreshed ? refreshed._sha : null
+      var retryRes = UrlFetchApp.fetch(url, {
+        method: 'put',
+        headers: headers,
+        contentType: 'application/json',
+        payload: JSON.stringify(buildPayload(freshSha)),
+        muteHttpExceptions: true,
+      })
+      var retryStatus = retryRes.getResponseCode()
+      return retryStatus === 200 || retryStatus === 201
+    }
+    console.error(
+      '[gitHubSync] Unexpected PUT status:',
+      status,
+      putRes.getContentText()
+    )
+    return false
+  } catch (e) {
+    console.error(
+      '[gitHubSync] Exception committing rules to GitHub:',
+      e.message
+    )
+    return false
+  }
+}
+
+/**
+ * Perform bi-directional 2-Way Synchronization between GAS Script Properties & GitHub rules.json.
+ */
+function syncTwoWayRules() {
+  var props = PropertiesService.getScriptProperties()
+
+  var remoteRules
+  try {
+    remoteRules = fetchRulesFromGitHub()
+  } catch (e) {
+    console.error('[gitHubSync] Failed to fetch remote rules:', e.message)
+    return false
+  }
+  if (!remoteRules) return false
+
+  var localJsonStr = props.getProperty('CLASSIFICATION_RULES_JSON')
+  if (!localJsonStr) {
+    // Initial GAS setup: Store remote rules locally
+    props.setProperty('CLASSIFICATION_RULES_JSON', JSON.stringify(remoteRules))
+    console.log('[gitHubSync] Local rules initialized from GitHub rules.json.')
+    return true
+  }
+
+  var localRules
+  try {
+    localRules = JSON.parse(localJsonStr)
+  } catch (e) {
+    console.error(
+      '[gitHubSync] Invalid local rules JSON, skipping sync:',
+      e.message
+    )
+    return false
+  }
+
+  var remoteTs = new Date(remoteRules.updatedAt).getTime()
+  var localTs = new Date(localRules.updatedAt).getTime()
+  var remoteDate = isNaN(remoteTs) ? 0 : remoteTs
+  var localDate = isNaN(localTs) ? 0 : localTs
+
+  if (remoteDate > localDate) {
+    // GitHub rules are newer -> Update GAS Script Property
+    props.setProperty('CLASSIFICATION_RULES_JSON', JSON.stringify(remoteRules))
+    console.log(
+      '[gitHubSync] Pulled newer rules from GitHub into GAS Script Properties.'
+    )
+    return true
+  } else if (localDate > remoteDate) {
+    // GAS rules were tuned online -> Push back to GitHub
+    var success = commitRulesToGitHub(
+      localRules,
+      'feat(taxonomy): push live Apps Script rule tuning to GitHub rules.json',
+      null,
+      remoteRules._sha
+    )
+    if (success)
+      console.log(
+        '[gitHubSync] Pushed live GAS rule tuning to GitHub rules.json.'
+      )
+    return success
+  }
+
+  // Equal timestamps: use content comparison as tie-breaker (exclude internal _sha field)
+  var remoteForCompare = JSON.parse(JSON.stringify(remoteRules))
+  delete remoteForCompare._sha
+  var localForCompare = JSON.parse(JSON.stringify(localRules))
+  delete localForCompare._sha
+  if (JSON.stringify(remoteForCompare) !== JSON.stringify(localForCompare)) {
+    props.setProperty('CLASSIFICATION_RULES_JSON', JSON.stringify(remoteRules))
+    console.log(
+      '[gitHubSync] Equal timestamps but content differed — pulled remote as canonical.'
+    )
+    return true
+  }
+
+  console.log('[gitHubSync] 2-Way Rules Sync is up-to-date.')
+  return true
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     appendMarkdownEntryToGitHubRepo: appendMarkdownEntryToGitHubRepo,
     executeGitHubCommit: executeGitHubCommit,
     extractTopicTitleFromPath: extractTopicTitleFromPath,
     insertEntryIntoLogSection: insertEntryIntoLogSection,
+    fetchRulesFromGitHub: fetchRulesFromGitHub,
+    commitRulesToGitHub: commitRulesToGitHub,
+    syncTwoWayRules: syncTwoWayRules,
   }
 }
