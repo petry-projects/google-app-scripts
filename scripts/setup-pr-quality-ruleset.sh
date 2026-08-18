@@ -10,8 +10,8 @@
 # What this script does:
 #   1. Checks whether the "pr-quality" ruleset already exists
 #   2. Creates it if missing, or updates it if present so drifted parameters
-#      (e.g. dismiss_stale_reviews_on_push) reconverge to the codified standard
-#      (idempotent — safe to re-run)
+#      (e.g. dismiss_stale_reviews_on_push, require_last_push_approval)
+#      reconverge to the codified standard (idempotent — safe to re-run)
 #
 # Prerequisites: gh (authenticated with repo admin rights)
 # Usage:
