@@ -10,8 +10,8 @@
 # What this script does:
 #   1. Checks whether the "pr-quality" ruleset already exists
 #   2. Creates it if missing, or updates it if present so drifted parameters
-#      (e.g. dismiss_stale_reviews_on_push) reconverge to the codified standard
-#      (idempotent — safe to re-run)
+#      (e.g. dismiss_stale_reviews_on_push, require_last_push_approval)
+#      reconverge to the codified standard (idempotent — safe to re-run)
 #
 # Prerequisites: gh (authenticated with repo admin rights)
 # Usage:
@@ -79,7 +79,10 @@ JSON
 
 if [[ -n "$EXISTING_ID" ]]; then
   echo "  ↻ '$RULESET_NAME' ruleset already exists (id: $EXISTING_ID) — updating to ensure compliance..."
-  printf '%s\n' "$RULESET_PAYLOAD" | gh api "repos/$REPO/rulesets/$EXISTING_ID" --method PUT --input -
+  # Preserve existing bypass_actors: a PUT that omits this field removes them entirely
+  EXISTING_BYPASS=$(gh api "repos/$REPO/rulesets/$EXISTING_ID" | jq -c '.bypass_actors // []')
+  UPDATE_PAYLOAD=$(printf '%s' "$RULESET_PAYLOAD" | jq --argjson bypass "$EXISTING_BYPASS" '. + {bypass_actors: $bypass}')
+  printf '%s\n' "$UPDATE_PAYLOAD" | gh api "repos/$REPO/rulesets/$EXISTING_ID" --method PUT --input -
   echo "  ✓ '$RULESET_NAME' ruleset updated successfully."
   echo ""
   echo "=== Done ==="

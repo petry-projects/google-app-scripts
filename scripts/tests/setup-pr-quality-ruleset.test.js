@@ -59,4 +59,13 @@ describe('setup-pr-quality-ruleset.sh codified ruleset', () => {
     const script = fs.readFileSync(scriptPath, 'utf8')
     expect(script).toMatch(/--method PUT/)
   })
+
+  it('script preserves existing bypass_actors when updating an existing ruleset', () => {
+    const scriptPath = path.join(__dirname, '..', 'setup-pr-quality-ruleset.sh')
+    const script = fs.readFileSync(scriptPath, 'utf8')
+    // The update path must fetch and re-inject bypass_actors so a PUT does not
+    // silently remove an existing Dependabot or other integration bypass.
+    expect(script).toMatch(/bypass_actors/)
+    expect(script).toMatch(/jq.*bypass_actors/)
+  })
 })
