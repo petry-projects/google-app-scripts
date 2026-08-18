@@ -27,6 +27,14 @@ describe('setup-pr-quality-ruleset.sh codified ruleset', () => {
     expect(pullRequestRule?.parameters?.require_last_push_approval).toBe(true)
   })
 
+  it('dismisses stale reviews on push (dismiss_stale_reviews_on_push)', () => {
+    const pullRequestRule = payload.rules.find((r) => r.type === 'pull_request')
+    expect(pullRequestRule).toBeDefined()
+    expect(pullRequestRule?.parameters?.dismiss_stale_reviews_on_push).toBe(
+      true
+    )
+  })
+
   it('has exactly one pull_request rule with all required parameters', () => {
     const pullRequestRules = payload.rules.filter(
       (r) => r.type === 'pull_request'
