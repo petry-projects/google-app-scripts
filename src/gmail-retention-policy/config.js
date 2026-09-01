@@ -122,6 +122,7 @@ function getRetentionConfig() {
   }
 }
 
+/* sonar.javascript.skipCoverage — Jest interop guard (GAS native environment tested via exported functions) */
 /* c8 ignore start */
 // NOSONAR — Jest interop guard for test environment, not executed in GAS runtime
 if (typeof module !== 'undefined' && module.exports) {
