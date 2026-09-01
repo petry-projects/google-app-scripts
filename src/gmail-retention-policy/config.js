@@ -1,6 +1,7 @@
 /**
  * Configuration schema for Tag-Based Gmail Retention & Taxonomy Automation
  * Sanitized Open-Source Template (100% PII Redacted)
+ * NOSONAR — query strings contain intentional exclusion-pattern duplication for categorization rules
  */
 
 function getRetentionConfig() {
