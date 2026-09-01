@@ -70,19 +70,24 @@ describe('getCleanBody', () => {
     )
   })
 
-  test('cuts off at reply header with non-breaking space after On', () => {
-    const input = 'Line1\nOn Jan 1, 2020, John Doe wrote:\nQuoted'
-    expect(getCleanBody(input)).toBe('Line1')
-  })
-
-  test('cuts off at reply header with non-breaking space before wrote', () => {
-    const input = 'Line1\nOn Jan 1, 2020, John Doe wrote:\nQuoted'
-    expect(getCleanBody(input)).toBe('Line1')
-  })
-
-  test('cuts off at Outlook header with non-breaking space after From', () => {
-    const input = 'My reply\nFrom: Jane Doe Sent: Monday\nQuoted'
-    expect(getCleanBody(input)).toBe('My reply')
+  test.each([
+    {
+      name: 'cuts off at reply header with non-breaking space after On',
+      input: 'Line1\nOn Jan 1, 2020, John Doe wrote:\nQuoted',
+      expected: 'Line1',
+    },
+    {
+      name: 'cuts off at reply header with non-breaking space before wrote',
+      input: 'Line1\nOn Jan 1, 2020, John Doe wrote:\nQuoted',
+      expected: 'Line1',
+    },
+    {
+      name: 'cuts off at Outlook header with non-breaking space after From',
+      input: 'My reply\nFrom: Jane Doe Sent: Monday\nQuoted',
+      expected: 'My reply',
+    },
+  ])('$name', ({ input, expected }) => {
+    expect(getCleanBody(input)).toBe(expected)
   })
 
   test.each([
