@@ -16,6 +16,7 @@ function processRulesForThreads(
     const query = searchModifier(rule)
     const threads = gmailApp.search(query, 0, maxThreads)
     if (threads.length > 0) {
+      threads.sort((a, b) => b.getLastMessageDate() - a.getLastMessageDate())
       handler(rule, threads, logger, gmailApp)
     }
   }

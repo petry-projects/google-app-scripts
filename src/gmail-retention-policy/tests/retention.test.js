@@ -79,9 +79,46 @@ describe('gmail-retention-policy business logic', () => {
   })
 
   describe('classifyAndTagThreads', () => {
+    test('sorts threads by last message date before processing', () => {
+      const mockDate1 = new Date('2025-01-01')
+      const mockDate2 = new Date('2025-01-02')
+      const mockDate3 = new Date('2025-01-03')
+      const mockThread1 = { id: '1', getLastMessageDate: () => mockDate1 }
+      const mockThread2 = { id: '2', getLastMessageDate: () => mockDate2 }
+      const mockThread3 = { id: '3', getLastMessageDate: () => mockDate3 }
+      mockGmailApp.search.mockReturnValue([
+        mockThread1,
+        mockThread3,
+        mockThread2,
+      ])
+      mockGmailApp.getUserLabelByName.mockReturnValue(null)
+
+      const rules = [
+        {
+          taxonomyLabel: 'TestLabel',
+          retentionTag: 'Retention/Test',
+          query: 'from:test@example.com',
+        },
+      ]
+
+      classifyAndTagThreads(rules, mockGmailApp, mockLogger)
+
+      expect(mockLabel.addToThreads).toHaveBeenCalledWith([
+        mockThread3,
+        mockThread2,
+        mockThread1,
+      ])
+    })
+
     test('tags threads with taxonomy and retention labels', () => {
-      const mockThread1 = { id: '1' }
-      const mockThread2 = { id: '2' }
+      const mockThread1 = {
+        id: '1',
+        getLastMessageDate: () => new Date('2025-01-01'),
+      }
+      const mockThread2 = {
+        id: '2',
+        getLastMessageDate: () => new Date('2025-01-02'),
+      }
       mockGmailApp.search.mockReturnValue([mockThread1, mockThread2])
       mockGmailApp.getUserLabelByName.mockReturnValue(null)
 
@@ -125,7 +162,10 @@ describe('gmail-retention-policy business logic', () => {
     })
 
     test('processes multiple rules in sequence', () => {
-      const mockThread = { id: '1' }
+      const mockThread = {
+        id: '1',
+        getLastMessageDate: () => new Date('2025-01-01'),
+      }
       mockGmailApp.search.mockReturnValue([mockThread])
       mockGmailApp.getUserLabelByName.mockReturnValue(null)
 
@@ -151,8 +191,14 @@ describe('gmail-retention-policy business logic', () => {
 
   describe('executeRetentionRules', () => {
     test('trashes threads matching trash action', () => {
-      const mockThread1 = { moveToTrash: jest.fn() }
-      const mockThread2 = { moveToTrash: jest.fn() }
+      const mockThread1 = {
+        moveToTrash: jest.fn(),
+        getLastMessageDate: () => new Date('2025-01-01'),
+      }
+      const mockThread2 = {
+        moveToTrash: jest.fn(),
+        getLastMessageDate: () => new Date('2025-01-02'),
+      }
       mockGmailApp.search.mockReturnValue([mockThread1, mockThread2])
 
       const rules = [
@@ -173,8 +219,14 @@ describe('gmail-retention-policy business logic', () => {
     })
 
     test('archives threads matching archive action', () => {
-      const mockThread1 = { removeFromInbox: jest.fn() }
-      const mockThread2 = { removeFromInbox: jest.fn() }
+      const mockThread1 = {
+        removeFromInbox: jest.fn(),
+        getLastMessageDate: () => new Date('2025-01-01'),
+      }
+      const mockThread2 = {
+        removeFromInbox: jest.fn(),
+        getLastMessageDate: () => new Date('2025-01-02'),
+      }
       mockGmailApp.search.mockReturnValue([mockThread1, mockThread2])
 
       const rules = [
@@ -213,7 +265,10 @@ describe('gmail-retention-policy business logic', () => {
     })
 
     test('handles unknown actions gracefully', () => {
-      const mockThread = { removeFromInbox: jest.fn() }
+      const mockThread = {
+        removeFromInbox: jest.fn(),
+        getLastMessageDate: () => new Date('2025-01-01'),
+      }
       mockGmailApp.search.mockReturnValue([mockThread])
 
       const rules = [
