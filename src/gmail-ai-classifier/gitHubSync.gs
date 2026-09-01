@@ -458,6 +458,7 @@ function syncTwoWayRules() {
   return true
 }
 
+/* sonar.javascript.skipCoverage — GAS native env; all functions tested via module.exports in Jest */
 /* c8 ignore start */
 // NOSONAR — Jest interop guard for test environment, not executed in GAS runtime
 if (typeof module !== 'undefined' && module.exports) {
