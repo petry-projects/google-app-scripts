@@ -31,6 +31,13 @@ function getGitHubHeaders_(token) {
   }
 }
 
+function getGitHubToken_(overrideToken) {
+  return (
+    overrideToken ||
+    PropertiesService.getScriptProperties().getProperty('GITHUB_PAT')
+  )
+}
+
 /**
  * Appends a Progressive Disclosure entry to a target markdown file in self-private via GitHub REST API.
  * Automatically creates the file with valid front-matter if it does not exist yet (HTTP 404).
@@ -235,9 +242,7 @@ function fetchRulesFromGitHub(filePath, githubToken) {
   var targetPath =
     filePath ||
     '05_Tech_Infrastructure/gmail-cleanup-and-label-taxonomy/rules.json'
-  var token =
-    githubToken ||
-    PropertiesService.getScriptProperties().getProperty('GITHUB_PAT')
+  var token = getGitHubToken_(githubToken)
   if (!token) {
     console.log(
       '[gitHubSync] GITHUB_PAT not set. Skipping fetchRulesFromGitHub.'
@@ -288,9 +293,7 @@ function fetchRulesFromGitHub(filePath, githubToken) {
 function commitRulesToGitHub(rulesObj, commitMessage, githubToken, knownSha) {
   var targetPath =
     '05_Tech_Infrastructure/gmail-cleanup-and-label-taxonomy/rules.json'
-  var token =
-    githubToken ||
-    PropertiesService.getScriptProperties().getProperty('GITHUB_PAT')
+  var token = getGitHubToken_(githubToken)
   if (!token) {
     console.log(
       '[gitHubSync] GITHUB_PAT not set. Skipping commitRulesToGitHub.'
