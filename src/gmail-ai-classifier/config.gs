@@ -45,6 +45,9 @@ function getClassifierConfig() {
 }
 /* c8 ignore stop */
 
+/* sonar.javascript.skipCoverage — Jest interop guard (GAS native environment tested via exported functions) */
+/* c8 ignore start */
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { getAiClassifierConfig, getClassifierConfig }
 }
+/* c8 ignore stop */
