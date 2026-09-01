@@ -330,27 +330,25 @@ function commitRulesToGitHub(rulesObj, commitMessage, githubToken, knownSha) {
     return p
   }
 
-  try {
-    var putRes = UrlFetchApp.fetch(url, {
+  function executePut_(shaToUse) {
+    return UrlFetchApp.fetch(url, {
       method: 'put',
       headers: headers,
       contentType: 'application/json',
-      payload: JSON.stringify(buildPayload(sha)),
+      payload: JSON.stringify(buildPayload(shaToUse)),
       muteHttpExceptions: true,
     })
+  }
+
+  try {
+    var putRes = executePut_(sha)
     var status = putRes.getResponseCode()
     if (status === 200 || status === 201) return true
     if (status === 409) {
       // SHA conflict: refresh and retry once
       var refreshed = fetchRulesFromGitHub(targetPath, token)
       var freshSha = refreshed ? refreshed._sha : null
-      var retryRes = UrlFetchApp.fetch(url, {
-        method: 'put',
-        headers: headers,
-        contentType: 'application/json',
-        payload: JSON.stringify(buildPayload(freshSha)),
-        muteHttpExceptions: true,
-      })
+      var retryRes = executePut_(freshSha)
       var retryStatus = retryRes.getResponseCode()
       return retryStatus === 200 || retryStatus === 201
     }
