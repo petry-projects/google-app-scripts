@@ -69,6 +69,8 @@ describe('gmail-retention-policy business logic', () => {
       search: jest.fn(),
       getUserLabelByName: jest.fn(),
       createLabel: jest.fn(() => mockLabel),
+      moveThreadsToTrash: jest.fn(),
+      moveThreadsToArchive: jest.fn(),
     }
 
     mockLogger = {
@@ -216,11 +218,9 @@ describe('gmail-retention-policy business logic', () => {
   describe('executeRetentionRules', () => {
     test('trashes threads matching trash action', () => {
       const mockThread1 = {
-        moveToTrash: jest.fn(),
         getLastMessageDate: () => new Date('2025-01-01'),
       }
       const mockThread2 = {
-        moveToTrash: jest.fn(),
         getLastMessageDate: () => new Date('2025-01-02'),
       }
       mockGmailApp.search.mockReturnValue([mockThread1, mockThread2])
@@ -235,8 +235,10 @@ describe('gmail-retention-policy business logic', () => {
 
       executeRetentionRules(rules, mockGmailApp, mockLogger)
 
-      expect(mockThread1.moveToTrash).toHaveBeenCalled()
-      expect(mockThread2.moveToTrash).toHaveBeenCalled()
+      expect(mockGmailApp.moveThreadsToTrash).toHaveBeenCalledWith([
+        mockThread2,
+        mockThread1,
+      ])
       expect(mockLogger.log).toHaveBeenCalledWith(
         expect.stringContaining('Trashing 2 threads')
       )
@@ -244,11 +246,9 @@ describe('gmail-retention-policy business logic', () => {
 
     test('archives threads matching archive action', () => {
       const mockThread1 = {
-        removeFromInbox: jest.fn(),
         getLastMessageDate: () => new Date('2025-01-01'),
       }
       const mockThread2 = {
-        removeFromInbox: jest.fn(),
         getLastMessageDate: () => new Date('2025-01-02'),
       }
       mockGmailApp.search.mockReturnValue([mockThread1, mockThread2])
@@ -263,8 +263,10 @@ describe('gmail-retention-policy business logic', () => {
 
       executeRetentionRules(rules, mockGmailApp, mockLogger)
 
-      expect(mockThread1.removeFromInbox).toHaveBeenCalled()
-      expect(mockThread2.removeFromInbox).toHaveBeenCalled()
+      expect(mockGmailApp.moveThreadsToArchive).toHaveBeenCalledWith([
+        mockThread2,
+        mockThread1,
+      ])
       expect(mockLogger.log).toHaveBeenCalledWith(
         expect.stringContaining('Archiving 2 threads')
       )
@@ -290,7 +292,6 @@ describe('gmail-retention-policy business logic', () => {
 
     test('handles unknown actions gracefully', () => {
       const mockThread = {
-        removeFromInbox: jest.fn(),
         getLastMessageDate: () => new Date('2025-01-01'),
       }
       mockGmailApp.search.mockReturnValue([mockThread])
@@ -305,7 +306,8 @@ describe('gmail-retention-policy business logic', () => {
 
       executeRetentionRules(rules, mockGmailApp, mockLogger)
 
-      expect(mockThread.removeFromInbox).not.toHaveBeenCalled()
+      expect(mockGmailApp.moveThreadsToArchive).not.toHaveBeenCalled()
+      expect(mockGmailApp.moveThreadsToTrash).not.toHaveBeenCalled()
     })
   })
 

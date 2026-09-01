@@ -911,5 +911,26 @@ describe('gitHubSync Module', () => {
       const result = commitRulesToGitHub({}, 'msg', 'token', 'stale-sha')
       expect(result).toBe(true)
     })
+
+    test('commitRulesToGitHub aborts on 409 when remote is newer', () => {
+      const remoteRules = { updatedAt: '2026-08-08T16:00:00Z' }
+      const base64 = Buffer.from(JSON.stringify(remoteRules)).toString('base64')
+      global.UrlFetchApp = {
+        fetch: jest
+          .fn()
+          .mockImplementationOnce(() => ({
+            getResponseCode: () => 409,
+            getContentText: () => 'Conflict',
+          }))
+          .mockImplementationOnce(() => ({
+            getResponseCode: () => 200,
+            getContentText: () =>
+              JSON.stringify({ content: base64, sha: 'fresh-sha' }),
+          })),
+      }
+      const result = commitRulesToGitHub({}, 'msg', 'token', 'stale-sha')
+      expect(result).toBe(false)
+      expect(global.UrlFetchApp.fetch).toHaveBeenCalledTimes(2)
+    })
   })
 })

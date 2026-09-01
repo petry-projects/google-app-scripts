@@ -56,14 +56,12 @@ function executeRetentionRules(execRules, gmailApp, logger) {
     function (rule) {
       return rule.query
     },
-    function (rule, threads, logger) {
+    function (rule, threads, logger, gmailApp) {
       if (rule.action === 'trash') {
         logger.log(
           'Trashing ' + threads.length + ' threads for ' + rule.tag + '...'
         )
-        for (const thread of threads) {
-          thread.moveToTrash()
-        }
+        gmailApp.moveThreadsToTrash(threads)
       } else if (rule.action === 'archive') {
         logger.log(
           'Archiving ' +
@@ -72,9 +70,7 @@ function executeRetentionRules(execRules, gmailApp, logger) {
             rule.tag +
             '...'
         )
-        for (const thread of threads) {
-          thread.removeFromInbox()
-        }
+        gmailApp.moveThreadsToArchive(threads)
       }
     }
   )
