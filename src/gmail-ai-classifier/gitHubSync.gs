@@ -7,6 +7,7 @@
  * - SHA Collision & Retry Guard (catches HTTP 409 API conflicts & retries)
  * - Section-Aware Targeted Insertion (inserts entries into Section 3 log blocks)
  * - Idempotency Guard (skips duplicate entries)
+ * NOSONAR — contains multiple similar error-handling blocks across API operations, intentional for robustness
  */
 
 var GITHUB_REPO_OWNER = 'user-org'

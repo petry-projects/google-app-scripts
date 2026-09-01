@@ -3,6 +3,7 @@
  * Sanitized Open-Source Template (100% PII Redacted)
  */
 
+// NOSONAR — configuration data contains intentionally repetitive rule objects with similar structure
 function getRetentionConfig() {
   return {
     userAccountEmail:
