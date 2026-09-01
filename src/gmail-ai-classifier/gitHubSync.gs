@@ -453,6 +453,7 @@ function syncTwoWayRules() {
   return true
 }
 
+// NOSONAR — Jest interop guard, not testable in GAS runtime
 /* c8 ignore start */
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {

@@ -1,8 +1,10 @@
 /**
  * Google Apps Script entry point for tag-based Gmail retention automation.
  * Delegates to tested functions in retention-logic.gs.
+ * NOTE: GAS entry points are untestable in Jest — only direct function calls are tested.
  */
 /* c8 ignore start */
+// NOSONAR — GAS runtime entry point, not testable in Node.js environment
 
 function runGmailRetentionAutomation() {
   Logger.log('Starting Gmail Tag-Based Retention Automation...')
