@@ -19,7 +19,8 @@ function getRetentionConfig() {
       {
         taxonomyLabel: 'Social/Broadcasts',
         retentionTag: 'Retention/30-Days',
-        query: 'category:social -from:family@example.com -from:friend@example.com',
+        query:
+          'category:social -from:family@example.com -from:friend@example.com',
       },
       {
         taxonomyLabel: 'Promotions/Retail',
@@ -74,7 +75,8 @@ function getRetentionConfig() {
       {
         taxonomyLabel: 'Work/Core',
         retentionTag: 'Retention/Archive-60-Days',
-        query: '(from:work-domain.com OR to:work-domain.com) -label:Retention/*',
+        query:
+          '(from:work-domain.com OR to:work-domain.com) -label:Retention/*',
       },
     ],
 
@@ -83,27 +85,32 @@ function getRetentionConfig() {
       {
         tag: 'Retention/30-Days',
         action: 'trash',
-        query: 'label:Retention/30-Days older_than:30d -label:Retention/Permanent',
+        query:
+          'label:Retention/30-Days older_than:30d -label:Retention/Permanent',
       },
       {
         tag: 'Retention/90-Days',
         action: 'trash',
-        query: 'label:Retention/90-Days older_than:90d -label:Retention/Permanent',
+        query:
+          'label:Retention/90-Days older_than:90d -label:Retention/Permanent',
       },
       {
         tag: 'Retention/1-Year',
         action: 'trash',
-        query: 'label:Retention/1-Year older_than:1y -label:Retention/Permanent',
+        query:
+          'label:Retention/1-Year older_than:1y -label:Retention/Permanent',
       },
       {
         tag: 'Retention/2-Years',
         action: 'trash',
-        query: 'label:Retention/2-Years older_than:2y -label:Retention/Permanent',
+        query:
+          'label:Retention/2-Years older_than:2y -label:Retention/Permanent',
       },
       {
         tag: 'Retention/3-Years',
         action: 'trash',
-        query: 'label:Retention/3-Years older_than:3y -label:Retention/Permanent',
+        query:
+          'label:Retention/3-Years older_than:3y -label:Retention/Permanent',
       },
       {
         tag: 'Retention/Archive-60-Days',
