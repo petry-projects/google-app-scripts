@@ -122,8 +122,8 @@ function getRetentionConfig() {
   }
 }
 
-// NOSONAR — Jest interop guard, not testable in GAS runtime
 /* c8 ignore start */
+// NOSONAR — Jest interop guard for test environment, not executed in GAS runtime
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { getRetentionConfig }
 }
