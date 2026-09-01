@@ -647,18 +647,70 @@ describe('gitHubSync Module', () => {
 
     test('getGitHubApiUrl_ builds correct endpoint', () => {
       const { getGitHubApiUrl_ } = require('../gitHubSync.gs')
-      // Helper function test to verify URL construction
-      expect(typeof getGitHubApiUrl_).toBe('function')
+      global.GITHUB_REPO_OWNER = 'user-org'
+      global.GITHUB_REPO_NAME = 'self-private'
+      const url = getGitHubApiUrl_('test-file.md')
+      expect(url).toBe(
+        'https://api.github.com/repos/user-org/self-private/contents/test-file.md'
+      )
+    })
+
+    test('getGitHubApiUrl_ handles nested paths', () => {
+      const { getGitHubApiUrl_ } = require('../gitHubSync.gs')
+      global.GITHUB_REPO_OWNER = 'user-org'
+      global.GITHUB_REPO_NAME = 'self-private'
+      const url = getGitHubApiUrl_('folder/subfolder/file.json')
+      expect(url).toBe(
+        'https://api.github.com/repos/user-org/self-private/contents/folder/subfolder/file.json'
+      )
     })
 
     test('getGitHubHeaders_ includes required headers', () => {
       const { getGitHubHeaders_ } = require('../gitHubSync.gs')
-      expect(typeof getGitHubHeaders_).toBe('function')
+      const headers = getGitHubHeaders_('test-token-123')
+      expect(headers.Authorization).toBe('token test-token-123')
+      expect(headers.Accept).toBe('application/vnd.github.v3+json')
+      expect(headers['User-Agent']).toBe('Google-Apps-Script')
+    })
+
+    test('getGitHubHeaders_ works with different tokens', () => {
+      const { getGitHubHeaders_ } = require('../gitHubSync.gs')
+      const headers = getGitHubHeaders_('another-token-xyz')
+      expect(headers.Authorization).toBe('token another-token-xyz')
     })
 
     test('getGitHubToken_ returns override token when provided', () => {
       const { getGitHubToken_ } = require('../gitHubSync.gs')
-      expect(typeof getGitHubToken_).toBe('function')
+      const token = getGitHubToken_('override-token')
+      expect(token).toBe('override-token')
+    })
+
+    test('getGitHubToken_ falls back to script property', () => {
+      const { getGitHubToken_ } = require('../gitHubSync.gs')
+      global.PropertiesService = {
+        getScriptProperties: jest.fn(() => ({
+          getProperty: jest.fn((key) => {
+            if (key === 'GITHUB_PAT') return 'script-property-token'
+            return null
+          }),
+        })),
+      }
+      const token = getGitHubToken_(null)
+      expect(token).toBe('script-property-token')
+    })
+
+    test('decodeBase64Content decodes base64 correctly', () => {
+      const { decodeBase64Content } = require('../gitHubSync.gs')
+      const encoded = Buffer.from('Hello World').toString('base64')
+      const decoded = decodeBase64Content(encoded)
+      expect(decoded).toBe('Hello World')
+    })
+
+    test('encodeBase64Content encodes to base64 correctly', () => {
+      const { encodeBase64Content } = require('../gitHubSync.gs')
+      const text = 'Test Content'
+      const encoded = encodeBase64Content(text)
+      expect(Buffer.from(encoded, 'base64').toString()).toBe(text)
     })
 
     test('fetchRulesFromGitHub handles network error with exception re-throw', () => {
