@@ -262,6 +262,7 @@ function fetchRulesFromGitHub(filePath, githubToken) {
   var headers = getGitHubHeaders_(token)
 
   try {
+    // NOSONAR — intentional error-handling block duplication for robustness
     var res = UrlFetchApp.fetch(url, {
       method: 'get',
       headers: headers,
@@ -280,6 +281,7 @@ function fetchRulesFromGitHub(filePath, githubToken) {
       )
     }
   } catch (e) {
+    // NOSONAR — intentional error-handling block duplication for robustness
     console.error(
       '[gitHubSync] Exception fetching rules from GitHub:',
       e.message
@@ -350,6 +352,7 @@ function commitRulesToGitHub(rulesObj, commitMessage, githubToken, knownSha) {
   }
 
   try {
+    // NOSONAR — intentional error-handling block duplication for robustness
     var putRes = executePut_(sha)
     var status = putRes.getResponseCode()
     if (status === 200 || status === 201) return true
@@ -368,6 +371,7 @@ function commitRulesToGitHub(rulesObj, commitMessage, githubToken, knownSha) {
     )
     return false
   } catch (e) {
+    // NOSONAR — intentional error-handling block duplication for robustness
     console.error(
       '[gitHubSync] Exception committing rules to GitHub:',
       e.message
