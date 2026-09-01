@@ -781,9 +781,6 @@ describe('gitHubSync Module', () => {
       const mockBase64Remote = Buffer.from(
         JSON.stringify({ version: '2.0.0', updatedAt: '2026-08-08T10:00:00Z' })
       ).toString('base64')
-      const mockBase64Local = Buffer.from(
-        JSON.stringify({ version: '1.0.0', updatedAt: '2026-08-08T11:00:00Z' })
-      ).toString('base64')
 
       global.UrlFetchApp = {
         fetch: jest
@@ -817,6 +814,50 @@ describe('gitHubSync Module', () => {
       const result = syncTwoWayRules()
       expect(result).toBe(false)
       consoleSpy.mockRestore()
+    })
+
+    test('commitRulesToGitHub without explicit commitMessage uses default message', () => {
+      const putSpy = jest.fn(() => ({
+        getResponseCode: () => 201,
+        getContentText: () => '{}',
+      }))
+      global.UrlFetchApp = { fetch: putSpy }
+      const result = commitRulesToGitHub({}, null, 'token', 'known-sha-123')
+      expect(result).toBe(true)
+      const payload = JSON.parse(putSpy.mock.calls[0][1].payload)
+      expect(payload.message).toContain('2-way Apps Script sync engine')
+    })
+
+    test('commitRulesToGitHub handles null knownSha when fetchRulesFromGitHub returns null', () => {
+      global.UrlFetchApp = {
+        fetch: jest.fn(() => ({
+          getResponseCode: () => 404,
+          getContentText: () => 'Not Found',
+        })),
+      }
+      const result = commitRulesToGitHub({}, 'msg', 'token')
+      expect(result).toBe(false)
+    })
+
+    test('commitRulesToGitHub handles 409 conflict when refreshed rules are null', () => {
+      global.UrlFetchApp = {
+        fetch: jest
+          .fn()
+          .mockImplementationOnce(() => ({
+            getResponseCode: () => 409,
+            getContentText: () => 'Conflict',
+          }))
+          .mockImplementationOnce(() => ({
+            getResponseCode: () => 404,
+            getContentText: () => 'Not Found',
+          }))
+          .mockImplementationOnce(() => ({
+            getResponseCode: () => 201,
+            getContentText: () => '{}',
+          })),
+      }
+      const result = commitRulesToGitHub({}, 'msg', 'token', 'stale-sha')
+      expect(result).toBe(true)
     })
   })
 })
