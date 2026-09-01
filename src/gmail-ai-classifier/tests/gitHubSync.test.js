@@ -6,7 +6,7 @@ const {
   fetchRulesFromGitHub,
   commitRulesToGitHub,
   syncTwoWayRules,
-} = require('../gitHubSync.gs')
+} = require('../src/github-sync.js')
 
 describe('gitHubSync Module', () => {
   beforeEach(() => {
