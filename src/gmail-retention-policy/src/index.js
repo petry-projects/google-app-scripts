@@ -11,8 +11,7 @@ function processRulesForThreads(
   handler
 ) {
   const maxThreads = 50
-  for (let i = 0; i < rules.length; i++) {
-    const rule = rules[i]
+  for (const rule of rules) {
     const query = searchModifier(rule)
     const threads = gmailApp.search(query, 0, maxThreads)
     if (threads.length > 0) {
@@ -61,8 +60,8 @@ function executeRetentionRules(execRules, gmailApp, logger) {
         logger.log(
           'Trashing ' + threads.length + ' threads for ' + rule.tag + '...'
         )
-        for (let t = 0; t < threads.length; t++) {
-          threads[t].moveToTrash()
+        for (const thread of threads) {
+          thread.moveToTrash()
         }
       } else if (rule.action === 'archive') {
         logger.log(
@@ -72,8 +71,8 @@ function executeRetentionRules(execRules, gmailApp, logger) {
             rule.tag +
             '...'
         )
-        for (let t = 0; t < threads.length; t++) {
-          threads[t].removeFromInbox()
+        for (const thread of threads) {
+          thread.removeFromInbox()
         }
       }
     }
@@ -91,9 +90,9 @@ function getOrCreateLabel(labelName, gmailApp, logger) {
 
 function createAndManageTrigger(scriptApp, logger, handlerFunction) {
   const existingTriggers = scriptApp.getProjectTriggers()
-  for (let i = 0; i < existingTriggers.length; i++) {
-    if (existingTriggers[i].getHandlerFunction() === handlerFunction) {
-      scriptApp.deleteTrigger(existingTriggers[i])
+  for (const trigger of existingTriggers) {
+    if (trigger.getHandlerFunction() === handlerFunction) {
+      scriptApp.deleteTrigger(trigger)
       logger.log('Removed old trigger.')
     }
   }
