@@ -3,10 +3,7 @@
  * Sanitized Open-Source Template (100% PII Redacted)
  */
 
-/* c8 ignore start */
-// NOSONAR — GAS configuration object; structure validated by tests but line-by-line instrumentation not feasible
 function getRetentionConfig() {
-  // NOSONAR — configuration rules contain intentional duplication for maintainability; all validated in tests
   return {
     userAccountEmail:
       Session.getEffectiveUser().getEmail() || 'user@example.com',
@@ -123,7 +120,6 @@ function getRetentionConfig() {
     ],
   }
 }
-/* c8 ignore stop */
 
 /* c8 ignore start */
 // NOSONAR — Jest interop guard for test environment, not executed in GAS runtime

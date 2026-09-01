@@ -1,4 +1,4 @@
-const { getRetentionConfig } = require('../config.gs')
+const { getRetentionConfig } = require('../config.js')
 const {
   classifyAndTagThreads,
   executeRetentionRules,

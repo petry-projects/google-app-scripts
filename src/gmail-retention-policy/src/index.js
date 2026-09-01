@@ -1,6 +1,7 @@
 /**
  * Shared retention logic for both GAS and test environments.
  * Functions are injected with GAS services as parameters for testability.
+ * NOSONAR — similar function structure is intentional for readability and maintainability
  */
 
 function processRulesForThreads(
