@@ -1,6 +1,6 @@
 /**
- * Testable business logic for tag-based Gmail retention automation
- * GAS services (GmailApp, ScriptApp, Logger) are injected as parameters
+ * Shared retention logic for both GAS and test environments.
+ * Functions are injected with GAS services as parameters for testability.
  */
 
 function classifyAndTagThreads(rules, gmailApp, logger) {

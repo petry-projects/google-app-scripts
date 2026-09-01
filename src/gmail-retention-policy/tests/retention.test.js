@@ -4,7 +4,7 @@ const {
   executeRetentionRules,
   getOrCreateLabel,
   createAndManageTrigger,
-} = require('../src/index.js')
+} = require('../retention-logic.gs')
 
 describe('gmail-retention-policy config', () => {
   beforeEach(() => {
