@@ -53,8 +53,7 @@ function encodeBase64Content(content) {
  * Automatically creates the file with valid front-matter if it does not exist yet (HTTP 404).
  */
 function appendMarkdownEntryToGitHubRepo(filePath, entryMd, commitMessage) {
-  var githubToken =
-    PropertiesService.getScriptProperties().getProperty('GITHUB_PAT')
+  var githubToken = getGitHubToken_()
   if (!githubToken) {
     console.log(
       '[gitHubSync] GITHUB_PAT ScriptProperty not set. Skipping GitHub commit.'
