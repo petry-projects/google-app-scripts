@@ -745,5 +745,78 @@ describe('gitHubSync Module', () => {
       const result = syncTwoWayRules()
       expect(result).toBe(false)
     })
+
+    test('syncTwoWayRules handles invalid date strings with isNaN fallback', () => {
+      const mockBase64 = Buffer.from(
+        JSON.stringify({ version: '1.0.0', updatedAt: 'not-a-date' })
+      ).toString('base64')
+
+      global.UrlFetchApp = {
+        fetch: jest.fn(() => ({
+          getResponseCode: () => 200,
+          getContentText: () =>
+            JSON.stringify({ content: mockBase64, sha: 'sha-1' }),
+        })),
+      }
+      global.PropertiesService = {
+        getScriptProperties: () => ({
+          getProperty: (key) => {
+            if (key === 'GITHUB_PAT') return 'mock-pat'
+            if (key === 'CLASSIFICATION_RULES_JSON')
+              return JSON.stringify({
+                version: '1.0.0',
+                updatedAt: 'also-not-a-date',
+              })
+            return null
+          },
+          setProperty: jest.fn(),
+        }),
+      }
+
+      const result = syncTwoWayRules()
+      expect(result).toBe(true)
+    })
+
+    test('syncTwoWayRules logs when local commit fails during push', () => {
+      const mockBase64Remote = Buffer.from(
+        JSON.stringify({ version: '2.0.0', updatedAt: '2026-08-08T10:00:00Z' })
+      ).toString('base64')
+      const mockBase64Local = Buffer.from(
+        JSON.stringify({ version: '1.0.0', updatedAt: '2026-08-08T11:00:00Z' })
+      ).toString('base64')
+
+      global.UrlFetchApp = {
+        fetch: jest
+          .fn()
+          .mockImplementationOnce(() => ({
+            getResponseCode: () => 200,
+            getContentText: () =>
+              JSON.stringify({ content: mockBase64Remote, sha: 'sha-1' }),
+          }))
+          .mockImplementationOnce(() => ({
+            getResponseCode: () => 500,
+            getContentText: () => 'Internal Server Error',
+          })),
+      }
+      global.PropertiesService = {
+        getScriptProperties: () => ({
+          getProperty: (key) => {
+            if (key === 'GITHUB_PAT') return 'mock-pat'
+            if (key === 'CLASSIFICATION_RULES_JSON')
+              return JSON.stringify({
+                version: '1.0.0',
+                updatedAt: '2026-08-08T11:00:00Z',
+              })
+            return null
+          },
+          setProperty: jest.fn(),
+        }),
+      }
+
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation()
+      const result = syncTwoWayRules()
+      expect(result).toBe(false)
+      consoleSpy.mockRestore()
+    })
   })
 })

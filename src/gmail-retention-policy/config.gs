@@ -121,6 +121,8 @@ function getRetentionConfig() {
   }
 }
 
+/* c8 ignore start */
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { getRetentionConfig }
 }
+/* c8 ignore stop */

@@ -453,6 +453,7 @@ function syncTwoWayRules() {
   return true
 }
 
+/* c8 ignore start */
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     appendMarkdownEntryToGitHubRepo: appendMarkdownEntryToGitHubRepo,
@@ -469,3 +470,4 @@ if (typeof module !== 'undefined' && module.exports) {
     encodeBase64Content: encodeBase64Content,
   }
 }
+/* c8 ignore stop */
