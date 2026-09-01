@@ -12,6 +12,25 @@
 var GITHUB_REPO_OWNER = 'user-org'
 var GITHUB_REPO_NAME = 'self-private'
 
+function getGitHubApiUrl_(filePath) {
+  return (
+    'https://api.github.com/repos/' +
+    GITHUB_REPO_OWNER +
+    '/' +
+    GITHUB_REPO_NAME +
+    '/contents/' +
+    filePath
+  )
+}
+
+function getGitHubHeaders_(token) {
+  return {
+    Authorization: 'token ' + token,
+    Accept: 'application/vnd.github.v3+json',
+    'User-Agent': 'Google-Apps-Script',
+  }
+}
+
 /**
  * Appends a Progressive Disclosure entry to a target markdown file in self-private via GitHub REST API.
  * Automatically creates the file with valid front-matter if it does not exist yet (HTTP 404).
@@ -61,18 +80,8 @@ function appendMarkdownEntryToGitHubRepo(filePath, entryMd, commitMessage) {
  * Performs a single commit transaction via GitHub REST API with 404 Auto-Create & 409 SHA retry handling.
  */
 function executeGitHubCommit(filePath, entryMd, commitMessage, githubToken) {
-  var url =
-    'https://api.github.com/repos/' +
-    GITHUB_REPO_OWNER +
-    '/' +
-    GITHUB_REPO_NAME +
-    '/contents/' +
-    filePath
-  var headers = {
-    Authorization: 'token ' + githubToken,
-    Accept: 'application/vnd.github.v3+json',
-    'User-Agent': 'Google-Apps-Script',
-  }
+  var url = getGitHubApiUrl_(filePath)
+  var headers = getGitHubHeaders_(githubToken)
 
   try {
     var getOptions = {
@@ -236,18 +245,8 @@ function fetchRulesFromGitHub(filePath, githubToken) {
     return null
   }
 
-  var url =
-    'https://api.github.com/repos/' +
-    GITHUB_REPO_OWNER +
-    '/' +
-    GITHUB_REPO_NAME +
-    '/contents/' +
-    targetPath
-  var headers = {
-    Authorization: 'token ' + token,
-    Accept: 'application/vnd.github.v3+json',
-    'User-Agent': 'Google-Apps-Script',
-  }
+  var url = getGitHubApiUrl_(targetPath)
+  var headers = getGitHubHeaders_(token)
 
   try {
     var res = UrlFetchApp.fetch(url, {
@@ -319,18 +318,8 @@ function commitRulesToGitHub(rulesObj, commitMessage, githubToken, knownSha) {
   var rawJson = JSON.stringify(rulesObj, null, 2)
   var base64Content = Utilities.base64Encode(rawJson)
 
-  var url =
-    'https://api.github.com/repos/' +
-    GITHUB_REPO_OWNER +
-    '/' +
-    GITHUB_REPO_NAME +
-    '/contents/' +
-    targetPath
-  var headers = {
-    Authorization: 'token ' + token,
-    Accept: 'application/vnd.github.v3+json',
-    'User-Agent': 'Google-Apps-Script',
-  }
+  var url = getGitHubApiUrl_(targetPath)
+  var headers = getGitHubHeaders_(token)
   var commitMsg =
     commitMessage ||
     'feat(taxonomy): update rules.json via 2-way Apps Script sync engine'

@@ -7,10 +7,8 @@ function runGmailRetentionAutomation() {
   Logger.log('Starting Gmail Tag-Based Retention Automation...')
   var config = getRetentionConfig()
 
-  // Stage 1: Classify & Tag Threads
   classifyAndTagThreads_(config.classificationRules)
 
-  // Stage 2: Execute Retention Purges & Inbox Auto-Archiving
   executeRetentionRules_(config.executionRules)
 
   Logger.log('Gmail Tag-Based Retention Automation cycle completed!')
