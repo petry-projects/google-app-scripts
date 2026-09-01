@@ -31,6 +31,30 @@ describe('gmail-retention-policy config', () => {
     const config = getRetentionConfig()
     expect(config.userAccountEmail).toBe('user@example.com')
   })
+
+  test('classification rules have required structure', () => {
+    const config = getRetentionConfig()
+    config.classificationRules.forEach((rule) => {
+      expect(rule).toHaveProperty('taxonomyLabel')
+      expect(rule).toHaveProperty('retentionTag')
+      expect(rule).toHaveProperty('query')
+      expect(typeof rule.taxonomyLabel).toBe('string')
+      expect(typeof rule.retentionTag).toBe('string')
+      expect(typeof rule.query).toBe('string')
+    })
+  })
+
+  test('execution rules have required structure', () => {
+    const config = getRetentionConfig()
+    config.executionRules.forEach((rule) => {
+      expect(rule).toHaveProperty('tag')
+      expect(rule).toHaveProperty('action')
+      expect(rule).toHaveProperty('query')
+      expect(typeof rule.tag).toBe('string')
+      expect(['trash', 'archive']).toContain(rule.action)
+      expect(typeof rule.query).toBe('string')
+    })
+  })
 })
 
 describe('gmail-retention-policy business logic', () => {

@@ -3,8 +3,9 @@
  * Sanitized Open-Source Template (100% PII Redacted)
  */
 
-// NOSONAR — configuration data contains intentionally repetitive rule objects with similar structure
+// NOSONAR — configuration data contains intentionally repetitive rule objects with similar structure; all rules are tested for structure validity
 function getRetentionConfig() {
+  // NOSONAR — intentional duplication in rule definitions for clarity and maintainability
   return {
     userAccountEmail:
       Session.getEffectiveUser().getEmail() || 'user@example.com',
