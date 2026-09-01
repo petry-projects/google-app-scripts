@@ -38,6 +38,16 @@ function getGitHubToken_(overrideToken) {
   )
 }
 
+function decodeBase64Content(encodedContent) {
+  return Utilities.newBlob(
+    Utilities.base64Decode(encodedContent)
+  ).getDataAsString()
+}
+
+function encodeBase64Content(content) {
+  return Utilities.base64Encode(content)
+}
+
 /**
  * Appends a Progressive Disclosure entry to a target markdown file in self-private via GitHub REST API.
  * Automatically creates the file with valid front-matter if it does not exist yet (HTTP 404).
@@ -124,9 +134,7 @@ function executeGitHubCommit(filePath, entryMd, commitMessage, githubToken) {
     } else if (statusCode === 200) {
       var fileData = JSON.parse(res.getContentText())
       sha = fileData.sha
-      rawContent = Utilities.newBlob(
-        Utilities.base64Decode(fileData.content)
-      ).getDataAsString()
+      rawContent = decodeBase64Content(fileData.content)
 
       // Idempotency Check: Skip if entry already present
       if (
@@ -151,7 +159,7 @@ function executeGitHubCommit(filePath, entryMd, commitMessage, githubToken) {
 
     // 2. Section-Aware Insertion
     var updatedContent = insertEntryIntoLogSection(rawContent, entryMd)
-    var base64Updated = Utilities.base64Encode(updatedContent)
+    var base64Updated = encodeBase64Content(updatedContent)
 
     // 3. Commit updated content back to GitHub main branch
     var putPayload = {
@@ -262,9 +270,7 @@ function fetchRulesFromGitHub(filePath, githubToken) {
     var status = res.getResponseCode()
     if (status === 200) {
       var data = JSON.parse(res.getContentText())
-      var decoded = Utilities.newBlob(
-        Utilities.base64Decode(data.content)
-      ).getDataAsString()
+      var decoded = decodeBase64Content(data.content)
       var parsed = JSON.parse(decoded)
       parsed._sha = data.sha
       return parsed
@@ -319,7 +325,7 @@ function commitRulesToGitHub(rulesObj, commitMessage, githubToken, knownSha) {
   )
 
   var rawJson = JSON.stringify(rulesObj, null, 2)
-  var base64Content = Utilities.base64Encode(rawJson)
+  var base64Content = encodeBase64Content(rawJson)
 
   var url = getGitHubApiUrl_(targetPath)
   var headers = getGitHubHeaders_(token)
@@ -457,5 +463,10 @@ if (typeof module !== 'undefined' && module.exports) {
     fetchRulesFromGitHub: fetchRulesFromGitHub,
     commitRulesToGitHub: commitRulesToGitHub,
     syncTwoWayRules: syncTwoWayRules,
+    getGitHubApiUrl_: getGitHubApiUrl_,
+    getGitHubHeaders_: getGitHubHeaders_,
+    getGitHubToken_: getGitHubToken_,
+    decodeBase64Content: decodeBase64Content,
+    encodeBase64Content: encodeBase64Content,
   }
 }

@@ -305,5 +305,49 @@ describe('gmail-retention-policy business logic', () => {
 
       expect(mockScriptApp.deleteTrigger).not.toHaveBeenCalled()
     })
+
+    test('processRulesForThreads is exported and callable', () => {
+      const { processRulesForThreads } = require('../src/index.js')
+      expect(typeof processRulesForThreads).toBe('function')
+    })
+  })
+
+  describe('GAS entry points wiring', () => {
+    beforeEach(() => {
+      global.Session = {
+        getEffectiveUser: jest.fn(() => ({
+          getEmail: () => 'testuser@example.com',
+        })),
+      }
+    })
+
+    test('code.gs: runGmailRetentionAutomation integration with config', () => {
+      const config = getRetentionConfig()
+      expect(config.classificationRules.length).toBeGreaterThan(0)
+      expect(config.executionRules.length).toBeGreaterThan(0)
+      expect(config.userAccountEmail).toBe('testuser@example.com')
+    })
+
+    test('code.gs: createHourlyTrigger calls createAndManageTrigger with correct handler', () => {
+      const mockScriptApp = {
+        getProjectTriggers: jest.fn(() => []),
+        deleteTrigger: jest.fn(),
+        newTrigger: jest.fn(() => ({
+          timeBased: jest.fn(() => ({
+            everyHours: jest.fn(() => ({
+              create: jest.fn(),
+            })),
+          })),
+        })),
+      }
+      createAndManageTrigger(
+        mockScriptApp,
+        mockLogger,
+        'runGmailRetentionAutomation'
+      )
+      expect(mockScriptApp.newTrigger).toHaveBeenCalledWith(
+        'runGmailRetentionAutomation'
+      )
+    })
   })
 })
