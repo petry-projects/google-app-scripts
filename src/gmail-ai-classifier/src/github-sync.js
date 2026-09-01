@@ -464,8 +464,8 @@ function syncTwoWayRules() {
   return true
 }
 
-/* sonar.javascript.skipCoverage — Jest interop guard (GAS native environment tested via exported functions) */
-/* c8 ignore start */
+/* sonar.javascript.skipCoverage */
+/* istanbul ignore if */
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     appendMarkdownEntryToGitHubRepo: appendMarkdownEntryToGitHubRepo,
@@ -482,4 +482,3 @@ if (typeof module !== 'undefined' && module.exports) {
     encodeBase64Content: encodeBase64Content,
   }
 }
-/* c8 ignore stop */

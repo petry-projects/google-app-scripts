@@ -3,8 +3,8 @@
  * Supports Multi-Account Household Deployment (Option A: user@example.com & partner@example.com)
  */
 /* sonar.javascript.skipCoverage — GAS config module with testable logic extracted to index.js */
-/* c8 ignore start */
 // NOSONAR — GAS configuration object; structure used by main script but line-by-line instrumentation not feasible
+/* istanbul ignore next */
 function getAiClassifierConfig() {
   var props = PropertiesService.getScriptProperties()
   var activeUserEmail =
@@ -37,17 +37,14 @@ function getAiClassifierConfig() {
     ],
   }
 }
-/* c8 ignore stop */
 
-/* c8 ignore start */
+/* istanbul ignore next */
 function getClassifierConfig() {
   return getAiClassifierConfig()
 }
-/* c8 ignore stop */
 
 /* sonar.javascript.skipCoverage — Jest interop guard (GAS native environment tested via exported functions) */
-/* c8 ignore start */
+/* istanbul ignore if */
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { getAiClassifierConfig, getClassifierConfig }
 }
-/* c8 ignore stop */

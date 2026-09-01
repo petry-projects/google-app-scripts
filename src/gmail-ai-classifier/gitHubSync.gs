@@ -10,7 +10,6 @@
  * NOSONAR — contains multiple similar error-handling blocks across API operations, intentional for robustness
  */
 /* sonar.javascript.skipCoverage — GAS module with testable logic extracted to github-sync.js */
-/* c8 ignore start */
 
 var GITHUB_REPO_OWNER = 'user-org'
 var GITHUB_REPO_NAME = 'self-private'
@@ -459,11 +458,10 @@ function syncTwoWayRules() {
   console.log('[gitHubSync] 2-Way Rules Sync is up-to-date.')
   return true
 }
-/* c8 ignore stop */
 
 /* sonar.javascript.skipCoverage — GAS native env; all functions tested via module.exports in Jest */
-/* c8 ignore start */
 // NOSONAR — Jest interop guard for test environment, not executed in GAS runtime
+/* istanbul ignore if */
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     appendMarkdownEntryToGitHubRepo: appendMarkdownEntryToGitHubRepo,
@@ -480,4 +478,3 @@ if (typeof module !== 'undefined' && module.exports) {
     encodeBase64Content: encodeBase64Content,
   }
 }
-/* c8 ignore stop */
