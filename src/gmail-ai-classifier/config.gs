@@ -1,4 +1,5 @@
 /* istanbul ignore file */
+/* sonar.javascript.skipCoverage */
 /**
  * Configuration schema for Gemini AI Semantic Email Classifier & Auto-Filter Engine
  * Supports Multi-Account Household Deployment (Option A: user@example.com & partner@example.com)
