@@ -1,3 +1,4 @@
+/* istanbul ignore file */
 /* sonar.javascript.skipCoverage */
 // NOSONAR — GAS runtime entry point, not testable in Node.js environment
 /**
@@ -5,7 +6,6 @@
  * Delegates to tested functions in retention-logic.gs.
  * NOTE: GAS entry points are untestable in Jest — only direct function calls are tested.
  */
-/* istanbul ignore next */
 function runGmailRetentionAutomation() {
   Logger.log('Starting Gmail Tag-Based Retention Automation...')
   const config = getRetentionConfig()

@@ -1,3 +1,4 @@
+/* istanbul ignore file */
 /**
  * Native Google Apps Script GitHub Sync Module (Auto-Create & Long Document Aware)
  * Calls GitHub REST API via UrlFetchApp to commit Markdown entries directly to self-private repo.

@@ -1,10 +1,10 @@
+/* istanbul ignore file */
 /* sonar.javascript.skipCoverage */
 /**
  * Main entry point for Gemini AI-Powered Semantic Email Classification and Auto-Filter Engine.
  * Runs natively inside Google Apps Script (V8 runtime).
  * NOSONAR — GAS runtime entry point, not testable in Node.js environment
  */
-/* istanbul ignore next */
 function processEmailsWithAiClassifier() {
   console.log(
     '[processEmailsWithAiClassifier] Starting AI semantic email processing...'
