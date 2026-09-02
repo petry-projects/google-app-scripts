@@ -4,7 +4,6 @@
  * Configuration schema for Gemini AI Semantic Email Classifier & Auto-Filter Engine
  * Supports Multi-Account Household Deployment (Option A: user@example.com & partner@example.com)
  */
-/* sonar.javascript.skipCoverage — GAS config module with testable logic extracted to index.js */
 // NOSONAR — GAS configuration object; structure used by main script but line-by-line instrumentation not feasible
 function getAiClassifierConfig() {
   var props = PropertiesService.getScriptProperties()
@@ -44,7 +43,6 @@ function getClassifierConfig() {
   return getAiClassifierConfig()
 }
 
-/* sonar.javascript.skipCoverage — Jest interop guard (GAS native environment tested via exported functions) */
 /* istanbul ignore if */
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { getAiClassifierConfig, getClassifierConfig }
