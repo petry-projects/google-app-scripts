@@ -1,0 +1,22 @@
+/* istanbul ignore file */
+/* sonar.javascript.skipCoverage */
+// NOSONAR — GAS runtime entry point, not testable in Node.js environment
+/**
+ * Google Apps Script entry point for tag-based Gmail retention automation.
+ * Delegates to tested functions in retention-logic.gs.
+ * NOTE: GAS entry points are untestable in Jest — only direct function calls are tested.
+ */
+function runGmailRetentionAutomation() {
+  Logger.log('Starting Gmail Tag-Based Retention Automation...')
+  const config = getRetentionConfig()
+
+  classifyAndTagThreads(config.classificationRules, GmailApp, Logger)
+  executeRetentionRules(config.executionRules, GmailApp, Logger)
+
+  Logger.log('Gmail Tag-Based Retention Automation cycle completed!')
+}
+
+/* istanbul ignore next */
+function createHourlyTrigger() {
+  createAndManageTrigger(ScriptApp, Logger, 'runGmailRetentionAutomation')
+}

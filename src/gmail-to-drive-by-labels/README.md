@@ -213,10 +213,10 @@ function getProcessConfig() {
     {
       // The label that triggers the script
       // NOTE: For nested labels, use the full path: "Parent/Child"
-      triggerLabel: 'Projects/toby-mcaa',
-
-      // The label applied after successful processing
-      processedLabel: 'Projects/toby-mcaa-archived',
+      triggerLabel: 'Projects/school-mcaa',
+      driveFolderId: 'YOUR_GOOGLE_DRIVE_FOLDER_ID',
+      docsPrefix: '[SCHOOL-DOCS] ',
+      processedLabel: 'Projects/school-mcaa-archived',
 
       // The Google Doc ID found in step 3
       docId: 'YOUR_GOOGLE_DOC_ID_HERE',

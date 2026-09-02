@@ -1,5 +1,3 @@
-/* istanbul ignore file */
-/* sonar.javascript.skipCoverage */
 /**
  * Native Google Apps Script GitHub Sync Module (Auto-Create & Long Document Aware)
  * Calls GitHub REST API via UrlFetchApp to commit Markdown entries directly to self-private repo.
@@ -139,10 +137,7 @@ function executeGitHubCommit(filePath, entryMd, commitMessage, githubToken) {
       rawContent = decodeBase64Content(fileData.content)
 
       // Idempotency Check: Skip if entry already present
-      if (
-        rawContent.indexOf(entryMd.trim()) !== -1 ||
-        (commitMessage && rawContent.indexOf(commitMessage) !== -1)
-      ) {
+      if (rawContent.indexOf(entryMd.trim()) !== -1) {
         console.log(
           '[gitHubSync] Idempotent Skip: Entry already exists in',
           filePath
@@ -328,6 +323,7 @@ function commitRulesToGitHub(rulesObj, commitMessage, githubToken, knownSha) {
     "yyyy-MM-dd'T'HH:mm:ss'Z'"
   )
 
+  var localUpdatedAt = rulesObj.updatedAt
   var rawJson = JSON.stringify(rulesObj, null, 2)
   var base64Content = encodeBase64Content(rawJson)
 
@@ -359,8 +355,16 @@ function commitRulesToGitHub(rulesObj, commitMessage, githubToken, knownSha) {
     var status = putRes.getResponseCode()
     if (status === 200 || status === 201) return true
     if (status === 409) {
-      // SHA conflict: refresh and retry once
+      // SHA conflict: refresh and check if remote is newer
       var refreshed = fetchRulesFromGitHub(targetPath, token)
+      if (
+        refreshed &&
+        refreshed.updatedAt &&
+        refreshed.updatedAt > localUpdatedAt
+      ) {
+        console.error('[gitHubSync] Remote copy is newer; aborting commit')
+        return false
+      }
       var freshSha = refreshed ? refreshed._sha : null
       var retryRes = executePut_(freshSha)
       var retryStatus = retryRes.getResponseCode()
@@ -460,7 +464,7 @@ function syncTwoWayRules() {
   return true
 }
 
-// NOSONAR — Jest interop guard for test environment, not executed in GAS runtime
+/* sonar.javascript.skipCoverage */
 /* istanbul ignore if */
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
