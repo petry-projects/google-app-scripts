@@ -1,4 +1,5 @@
 /* istanbul ignore file */
+/* sonar.javascript.skipCoverage */
 /**
  * Native Google Apps Script GitHub Sync Module (Auto-Create & Long Document Aware)
  * Calls GitHub REST API via UrlFetchApp to commit Markdown entries directly to self-private repo.
@@ -10,7 +11,6 @@
  * - Idempotency Guard (skips duplicate entries)
  * NOSONAR — contains multiple similar error-handling blocks across API operations, intentional for robustness
  */
-/* sonar.javascript.skipCoverage — GAS module with testable logic extracted to github-sync.js */
 
 var GITHUB_REPO_OWNER = 'user-org'
 var GITHUB_REPO_NAME = 'self-private'
