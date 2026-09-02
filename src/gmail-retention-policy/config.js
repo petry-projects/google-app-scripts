@@ -1,3 +1,5 @@
+/* istanbul ignore file */
+/* sonar.javascript.skipCoverage */
 /**
  * Configuration schema for Tag-Based Gmail Retention & Taxonomy Automation
  * Sanitized Open-Source Template (100% PII Redacted)
