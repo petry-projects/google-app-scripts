@@ -63,9 +63,30 @@ describe('setup-pr-quality-ruleset.sh codified ruleset', () => {
   it('script preserves existing bypass_actors when updating an existing ruleset', () => {
     const scriptPath = path.join(__dirname, '..', 'setup-pr-quality-ruleset.sh')
     const script = fs.readFileSync(scriptPath, 'utf8')
-    // The update path must fetch and re-inject bypass_actors so a PUT does not
-    // silently remove an existing Dependabot or other integration bypass.
+    // The update path must fetch the existing ruleset and merge fields so a PUT
+    // preserves bypass_actors and other fields set by administrators.
     expect(script).toMatch(/bypass_actors/)
-    expect(script).toMatch(/jq.*bypass_actors/)
+    expect(script).toMatch(/EXISTING_RULESET/)
+  })
+
+  it('script merges new configuration into existing ruleset preserving all fields', () => {
+    const scriptPath = path.join(__dirname, '..', 'setup-pr-quality-ruleset.sh')
+    const script = fs.readFileSync(scriptPath, 'utf8')
+    // The update flow must fetch the existing ruleset and selectively update
+    // fields (name, target, enforcement, conditions, rules) while preserving
+    // bypass_actors and other fields not in the new payload.
+    expect(script).toMatch(/EXISTING_RULESET=.*gh api.*rulesets.*EXISTING_ID/)
+    expect(script).toMatch(/slurpfile.*existing/)
+    // Verify field-by-field update pattern in jq to preserve all existing fields
+    expect(script).toMatch(/\.name = \$new\.name/)
+    expect(script).toMatch(/\.rules = \$new\.rules/)
+    expect(script).toMatch(/\$existing\[0\]/)
+  })
+
+  it('script validates merged payload before submitting', () => {
+    const scriptPath = path.join(__dirname, '..', 'setup-pr-quality-ruleset.sh')
+    const script = fs.readFileSync(scriptPath, 'utf8')
+    // Validation ensures the merged payload is well-formed and contains required fields
+    expect(script).toMatch(/jq -e.*\.name.*\.target.*\.rules/)
   })
 })

@@ -79,9 +79,23 @@ JSON
 
 if [[ -n "$EXISTING_ID" ]]; then
   echo "  ↻ '$RULESET_NAME' ruleset already exists (id: $EXISTING_ID) — updating to ensure compliance..."
-  # Preserve existing bypass_actors: a PUT that omits this field removes them entirely
-  EXISTING_BYPASS=$(gh api "repos/$REPO/rulesets/$EXISTING_ID" | jq -c '.bypass_actors // []')
-  UPDATE_PAYLOAD=$(printf '%s' "$RULESET_PAYLOAD" | jq --argjson bypass "$EXISTING_BYPASS" '. + {bypass_actors: $bypass}')
+  # Fetch existing ruleset and preserve all fields not being updated
+  EXISTING_RULESET=$(gh api "repos/$REPO/rulesets/$EXISTING_ID")
+  # Merge new configuration into existing ruleset: preserve bypass_actors and other fields
+  UPDATE_PAYLOAD=$(printf '%s' "$RULESET_PAYLOAD" | jq --slurpfile existing <(echo "$EXISTING_RULESET") '
+    . as $new
+    | $existing[0]
+    | .name = $new.name
+    | .target = $new.target
+    | .enforcement = $new.enforcement
+    | .conditions = $new.conditions
+    | .rules = $new.rules
+  ')
+  # Validate required fields are present
+  if ! printf '%s' "$UPDATE_PAYLOAD" | jq -e '.name and .target and .rules and (.rules | length > 0)' >/dev/null 2>&1; then
+    echo "Error: Invalid ruleset payload after merge (missing required fields)" >&2
+    exit 1
+  fi
   printf '%s\n' "$UPDATE_PAYLOAD" | gh api "repos/$REPO/rulesets/$EXISTING_ID" --method PUT --input -
   echo "  ✓ '$RULESET_NAME' ruleset updated successfully."
   echo ""
