@@ -10,8 +10,8 @@
 # What this script does:
 #   1. Checks whether the "pr-quality" ruleset already exists
 #   2. Creates it if missing, or updates it if present so drifted parameters
-#      (e.g. dismiss_stale_reviews_on_push) reconverge to the codified standard
-#      (idempotent — safe to re-run)
+#      (e.g. dismiss_stale_reviews_on_push, require_last_push_approval)
+#      reconverge to the codified standard (idempotent — safe to re-run)
 #
 # Prerequisites: gh (authenticated with repo admin rights)
 # Usage:
@@ -79,7 +79,24 @@ JSON
 
 if [[ -n "$EXISTING_ID" ]]; then
   echo "  ↻ '$RULESET_NAME' ruleset already exists (id: $EXISTING_ID) — updating to ensure compliance..."
-  printf '%s\n' "$RULESET_PAYLOAD" | gh api "repos/$REPO/rulesets/$EXISTING_ID" --method PUT --input -
+  # Fetch existing ruleset and preserve all fields not being updated
+  EXISTING_RULESET=$(gh api "repos/$REPO/rulesets/$EXISTING_ID")
+  # Merge new configuration into existing ruleset: preserve bypass_actors and other fields
+  UPDATE_PAYLOAD=$(printf '%s' "$RULESET_PAYLOAD" | jq --slurpfile existing <(echo "$EXISTING_RULESET") '
+    . as $new
+    | $existing[0]
+    | .name = $new.name
+    | .target = $new.target
+    | .enforcement = $new.enforcement
+    | .conditions = $new.conditions
+    | .rules = $new.rules
+  ')
+  # Validate required fields are present
+  if ! printf '%s' "$UPDATE_PAYLOAD" | jq -e '.name and .target and .rules and (.rules | length > 0)' >/dev/null 2>&1; then
+    echo "Error: Invalid ruleset payload after merge (missing required fields)" >&2
+    exit 1
+  fi
+  printf '%s\n' "$UPDATE_PAYLOAD" | gh api "repos/$REPO/rulesets/$EXISTING_ID" --method PUT --input -
   echo "  ✓ '$RULESET_NAME' ruleset updated successfully."
   echo ""
   echo "=== Done ==="
