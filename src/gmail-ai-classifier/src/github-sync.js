@@ -70,7 +70,7 @@ function appendMarkdownEntryToGitHubRepo(filePath, entryMd, commitMessage) {
       commitMessage,
       githubToken
     )
-    if (result === true || result === 'IDEMPOTENT_SKIP') {
+    if (result === true) {
       return true
     }
     console.log(
@@ -137,12 +137,12 @@ function executeGitHubCommit(filePath, entryMd, commitMessage, githubToken) {
       rawContent = decodeBase64Content(fileData.content)
 
       // Idempotency Check: Skip if entry already present
-      if (rawContent.indexOf(entryMd.trim()) !== -1) {
+      if (rawContent.includes(entryMd.trim())) {
         console.log(
           '[gitHubSync] Idempotent Skip: Entry already exists in',
           filePath
         )
-        return 'IDEMPOTENT_SKIP'
+        return true
       }
     } else {
       console.error(
@@ -206,7 +206,7 @@ function executeGitHubCommit(filePath, entryMd, commitMessage, githubToken) {
 function extractTopicTitleFromPath(filePath) {
   var parts = filePath.split('/')
   var topic = parts.length > 1 ? parts[parts.length - 2] : parts[0]
-  return topic.replace(/-/g, ' ').replace(/\b\w/g, function (l) {
+  return topic.replaceAll('-', ' ').replace(/\b\w/g, function (l) {
     return l.toUpperCase()
   })
 }
@@ -289,6 +289,57 @@ function fetchRulesFromGitHub(filePath, githubToken) {
 }
 
 /**
+ * Compares two rules objects for content equality, ignoring the internal _sha field.
+ */
+function rulesContentEquals_(a, b) {
+  var aCopy = { ...a }
+  delete aCopy._sha
+  var bCopy = { ...b }
+  delete bCopy._sha
+  return JSON.stringify(aCopy) === JSON.stringify(bCopy)
+}
+
+/**
+ * Decides whether it is safe to overwrite the freshly-fetched remote rules with the
+ * local copy after a 409 conflict.
+ *
+ * Timestamps are parsed to epoch millis (normalizing timezone offsets, e.g. a
+ * `+00:00` vs `Z` suffix, to the same instant) rather than compared as strings.
+ * When either timestamp is missing/invalid or the two are equal, we cannot rank
+ * them by time, so we fall back to a content comparison: if the remote already
+ * differs from our local copy we abort rather than clobber a possibly-newer remote.
+ *
+ * @param {Object} remoteRules - Freshly fetched remote rules (may include _sha)
+ * @param {Object} localRules - Local rules about to be committed
+ * @param {string} localUpdatedAt - Local rules' updatedAt timestamp
+ * @returns {boolean} true if overwriting the remote is safe, false to abort
+ */
+function isSafeToOverwriteRemote_(remoteRules, localRules, localUpdatedAt) {
+  var remoteMs = new Date(remoteRules.updatedAt).getTime()
+  var localMs = new Date(localUpdatedAt).getTime()
+  var timestampsComparable =
+    !Number.isNaN(remoteMs) && !Number.isNaN(localMs) && remoteMs !== localMs
+
+  if (timestampsComparable) {
+    if (remoteMs > localMs) {
+      console.error('[gitHubSync] Remote copy is newer; aborting commit')
+      return false
+    }
+    return true
+  }
+
+  // Timestamps are missing, invalid, or represent the same instant: only overwrite
+  // when the remote content matches what we already have.
+  if (!rulesContentEquals_(remoteRules, localRules)) {
+    console.error(
+      '[gitHubSync] Timestamps inconclusive and remote content differs; aborting commit'
+    )
+    return false
+  }
+  return true
+}
+
+/**
  * 2-Way Sync Engine: Commits rules object back to self-private via GitHub REST API.
  * @param {Object} rulesObj - Rules to commit (mutated in-place: _sha deleted, updatedAt set)
  * @param {string} [commitMessage] - Git commit message
@@ -355,14 +406,12 @@ function commitRulesToGitHub(rulesObj, commitMessage, githubToken, knownSha) {
     var status = putRes.getResponseCode()
     if (status === 200 || status === 201) return true
     if (status === 409) {
-      // SHA conflict: refresh and check if remote is newer
+      // SHA conflict: refresh and decide whether it is safe to overwrite remote.
       var refreshed = fetchRulesFromGitHub(targetPath, token)
       if (
         refreshed &&
-        refreshed.updatedAt &&
-        refreshed.updatedAt > localUpdatedAt
+        !isSafeToOverwriteRemote_(refreshed, rulesObj, localUpdatedAt)
       ) {
-        console.error('[gitHubSync] Remote copy is newer; aborting commit')
         return false
       }
       var freshSha = refreshed ? refreshed._sha : null
@@ -422,8 +471,8 @@ function syncTwoWayRules() {
 
   var remoteTs = new Date(remoteRules.updatedAt).getTime()
   var localTs = new Date(localRules.updatedAt).getTime()
-  var remoteDate = isNaN(remoteTs) ? 0 : remoteTs
-  var localDate = isNaN(localTs) ? 0 : localTs
+  var remoteDate = Number.isNaN(remoteTs) ? 0 : remoteTs
+  var localDate = Number.isNaN(localTs) ? 0 : localTs
 
   if (remoteDate > localDate) {
     // GitHub rules are newer -> Update GAS Script Property
@@ -448,11 +497,7 @@ function syncTwoWayRules() {
   }
 
   // Equal timestamps: use content comparison as tie-breaker (exclude internal _sha field)
-  var remoteForCompare = JSON.parse(JSON.stringify(remoteRules))
-  delete remoteForCompare._sha
-  var localForCompare = JSON.parse(JSON.stringify(localRules))
-  delete localForCompare._sha
-  if (JSON.stringify(remoteForCompare) !== JSON.stringify(localForCompare)) {
+  if (!rulesContentEquals_(remoteRules, localRules)) {
     props.setProperty('CLASSIFICATION_RULES_JSON', JSON.stringify(remoteRules))
     console.log(
       '[gitHubSync] Equal timestamps but content differed — pulled remote as canonical.'
@@ -473,6 +518,8 @@ if (typeof module !== 'undefined' && module.exports) {
     extractTopicTitleFromPath: extractTopicTitleFromPath,
     insertEntryIntoLogSection: insertEntryIntoLogSection,
     fetchRulesFromGitHub: fetchRulesFromGitHub,
+    rulesContentEquals_: rulesContentEquals_,
+    isSafeToOverwriteRemote_: isSafeToOverwriteRemote_,
     commitRulesToGitHub: commitRulesToGitHub,
     syncTwoWayRules: syncTwoWayRules,
     getGitHubApiUrl_: getGitHubApiUrl_,
