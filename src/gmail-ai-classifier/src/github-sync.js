@@ -70,7 +70,7 @@ function appendMarkdownEntryToGitHubRepo(filePath, entryMd, commitMessage) {
       commitMessage,
       githubToken
     )
-    if (result === true || result === 'IDEMPOTENT_SKIP') {
+    if (result === true) {
       return true
     }
     console.log(
@@ -137,12 +137,12 @@ function executeGitHubCommit(filePath, entryMd, commitMessage, githubToken) {
       rawContent = decodeBase64Content(fileData.content)
 
       // Idempotency Check: Skip if entry already present
-      if (rawContent.indexOf(entryMd.trim()) !== -1) {
+      if (rawContent.includes(entryMd.trim())) {
         console.log(
           '[gitHubSync] Idempotent Skip: Entry already exists in',
           filePath
         )
-        return 'IDEMPOTENT_SKIP'
+        return true
       }
     } else {
       console.error(
@@ -206,7 +206,7 @@ function executeGitHubCommit(filePath, entryMd, commitMessage, githubToken) {
 function extractTopicTitleFromPath(filePath) {
   var parts = filePath.split('/')
   var topic = parts.length > 1 ? parts[parts.length - 2] : parts[0]
-  return topic.replace(/-/g, ' ').replace(/\b\w/g, function (l) {
+  return topic.replaceAll('-', ' ').replace(/\b\w/g, function (l) {
     return l.toUpperCase()
   })
 }
@@ -357,11 +357,7 @@ function commitRulesToGitHub(rulesObj, commitMessage, githubToken, knownSha) {
     if (status === 409) {
       // SHA conflict: refresh and check if remote is newer
       var refreshed = fetchRulesFromGitHub(targetPath, token)
-      if (
-        refreshed &&
-        refreshed.updatedAt &&
-        refreshed.updatedAt > localUpdatedAt
-      ) {
+      if (refreshed?.updatedAt && refreshed.updatedAt > localUpdatedAt) {
         console.error('[gitHubSync] Remote copy is newer; aborting commit')
         return false
       }
@@ -422,8 +418,8 @@ function syncTwoWayRules() {
 
   var remoteTs = new Date(remoteRules.updatedAt).getTime()
   var localTs = new Date(localRules.updatedAt).getTime()
-  var remoteDate = isNaN(remoteTs) ? 0 : remoteTs
-  var localDate = isNaN(localTs) ? 0 : localTs
+  var remoteDate = Number.isNaN(remoteTs) ? 0 : remoteTs
+  var localDate = Number.isNaN(localTs) ? 0 : localTs
 
   if (remoteDate > localDate) {
     // GitHub rules are newer -> Update GAS Script Property
@@ -448,9 +444,9 @@ function syncTwoWayRules() {
   }
 
   // Equal timestamps: use content comparison as tie-breaker (exclude internal _sha field)
-  var remoteForCompare = JSON.parse(JSON.stringify(remoteRules))
+  var remoteForCompare = { ...remoteRules }
   delete remoteForCompare._sha
-  var localForCompare = JSON.parse(JSON.stringify(localRules))
+  var localForCompare = { ...localRules }
   delete localForCompare._sha
   if (JSON.stringify(remoteForCompare) !== JSON.stringify(localForCompare)) {
     props.setProperty('CLASSIFICATION_RULES_JSON', JSON.stringify(remoteRules))

@@ -95,16 +95,14 @@ describe('gitHubSync Module', () => {
       expect(res).toBe(true)
     })
 
-    test('handles 200 with idempotent skip', () => {
+    test('handles 200 with idempotent skip (returns boolean true)', () => {
       const existingContent = '- entry'
       const base64 = Buffer.from(existingContent).toString('base64')
-      global.UrlFetchApp = {
-        fetch: jest.fn(() => ({
-          getResponseCode: () => 200,
-          getContentText: () =>
-            JSON.stringify({ content: base64, sha: 'sha-1' }),
-        })),
-      }
+      const putSpy = jest.fn(() => ({
+        getResponseCode: () => 200,
+        getContentText: () => JSON.stringify({ content: base64, sha: 'sha-1' }),
+      }))
+      global.UrlFetchApp = { fetch: putSpy }
 
       const res = executeGitHubCommit(
         '01_Household/test/index.md',
@@ -112,7 +110,10 @@ describe('gitHubSync Module', () => {
         'commit msg',
         'pat-123'
       )
-      expect(res).toBe('IDEMPOTENT_SKIP')
+      // Idempotent skip is a success: returns boolean true (unified return type),
+      // and performs no PUT (only the initial GET).
+      expect(res).toBe(true)
+      expect(putSpy).toHaveBeenCalledTimes(1)
     })
 
     test('handles 500 error fetching file', () => {
