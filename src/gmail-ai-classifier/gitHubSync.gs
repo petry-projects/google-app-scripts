@@ -12,6 +12,49 @@
 var GITHUB_REPO_OWNER = 'don-petry'
 var GITHUB_REPO_NAME = 'self-private'
 
+var RULE6_PATTERNS = [
+  [/\S \? \S/, "' ? ' between words (was an em dash or a · separator)"],
+  [/\?\?/, "'??' (was a multi-codepoint emoji)"],
+  [/[A-Za-z]\?[A-Za-z]/, "'?' inside a word (was a curly apostrophe)"],
+  [/\uFFFD/, 'U+FFFD replacement character'],
+]
+
+/** Refuse to write an entry that already shows mojibake. */
+function assertClean_(text, what) {
+  if (!text) return
+  for (var i = 0; i < RULE6_PATTERNS.length; i++) {
+    if (RULE6_PATTERNS[i][0].test(text)) {
+      throw new Error(
+        'Rule 6: refusing to write ' + what + ' — ' + RULE6_PATTERNS[i][1]
+      )
+    }
+  }
+}
+
+/** Refuse to write when a non-ASCII char in the source text became '?' on the way out. */
+function assertNoAsciiReplacement_(source, rendered) {
+  if (!source || !rendered) return
+  if (rendered.indexOf('?') === -1) return
+  var lost = []
+  for (var i = 0; i < source.length; i++) {
+    var c = source.charAt(i)
+    if (
+      c.charCodeAt(0) > 127 &&
+      rendered.indexOf(c) === -1 &&
+      lost.indexOf(c) === -1
+    ) {
+      lost.push(c)
+    }
+  }
+  if (lost.length) {
+    throw new Error(
+      'Rule 6: refusing to write text that flattened non-ASCII to "?": ' +
+        lost.join(' ') +
+        ' — encode as UTF-8, not ASCII.'
+    )
+  }
+}
+
 /**
  * Appends a Progressive Disclosure entry to a target markdown file in self-private via GitHub REST API.
  * Automatically creates the file with valid front-matter if it does not exist yet (HTTP 404).
@@ -135,7 +178,17 @@ function executeGitHubCommit(filePath, entryMd, commitMessage, githubToken) {
 
     // 2. Section-Aware Insertion
     var updatedContent = insertEntryIntoLogSection(rawContent, entryMd)
-    var base64Updated = Utilities.base64Encode(updatedContent)
+
+    // Rule 6 Guards: Refuse to commit if mojibake is detected or non-ASCII chars were flattened
+    assertClean_(entryMd, 'new entry for ' + filePath)
+    assertClean_(updatedContent, 'updated content for ' + filePath)
+    if (rawContent) {
+      assertNoAsciiReplacement_(rawContent, updatedContent)
+    }
+
+    var base64Updated = Utilities.base64Encode(
+      Utilities.newBlob(updatedContent).getBytes()
+    )
 
     // 3. Commit updated content back to GitHub main branch
     var putPayload = {
@@ -225,5 +278,8 @@ if (typeof module !== 'undefined' && module.exports) {
     executeGitHubCommit: executeGitHubCommit,
     extractTopicTitleFromPath: extractTopicTitleFromPath,
     insertEntryIntoLogSection: insertEntryIntoLogSection,
+    assertClean_: assertClean_,
+    assertNoAsciiReplacement_: assertNoAsciiReplacement_,
+    RULE6_PATTERNS: RULE6_PATTERNS,
   }
 }

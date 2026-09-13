@@ -108,6 +108,11 @@ function processEmailsWithAiClassifier() {
               classification.summary,
               config.userAccountEmail
             )
+            assertNoAsciiReplacement_(
+              (subject || '') + (classification.summary || ''),
+              entryMd
+            )
+            assertClean_(entryMd, 'new entry for ' + notePath)
             appendMarkdownEntryToGitHubRepo(
               notePath,
               entryMd,

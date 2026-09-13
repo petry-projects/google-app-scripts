@@ -3,6 +3,49 @@
  * Performs atomic GET -> PUT markdown updates with 404 auto-initialization.
  */
 
+var RULE6_PATTERNS = [
+  [/\S \? \S/, "' ? ' between words (was an em dash or a · separator)"],
+  [/\?\?/, "'??' (was a multi-codepoint emoji)"],
+  [/[A-Za-z]\?[A-Za-z]/, "'?' inside a word (was a curly apostrophe)"],
+  [/\uFFFD/, 'U+FFFD replacement character'],
+]
+
+/** Refuse to write an entry that already shows mojibake. */
+function assertClean_(text, what) {
+  if (!text) return
+  for (var i = 0; i < RULE6_PATTERNS.length; i++) {
+    if (RULE6_PATTERNS[i][0].test(text)) {
+      throw new Error(
+        'Rule 6: refusing to write ' + what + ' — ' + RULE6_PATTERNS[i][1]
+      )
+    }
+  }
+}
+
+/** Refuse to write when a non-ASCII char in the source text became '?' on the way out. */
+function assertNoAsciiReplacement_(source, rendered) {
+  if (!source || !rendered) return
+  if (rendered.indexOf('?') === -1) return
+  var lost = []
+  for (var i = 0; i < source.length; i++) {
+    var c = source.charAt(i)
+    if (
+      c.charCodeAt(0) > 127 &&
+      rendered.indexOf(c) === -1 &&
+      lost.indexOf(c) === -1
+    ) {
+      lost.push(c)
+    }
+  }
+  if (lost.length) {
+    throw new Error(
+      'Rule 6: refusing to write text that flattened non-ASCII to "?": ' +
+        lost.join(' ') +
+        ' — encode as UTF-8, not ASCII.'
+    )
+  }
+}
+
 function appendMarkdownEntryToGitHubRepo(
   filePath,
   entryContent,
@@ -65,7 +108,17 @@ function appendMarkdownEntryToGitHubRepo(
     }
 
     var updatedContent = existingContent + '\n' + entryContent
-    var encodedContent = Utilities.base64Encode(updatedContent)
+
+    // Rule 6 Guards: Refuse to commit if mojibake is detected or non-ASCII chars were flattened
+    assertClean_(entryContent, 'new entry for ' + filePath)
+    assertClean_(updatedContent, 'updated content for ' + filePath)
+    if (existingContent) {
+      assertNoAsciiReplacement_(existingContent, updatedContent)
+    }
+
+    var encodedContent = Utilities.base64Encode(
+      Utilities.newBlob(updatedContent).getBytes()
+    )
 
     var payload = {
       message: commitMessage,
@@ -109,5 +162,8 @@ function appendMarkdownEntryToGitHubRepo(
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     appendMarkdownEntryToGitHubRepo: appendMarkdownEntryToGitHubRepo,
+    assertClean_: assertClean_,
+    assertNoAsciiReplacement_: assertNoAsciiReplacement_,
+    RULE6_PATTERNS: RULE6_PATTERNS,
   }
 }
