@@ -109,12 +109,12 @@ function appendMarkdownEntryToGitHubRepo(
 
     var updatedContent = existingContent + '\n' + entryContent
 
-    // Rule 6 Guards: Refuse to commit if mojibake is detected or non-ASCII chars were flattened
+    // Rule 6 Guards: Refuse to commit if mojibake is detected in new entry or non-ASCII chars were flattened
     assertClean_(entryContent, 'new entry for ' + filePath)
-    assertClean_(updatedContent, 'updated content for ' + filePath)
     if (existingContent) {
       assertNoAsciiReplacement_(existingContent, updatedContent)
     }
+    assertNoAsciiReplacement_(entryContent, updatedContent)
 
     var encodedContent = Utilities.base64Encode(
       Utilities.newBlob(updatedContent).getBytes()

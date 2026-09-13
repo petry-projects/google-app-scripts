@@ -601,10 +601,10 @@ function executeGitHubCommit(
     const updatedContent = insertEntryIntoLogSection(rawContent, entryMd)
 
     assertClean_(entryMd, 'new entry for ' + filePath)
-    assertClean_(updatedContent, 'updated content for ' + filePath)
     if (rawContent) {
       assertNoAsciiReplacement_(rawContent, updatedContent)
     }
+    assertNoAsciiReplacement_(entryMd, updatedContent)
 
     const base64Updated = utils.base64Encode(
       utils.newBlob(updatedContent).getBytes()

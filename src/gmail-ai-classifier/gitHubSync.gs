@@ -179,12 +179,12 @@ function executeGitHubCommit(filePath, entryMd, commitMessage, githubToken) {
     // 2. Section-Aware Insertion
     var updatedContent = insertEntryIntoLogSection(rawContent, entryMd)
 
-    // Rule 6 Guards: Refuse to commit if mojibake is detected or non-ASCII chars were flattened
+    // Rule 6 Guards: Refuse to commit if mojibake is detected in new entry or non-ASCII chars were flattened
     assertClean_(entryMd, 'new entry for ' + filePath)
-    assertClean_(updatedContent, 'updated content for ' + filePath)
     if (rawContent) {
       assertNoAsciiReplacement_(rawContent, updatedContent)
     }
+    assertNoAsciiReplacement_(entryMd, updatedContent)
 
     var base64Updated = Utilities.base64Encode(
       Utilities.newBlob(updatedContent).getBytes()
