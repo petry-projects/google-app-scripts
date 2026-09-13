@@ -221,8 +221,12 @@ function analyzeDocumentWithAi(fileName, fileText, config) {
     ],
   }
 
+  // Cascading High-Quality Gemini 3.x Model Matrix
   var endpoints = [
-    'https://generativelanguage.googleapis.com/v1beta/models/gemma-4-31b-it:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent',
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent',
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent',
   ]
