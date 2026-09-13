@@ -654,6 +654,25 @@ function executeGitHubCommit(
   }
 }
 
+function getSearchDateRange_(dateStr, days) {
+  const parts = dateStr.split('-')
+  const year = parseInt(parts[0], 10)
+  const month = parseInt(parts[1], 10) - 1
+  const day = parseInt(parts[2], 10)
+  const dt = new Date(year, month, day)
+
+  const beforeDt = new Date(dt.getTime() + (days + 1) * 86400000)
+  const afterDt = new Date(dt.getTime() - days * 86400000)
+
+  function fmt(d) {
+    const y = d.getFullYear()
+    const m = ('0' + (d.getMonth() + 1)).slice(-2)
+    const da = ('0' + d.getDate()).slice(-2)
+    return y + '/' + m + '/' + da
+  }
+  return { after: fmt(afterDt), before: fmt(beforeDt) }
+}
+
 module.exports = {
   validateClassification,
   classifyEmailWithGemini,
@@ -669,4 +688,5 @@ module.exports = {
   getNotePathForDomain,
   appendMarkdownEntryToGitHubRepo,
   executeGitHubCommit,
+  getSearchDateRange_,
 }

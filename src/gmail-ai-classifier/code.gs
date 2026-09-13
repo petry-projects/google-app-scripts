@@ -630,6 +630,282 @@ function formatProgressiveDisclosureEntry(
   return entry
 }
 
+/**
+ * Computes search date range object ({ after: 'YYYY/MM/DD', before: 'YYYY/MM/DD' }) around a given date string.
+ */
+function getSearchDateRange_(dateStr, days) {
+  var parts = dateStr.split('-')
+  var year = parseInt(parts[0], 10)
+  var month = parseInt(parts[1], 10) - 1
+  var day = parseInt(parts[2], 10)
+  var dt = new Date(year, month, day)
+
+  var beforeDt = new Date(dt.getTime() + (days + 1) * 86400000)
+  var afterDt = new Date(dt.getTime() - days * 86400000)
+
+  function fmt(d) {
+    var y = d.getFullYear()
+    var m = ('0' + (d.getMonth() + 1)).slice(-2)
+    var da = ('0' + d.getDate()).slice(-2)
+    return y + '/' + m + '/' + da
+  }
+  return { after: fmt(afterDt), before: fmt(beforeDt) }
+}
+
+/**
+ * Searches Gmail for original raw subject and from header corresponding to a damaged entry.
+ */
+function searchGmailForOriginalHeader_(senderEmail, dateStr, damagedSubject) {
+  try {
+    var range = getSearchDateRange_(dateStr, 2)
+    var query =
+      'from:' +
+      senderEmail +
+      ' after:' +
+      range.after +
+      ' before:' +
+      range.before
+    var threads = GmailApp.search(query, 0, 10)
+    var normDamaged = damagedSubject.toLowerCase().replace(/[^a-z0-9]/g, '')
+    if (!normDamaged) return null
+
+    for (var t = 0; t < threads.length; t++) {
+      var messages = threads[t].getMessages()
+      for (var m = 0; m < messages.length; m++) {
+        var msg = messages[m]
+        var realSub = msg.getSubject()
+        var normReal = realSub.toLowerCase().replace(/[^a-z0-9]/g, '')
+        if (
+          normReal === normDamaged ||
+          (normDamaged.length > 8 &&
+            (normReal.indexOf(normDamaged) !== -1 ||
+              normDamaged.indexOf(normReal) !== -1))
+        ) {
+          return {
+            subject: realSub,
+            from: msg.getFrom(),
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[searchGmailForOriginalHeader_] Search error: ' + e.message)
+  }
+  return null
+}
+
+/**
+ * Fetches file content and SHA from GitHub REST API.
+ */
+function fetchGitHubFileContent_(filePath, token) {
+  var url =
+    'https://api.github.com/repos/don-petry/self-private/contents/' + filePath
+  var options = {
+    method: 'get',
+    headers: {
+      Authorization: 'Bearer ' + token,
+      Accept: 'application/vnd.github.v3+json',
+      'User-Agent': 'GoogleAppsScript-Ingester',
+    },
+    muteHttpExceptions: true,
+  }
+  var res = UrlFetchApp.fetch(url, options)
+  if (res.getResponseCode() === 200) {
+    var data = JSON.parse(res.getContentText())
+    var rawContent = Utilities.newBlob(
+      Utilities.base64Decode(data.content)
+    ).getDataAsString()
+    return { content: rawContent, sha: data.sha }
+  }
+  return null
+}
+
+/**
+ * Commits updated file content to GitHub REST API.
+ */
+function commitGitHubFileDirect_(
+  filePath,
+  updatedContent,
+  sha,
+  commitMessage,
+  token
+) {
+  var url =
+    'https://api.github.com/repos/don-petry/self-private/contents/' + filePath
+  var encoded = Utilities.base64Encode(
+    Utilities.newBlob(updatedContent).getBytes()
+  )
+  var payload = {
+    message: commitMessage,
+    content: encoded,
+    sha: sha,
+  }
+  var options = {
+    method: 'put',
+    contentType: 'application/json',
+    headers: {
+      Authorization: 'Bearer ' + token,
+      Accept: 'application/vnd.github.v3+json',
+      'User-Agent': 'GoogleAppsScript-Ingester',
+    },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true,
+  }
+  var res = UrlFetchApp.fetch(url, options)
+  return res.getResponseCode() === 200 || res.getResponseCode() === 201
+}
+
+/**
+ * One-time backfill helper that queries Gmail to restore exact original UTF-8
+ * Subject and From headers for historical activity log entries that were flattened to '?'.
+ */
+function backfillOriginalEmailHeaders() {
+  console.log(
+    '[backfillOriginalEmailHeaders] Starting historical header restoration from Gmail...'
+  )
+  var config = getAiClassifierConfig()
+  if (!config.githubToken) {
+    console.error('[backfillOriginalEmailHeaders] GITHUB_PAT is missing.')
+    return
+  }
+
+  var targetFiles = [
+    'petry-household/finances/index.md',
+    'helpingoneguy/organization/organization/index.md',
+    'petry-household/kids/index.md',
+    'petry-household/birmingham/index.md',
+    'petry-household/our-technology/digital-backups/index.md',
+    'petry-household/vehicles/index.md',
+    'dp-work-notes/notes/index.md',
+  ]
+
+  var totalRestored = 0
+
+  for (var f = 0; f < targetFiles.length; f++) {
+    var filePath = targetFiles[f]
+    console.log('[backfillOriginalEmailHeaders] Processing: ' + filePath)
+
+    var fileData = fetchGitHubFileContent_(filePath, config.githubToken)
+    if (!fileData) {
+      console.log(
+        '[backfillOriginalEmailHeaders] File not found or empty: ' + filePath
+      )
+      continue
+    }
+
+    var lines = fileData.content.split('\n')
+    var modified = false
+    var fileRestoredCount = 0
+    var currentDate = null
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i]
+      var dateMatch = line.match(/^#{2,4} (\d{4}-\d{2}-\d{2})/)
+      if (dateMatch) {
+        currentDate = dateMatch[1]
+        continue
+      }
+
+      if (
+        line.indexOf('- **Subject**:') === 0 &&
+        line.indexOf('?') !== -1 &&
+        currentDate
+      ) {
+        var damagedSubject = line.substring('- **Subject**: '.length).trim()
+
+        var fromLine = ''
+        for (
+          var j = Math.max(0, i - 3);
+          j <= Math.min(lines.length - 1, i + 3);
+          j++
+        ) {
+          if (lines[j].indexOf('- **From**:') === 0) {
+            fromLine = lines[j].substring('- **From**: '.length).trim()
+            break
+          }
+        }
+
+        var senderEmail = ''
+        var emailMatch = fromLine.match(/<([^>]+)>/)
+        if (emailMatch) {
+          senderEmail = emailMatch[1]
+        } else if (fromLine.indexOf('@') !== -1) {
+          senderEmail = fromLine
+        }
+
+        if (senderEmail) {
+          var realEmail = searchGmailForOriginalHeader_(
+            senderEmail,
+            currentDate,
+            damagedSubject
+          )
+          if (realEmail && realEmail.subject) {
+            console.log(
+              '[backfillOriginalEmailHeaders] Restoring: "' +
+                damagedSubject +
+                '" -> "' +
+                realEmail.subject +
+                '"'
+            )
+            lines[i] = '- **Subject**: ' + realEmail.subject
+            modified = true
+            fileRestoredCount++
+            totalRestored++
+
+            for (
+              var k = Math.max(0, i - 3);
+              k <= Math.min(lines.length - 1, i + 3);
+              k++
+            ) {
+              if (
+                lines[k].indexOf('- **From**:') === 0 &&
+                lines[k].indexOf('?') !== -1 &&
+                realEmail.from
+              ) {
+                lines[k] = '- **From**: ' + realEmail.from
+                break
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (modified) {
+      var newContent = lines.join('\n')
+      var commitMsg =
+        'chore(notes): restore ' +
+        fileRestoredCount +
+        ' original Gmail headers in ' +
+        filePath
+      commitGitHubFileDirect_(
+        filePath,
+        newContent,
+        fileData.sha,
+        commitMsg,
+        config.githubToken
+      )
+      console.log(
+        '[backfillOriginalEmailHeaders] Successfully updated ' +
+          filePath +
+          ' (' +
+          fileRestoredCount +
+          ' headers restored).'
+      )
+    } else {
+      console.log(
+        '[backfillOriginalEmailHeaders] No damaged headers to restore in ' +
+          filePath
+      )
+    }
+  }
+
+  console.log(
+    '[backfillOriginalEmailHeaders] Finished header restoration. Total headers restored: ' +
+      totalRestored
+  )
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     processEmailsWithAiClassifier: processEmailsWithAiClassifier,
@@ -640,5 +916,8 @@ if (typeof module !== 'undefined' && module.exports) {
     classifyWithGemini: classifyWithGemini,
     ensureUserLabel: ensureUserLabel,
     createGmailFilterRule: createGmailFilterRule,
+    backfillOriginalEmailHeaders: backfillOriginalEmailHeaders,
+    getSearchDateRange_: getSearchDateRange_,
+    searchGmailForOriginalHeader_: searchGmailForOriginalHeader_,
   }
 }

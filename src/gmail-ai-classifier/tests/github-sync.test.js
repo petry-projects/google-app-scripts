@@ -8,6 +8,7 @@ const {
   RULE6_PATTERNS,
   formatProgressiveDisclosureEntry,
   getNotePathForDomain,
+  getSearchDateRange_,
 } = require('../src/index.js')
 
 describe('GitHub Sync & Rule 6 Mojibake Guards', () => {
@@ -702,6 +703,17 @@ describe('GitHub Sync & Rule 6 Mojibake Guards', () => {
       } finally {
         jest.useRealTimers()
       }
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // getSearchDateRange_
+  // -------------------------------------------------------------------------
+  describe('getSearchDateRange_', () => {
+    test('computes correct after and before dates for given date and offset', () => {
+      const range = getSearchDateRange_('2026-07-23', 2)
+      expect(range.after).toBe('2026/07/21')
+      expect(range.before).toBe('2026/07/26')
     })
   })
 })
