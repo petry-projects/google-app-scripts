@@ -86,7 +86,8 @@ function processDriveFilesWithAiIngester() {
         // 4. Sync Executive Summary & Drive Link to GitHub self-private
         if (config.githubToken) {
           var notePath = getNotePathForDomain(
-            metadata.canonicalDomain || '01_Household'
+            metadata.canonicalDomain || '01_Household',
+            metadata.subLabel
           )
           if (notePath) {
             var dateStr = Utilities.formatDate(
@@ -190,8 +191,8 @@ function analyzeDocumentWithAi(fileName, fileText, config) {
     '.\n\n' +
     'MANDATORY HYBRID TAG DECOMPOSITION RULE:\n' +
     "For every compound/hyphenated tag (e.g. 'toby-petry', 'five-oaks', 'credit-card', 'google-cloud'), you MUST also include each individual word component ('toby', 'petry', 'five', 'oaks', 'credit', 'card', 'google', 'cloud') in the tags array.\n\n" +
-    'RULE 15 - HONEY BEEHAM & APIARY RECORDS:\n' +
-    "Classify Honey BeeHam vendor inventories, wholesale price lists, apiary invoices, hive sales, and FSA honeybee colony forms under '07_Community_NonProfit' (sub-label 'Projects/Beekeeping').\n\n" +
+    'RULE 15 - HONEY BEEHAM ARTISANAL BUSINESS & CANDLE CRAFT:\n' +
+    "Classify Honey BeeHam vendor inventories, wholesale price lists, apiary invoices, hive sales, candle craft, and FSA honeybee colony forms under '01_Household' (sub-label 'Projects/HoneyBeeHam') or '02_Finance_Legal' (sub-label 'Finance/Purchases' if pure purchase receipt/invoice). Under NO circumstances classify Honey BeeHam under '07_Community_NonProfit'!\n\n" +
     'RULE 16 - TAX FORMS, CHARITABLE DONATIONS & COURT ORDERS:\n' +
     "Classify tax forms (1095-C, 1098, W2, tax returns), charitable donation receipts, court orders, and legal work orders under '02_Finance_Legal' (sub-labels 'Finance/Taxes', 'Finance/Charitable-Donations', or 'Finance/Legal').\n\n" +
     'RULE 18 - CAR RENTALS & TRAVEL RESERVATION CONFIRMATIONS:\n' +
@@ -392,7 +393,13 @@ function parseRetryDelayMs(response) {
   return 5000
 }
 
-function getNotePathForDomain(domain) {
+function getNotePathForDomain(domain, subLabel) {
+  if (
+    subLabel === 'Projects/HoneyBeeHam' ||
+    subLabel === 'Household/HoneyBeeHam'
+  ) {
+    return 'petry-household/birmingham/index.md'
+  }
   var map = {
     '01_Household': 'petry-household/birmingham/index.md',
     '02_Finance_Legal': 'petry-household/finances/index.md',

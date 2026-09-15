@@ -447,7 +447,13 @@ function formatProgressiveDisclosureEntry(
   return entry
 }
 
-function getNotePathForDomain(domain) {
+function getNotePathForDomain(domain, subLabel) {
+  if (
+    subLabel === 'Projects/HoneyBeeHam' ||
+    subLabel === 'Household/HoneyBeeHam'
+  ) {
+    return 'petry-household/birmingham/index.md'
+  }
   const map = {
     '01_Household': 'petry-household/birmingham/index.md',
     '02_Finance_Legal': 'petry-household/finances/index.md',

@@ -93,7 +93,10 @@ function processEmailsWithAiClassifier() {
 
         // Sync Progressive Disclosure Summary to GitHub
         if (config.githubToken) {
-          var notePath = getNotePathForDomain(classification.canonicalDomain)
+          var notePath = getNotePathForDomain(
+            classification.canonicalDomain,
+            classification.subLabel
+          )
           if (notePath) {
             var dateStr = Utilities.formatDate(
               firstMessage.getDate(),
@@ -392,8 +395,8 @@ function classifyWithGemini(sender, subject, snippet, config) {
     'STRICT CLASSIFICATION RULES:\n' +
     "1. MEDIA & PLATFORM NEWSLETTERS (Medium, NYT, Substack, Epoch Times, LinkedIn digests, event/news blasts): Treat strictly as Promotional / Newsletter and return null for canonicalDomain. Do NOT classify under '06_Work_Career' or '04_Family_Health'. Set category to 'Promotions' or 'Social', action to 'keep'.\n" +
     "2. UTILITY & TECH BILLS (AT&T, Google Cloud, Electric, Water): Classify under '02_Finance_Legal' (sub-label 'Finance/Banking') or '05_Tech_Infrastructure' (sub-label 'Tech/Alerts-Monitoring'). Set category to 'Updates', action to 'keep'.\n" +
-    "3. MARRIAGE & ADULT FAMILY (WinShape, Marriage retreats, DJ & Rachel personal): Classify under '04_Family_Health' (sub-label 'Family/DJ-Rachel'). Set category to 'Primary', action to 'keep'.\n" +
-    "4. BEEKEEPING & MYBROODMINDER ALERTS (MyBroodMinder, Hive telemetry alerts, BOD): Classify under '07_Community_NonProfit' (sub-label 'Projects/Beekeeping'). Set category to 'Updates', action to 'keep'.\n" +
+    "3. MARRIAGE & ADULT FAMILY (WinShape, Marriage retreats, DJ & Rachel personal correspondence): Classify under '04_Family_Health' (sub-label 'Family/DJ-Rachel'). Set category to 'Primary', action to 'keep'. Note: If an email is about Rachel's business/hobby Honey BeeHam or candle making, do NOT label as Family/DJ-Rachel; classify under '01_Household' (sub-label 'Projects/HoneyBeeHam').\n" +
+    "4. NON-PROFIT CHARITY & BEEKEEPING ASSOCIATION (Helping One Guy / HOG 501(c)(3) charity records, Jefferson County Beekeepers Association Board of Directors / JeffCo Bees BOD official non-profit communications, Faith outreach, and MyBroodMinder hive telemetry alerts): Classify strictly under '07_Community_NonProfit' (sub-labels 'Projects/HOG', 'Community/JeffCo-Bees-BOD', or 'Projects/Beekeeping'). Set category to 'Updates', action to 'keep'. Do NOT classify commercial Honey BeeHam vendor, candle craft, jar packaging, or honey sales here.\n" +
     "5. HEALTH NEWSLETTERS & MEDICAL BULLETINS (WebMD, Epoch Health, drug recall news digests): Treat as Newsletter and return null for canonicalDomain. Reserve '04_Family_Health' strictly for personal family medical records, doctor visits, patient portals, and school/kids health notes.\n" +
     "6. E-COMMERCE PROMOTIONS & SOCIAL DIGESTS (Lowes, Nextdoor, American Meadows, Hydrobuilder, OpenAI pricing promos): Return null for canonicalDomain. Set category to 'Promotions' or 'Social'.\n" +
     "7. SCHOOL PORTALS & PARENTSQUARE (ParentSquare, Magic City Acceptance Academy, MCAA, school shuttle notifications, school attendance): Classify under '04_Family_Health' (sub-label 'Family/School-Toby'). Set category to 'Updates' or 'Primary', action to 'keep'.\n" +
@@ -404,7 +407,7 @@ function classifyWithGemini(sender, subject, snippet, config) {
     "12. ORDER CONFIRMATIONS & RECEIPTS (Order confirmations, purchase receipts, invoices, delivery confirmations, payment receipts): Classify under '02_Finance_Legal' (sub-label 'Finance/Purchases') or '01_Household' / '03_Vehicles' as appropriate. Treat strictly as financial/purchase records (category 'Updates', action 'keep'). Do NOT classify as Promotional or Trash.\n" +
     "13. SINGLE SUB-LABEL RULE: Return AT MOST ONE subLabel string per email (the single best matching sub-label, e.g. 'Finance/Banking' or 'Family/School-Toby'). Do NOT stack multiple sub-labels.\n" +
     "14. UNSOLICITED REAL ESTATE & INVESTMENT SOLICITATION (Cold wholesaler property blasts, 'Off-Market Investment Opportunity', 'We Buy Houses', unsolicited real estate deal blasts): Treat as Promotional / Solicitation and return null for canonicalDomain. Do NOT classify under '02_Finance_Legal' or '01_Household'. Reserve '02_Finance_Legal' strictly for personal bank statements, mortgages, tax documents, credit cards, and active legal records.\n" +
-    "15. HONEY BEEHAM & APIARY RECORDS (Honey BeeHam vendor inventories, wholesale price lists, apiary invoices, hive sales, FSA honeybee colony forms): Classify under '07_Community_NonProfit' (sub-label 'Projects/Beekeeping'). Set category to 'Updates', action to 'keep'.\n" +
+    "15. HONEY BEEHAM ARTISANAL BUSINESS & CANDLE CRAFT (Honey BeeHam, honey4beeham@gmail.com, beeswax candles, candle molds, Etsy beekeeping supplies, The Cary Company jars/lids, Square/Venmo market sales, Pepper Place, Made Market Franklin, Bham Coffee Fest, farmer markets, cottage food law, FSA colony forms): Classify strictly under '01_Household' (sub-label 'Projects/HoneyBeeHam') or '02_Finance_Legal' (sub-label 'Finance/Purchases' if pure purchase receipt/invoice). Set category to 'Updates', action to 'keep'. Under NO circumstances classify Honey BeeHam under '07_Community_NonProfit'!\n" +
     "16. TAX FORMS, CHARITABLE DONATIONS & COURT ORDERS (1095-C, 1098, W2, tax returns, donation receipts, court orders, legal closing orders): Classify under '02_Finance_Legal' (sub-labels 'Finance/Taxes', 'Finance/Charitable-Donations', or 'Finance/Legal'). Set category to 'Updates', action to 'keep'.\n" +
     "17. JOB POSTINGS, RESUMES & CAREER INTERVIEWS (Southern Power Company job announcements, interview schedules, resume feedback, ShePoint postings): Classify under '06_Work_Career' (sub-label 'Work/Career-Rachel' or 'Work/Career-DJ'). Set category to 'Primary' or 'Updates', action to 'keep'.\n" +
     "18. CAR RENTALS & TRAVEL RESERVATION CONFIRMATIONS (Hertz, Avis, Enterprise, National, Delta, United, Marriott, Airbnb, travel check-ins): Classify under '01_Household' (sub-label 'Household/Travel') or '03_Vehicles' (sub-label 'Vehicles/Rental-Cars'). Set category to 'Updates', action to 'keep'.\n\n" +
@@ -597,7 +600,13 @@ function createGmailFilterRule(senderEmail, targetLabelName) {
   }
 }
 
-function getNotePathForDomain(domain) {
+function getNotePathForDomain(domain, subLabel) {
+  if (
+    subLabel === 'Projects/HoneyBeeHam' ||
+    subLabel === 'Household/HoneyBeeHam'
+  ) {
+    return 'petry-household/birmingham/index.md'
+  }
   var map = {
     '01_Household': 'petry-household/birmingham/index.md',
     '02_Finance_Legal': 'petry-household/finances/index.md',
@@ -906,6 +915,80 @@ function backfillOriginalEmailHeaders() {
   )
 }
 
+/**
+ * Retroactively scans and removes conflicting labels from threads in Gmail.
+ * Resolves multi-label collisions like "Family/DJ & Rachel" appearing on project/domain threads,
+ * and fixes Honey BeeHam threads that were tagged with "07_Community_NonProfit".
+ */
+function cleanupLegacyConflictingLabelsInGmail() {
+  console.log(
+    '[cleanupLegacyConflictingLabelsInGmail] Starting batch label cleanup...'
+  )
+  var djRachelLabel = GmailApp.getUserLabelByName('Family/DJ & Rachel')
+  var nonProfitLabel = GmailApp.getUserLabelByName('07_Community_NonProfit')
+  var beekeepingLabel = GmailApp.getUserLabelByName('Projects/Beekeeping')
+  var honeyBeeHamLabel = ensureUserLabel('Projects/HoneyBeeHam')
+  var householdLabel = ensureUserLabel('01_Household')
+
+  var queries = [
+    'label:"Family/DJ & Rachel" label:"07_Community_NonProfit"',
+    'label:"Family/DJ & Rachel" label:"Projects/Beekeeping"',
+    'label:"Family/DJ & Rachel" label:"Projects/HoneyBeeHam"',
+    'label:"07_Community_NonProfit" label:"Projects/HoneyBeeHam"',
+    'label:"Projects/Beekeeping" label:"Projects/HoneyBeeHam"',
+    'from:honey4beeham@gmail.com label:"07_Community_NonProfit"',
+  ]
+
+  var cleanedCount = 0
+
+  for (var q = 0; q < queries.length; q++) {
+    var queryStr = queries[q]
+    var threads = GmailApp.search(queryStr, 0, 50)
+    console.log(
+      '[cleanupLegacyConflictingLabelsInGmail] Query "' +
+        queryStr +
+        '": found ' +
+        threads.length +
+        ' thread(s)'
+    )
+
+    for (var i = 0; i < threads.length; i++) {
+      var thread = threads[i]
+      var subject = thread.getFirstMessageSubject() || ''
+      var messages = thread.getMessages()
+      var from = messages.length > 0 ? messages[0].getFrom() || '' : ''
+      var isHoneyBeeHam =
+        /honey|beeham|candle|beeswax|made market|pepper place|coffee fest|thecarycompany/i.test(
+          subject + ' ' + from
+        )
+
+      if (isHoneyBeeHam) {
+        if (djRachelLabel) thread.removeLabel(djRachelLabel)
+        if (nonProfitLabel) thread.removeLabel(nonProfitLabel)
+        if (beekeepingLabel) thread.removeLabel(beekeepingLabel)
+        thread.addLabel(householdLabel)
+        thread.addLabel(honeyBeeHamLabel)
+        console.log(
+          '[cleanupLegacyConflictingLabelsInGmail] Realigned HoneyBeeHam thread: ' +
+            subject
+        )
+      } else {
+        if (djRachelLabel) thread.removeLabel(djRachelLabel)
+        console.log(
+          '[cleanupLegacyConflictingLabelsInGmail] Stripped redundant Family/DJ & Rachel: ' +
+            subject
+        )
+      }
+      cleanedCount++
+    }
+  }
+
+  console.log(
+    '[cleanupLegacyConflictingLabelsInGmail] Completed cleanup. Total threads updated: ' +
+      cleanedCount
+  )
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     processEmailsWithAiClassifier: processEmailsWithAiClassifier,
@@ -919,5 +1002,8 @@ if (typeof module !== 'undefined' && module.exports) {
     backfillOriginalEmailHeaders: backfillOriginalEmailHeaders,
     getSearchDateRange_: getSearchDateRange_,
     searchGmailForOriginalHeader_: searchGmailForOriginalHeader_,
+    cleanConflictingLabels: cleanConflictingLabels,
+    cleanupLegacyConflictingLabelsInGmail:
+      cleanupLegacyConflictingLabelsInGmail,
   }
 }

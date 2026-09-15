@@ -264,6 +264,12 @@ describe('GitHub Sync & Rule 6 Mojibake Guards', () => {
       expect(getNotePathForDomain('07_Community_NonProfit')).toBe(
         'helpingoneguy/organization/organization/index.md'
       )
+      expect(getNotePathForDomain('01_Household', 'Projects/HoneyBeeHam')).toBe(
+        'petry-household/birmingham/index.md'
+      )
+      expect(
+        getNotePathForDomain('07_Community_NonProfit', 'Projects/HoneyBeeHam')
+      ).toBe('petry-household/birmingham/index.md')
       expect(getNotePathForDomain('Unknown_Domain')).toBeNull()
     })
   })
