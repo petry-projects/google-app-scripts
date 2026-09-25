@@ -21,3 +21,9 @@
 # Prettier (singleQuote) would rewrite them to single quotes and re-introduce
 # surface drift, so it must not reformat this file.
 .github/workflows/pr-auto-review.yml
+# agent-shield is a standards-owned caller stub copied VERBATIM from
+# petry-projects/.github/standards/workflows/agent-shield.yml. Its exact bytes
+# (including the two-space gap before the `# NOSONAR` marker) are enforced by the
+# central byte-identity stub-drift guard. Prettier would collapse that gap and
+# re-introduce drift, so it must not reformat this file.
+.github/workflows/agent-shield.yml
