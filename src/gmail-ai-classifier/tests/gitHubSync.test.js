@@ -6,6 +6,8 @@ const {
   fetchRulesFromGitHub,
   commitRulesToGitHub,
   syncTwoWayRules,
+  rulesContentEquals_,
+  isSafeToOverwriteRemote_,
 } = require('../src/github-sync.js')
 
 describe('gitHubSync Module', () => {
@@ -95,16 +97,14 @@ describe('gitHubSync Module', () => {
       expect(res).toBe(true)
     })
 
-    test('handles 200 with idempotent skip', () => {
+    test('handles 200 with idempotent skip (returns boolean true)', () => {
       const existingContent = '- entry'
       const base64 = Buffer.from(existingContent).toString('base64')
-      global.UrlFetchApp = {
-        fetch: jest.fn(() => ({
-          getResponseCode: () => 200,
-          getContentText: () =>
-            JSON.stringify({ content: base64, sha: 'sha-1' }),
-        })),
-      }
+      const putSpy = jest.fn(() => ({
+        getResponseCode: () => 200,
+        getContentText: () => JSON.stringify({ content: base64, sha: 'sha-1' }),
+      }))
+      global.UrlFetchApp = { fetch: putSpy }
 
       const res = executeGitHubCommit(
         '01_Household/test/index.md',
@@ -112,7 +112,10 @@ describe('gitHubSync Module', () => {
         'commit msg',
         'pat-123'
       )
-      expect(res).toBe('IDEMPOTENT_SKIP')
+      // Idempotent skip is a success: returns boolean true (unified return type),
+      // and performs no PUT (only the initial GET).
+      expect(res).toBe(true)
+      expect(putSpy).toHaveBeenCalledTimes(1)
     })
 
     test('handles 500 error fetching file', () => {
@@ -931,6 +934,160 @@ describe('gitHubSync Module', () => {
       const result = commitRulesToGitHub({}, 'msg', 'token', 'stale-sha')
       expect(result).toBe(false)
       expect(global.UrlFetchApp.fetch).toHaveBeenCalledTimes(2)
+    })
+
+    test('commitRulesToGitHub aborts on 409 when remote is newer despite an earlier-sorting timezone offset', () => {
+      // Same instant would be 15:00Z (newer than the local 14:00Z), but the string
+      // "09:00:00-06:00" sorts *before* "14:00:00Z", which a naive string compare
+      // would treat as older and wrongly overwrite. Numeric comparison must abort.
+      const remoteRules = { updatedAt: '2026-08-08T09:00:00-06:00' }
+      const base64 = Buffer.from(JSON.stringify(remoteRules)).toString('base64')
+      global.UrlFetchApp = {
+        fetch: jest
+          .fn()
+          .mockImplementationOnce(() => ({
+            getResponseCode: () => 409,
+            getContentText: () => 'Conflict',
+          }))
+          .mockImplementationOnce(() => ({
+            getResponseCode: () => 200,
+            getContentText: () =>
+              JSON.stringify({ content: base64, sha: 'fresh-sha' }),
+          })),
+      }
+      const result = commitRulesToGitHub({}, 'msg', 'token', 'stale-sha')
+      expect(result).toBe(false)
+      expect(global.UrlFetchApp.fetch).toHaveBeenCalledTimes(2)
+    })
+
+    test('commitRulesToGitHub aborts on 409 when timestamps are the same instant but content differs', () => {
+      // Local updatedAt is mocked to 2026-08-08T14:00:00Z; remote uses an equivalent
+      // instant with an explicit +00:00 offset but different content.
+      const remoteRules = {
+        version: '9.9.9',
+        updatedAt: '2026-08-08T14:00:00+00:00',
+      }
+      const base64 = Buffer.from(JSON.stringify(remoteRules)).toString('base64')
+      global.UrlFetchApp = {
+        fetch: jest
+          .fn()
+          .mockImplementationOnce(() => ({
+            getResponseCode: () => 409,
+            getContentText: () => 'Conflict',
+          }))
+          .mockImplementationOnce(() => ({
+            getResponseCode: () => 200,
+            getContentText: () =>
+              JSON.stringify({ content: base64, sha: 'fresh-sha' }),
+          })),
+      }
+      const result = commitRulesToGitHub(
+        { version: '1.0.0' },
+        'msg',
+        'token',
+        'stale-sha'
+      )
+      expect(result).toBe(false)
+      expect(global.UrlFetchApp.fetch).toHaveBeenCalledTimes(2)
+    })
+
+    test('commitRulesToGitHub retries on 409 when timestamps are equal and content is identical', () => {
+      // Remote and local share the same updatedAt and content, so overwriting is safe.
+      const remoteRules = {
+        version: '1.0.0',
+        updatedAt: '2026-08-08T14:00:00Z',
+      }
+      const base64 = Buffer.from(JSON.stringify(remoteRules)).toString('base64')
+      global.UrlFetchApp = {
+        fetch: jest
+          .fn()
+          .mockImplementationOnce(() => ({
+            getResponseCode: () => 409,
+            getContentText: () => 'Conflict',
+          }))
+          .mockImplementationOnce(() => ({
+            getResponseCode: () => 200,
+            getContentText: () =>
+              JSON.stringify({ content: base64, sha: 'fresh-sha' }),
+          }))
+          .mockImplementationOnce(() => ({
+            getResponseCode: () => 201,
+            getContentText: () => '{}',
+          })),
+      }
+      const result = commitRulesToGitHub(
+        { version: '1.0.0' },
+        'msg',
+        'token',
+        'stale-sha'
+      )
+      expect(result).toBe(true)
+      expect(global.UrlFetchApp.fetch).toHaveBeenCalledTimes(3)
+    })
+
+    test('commitRulesToGitHub aborts on 409 when a timestamp is invalid and content differs', () => {
+      const remoteRules = { version: '2.0.0', updatedAt: 'not-a-real-date' }
+      const base64 = Buffer.from(JSON.stringify(remoteRules)).toString('base64')
+      global.UrlFetchApp = {
+        fetch: jest
+          .fn()
+          .mockImplementationOnce(() => ({
+            getResponseCode: () => 409,
+            getContentText: () => 'Conflict',
+          }))
+          .mockImplementationOnce(() => ({
+            getResponseCode: () => 200,
+            getContentText: () =>
+              JSON.stringify({ content: base64, sha: 'fresh-sha' }),
+          })),
+      }
+      const result = commitRulesToGitHub(
+        { version: '1.0.0' },
+        'msg',
+        'token',
+        'stale-sha'
+      )
+      expect(result).toBe(false)
+      expect(global.UrlFetchApp.fetch).toHaveBeenCalledTimes(2)
+    })
+
+    test('rulesContentEquals_ ignores the internal _sha field', () => {
+      expect(
+        rulesContentEquals_(
+          { version: '1.0.0', _sha: 'abc' },
+          { version: '1.0.0', _sha: 'xyz' }
+        )
+      ).toBe(true)
+      expect(
+        rulesContentEquals_({ version: '1.0.0' }, { version: '2.0.0' })
+      ).toBe(false)
+    })
+
+    test('isSafeToOverwriteRemote_ handles valid, equal, and invalid timestamps', () => {
+      // Remote strictly newer by instant -> not safe.
+      expect(
+        isSafeToOverwriteRemote_(
+          { updatedAt: '2026-08-08T15:00:00Z', version: '1.0.0' },
+          { updatedAt: '2026-08-08T14:00:00Z', version: '1.0.0' },
+          '2026-08-08T14:00:00Z'
+        )
+      ).toBe(false)
+      // Remote older by instant -> safe regardless of content.
+      expect(
+        isSafeToOverwriteRemote_(
+          { updatedAt: '2026-08-08T13:00:00Z', version: '9.9.9' },
+          { updatedAt: '2026-08-08T14:00:00Z', version: '1.0.0' },
+          '2026-08-08T14:00:00Z'
+        )
+      ).toBe(true)
+      // Equal instant, identical content -> safe.
+      expect(
+        isSafeToOverwriteRemote_(
+          { updatedAt: '2026-08-08T14:00:00Z', version: '1.0.0' },
+          { updatedAt: '2026-08-08T14:00:00Z', version: '1.0.0' },
+          '2026-08-08T14:00:00Z'
+        )
+      ).toBe(true)
     })
   })
 })
