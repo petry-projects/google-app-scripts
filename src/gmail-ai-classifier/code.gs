@@ -25,6 +25,9 @@ function processEmailsWithAiClassifier() {
   // Debug helper: List available models for this API key
   listAvailableGeminiModels(config)
 
+  // Run periodic maintenance pass (filter audit & label cleanup) if needed
+  runPeriodicMaintenanceIfNeeded_()
+
   var threads = GmailApp.search(config.unprocessedQuery, 0, 10)
   console.log(
     '[processEmailsWithAiClassifier] Found ' +
@@ -952,9 +955,113 @@ function backfillOriginalEmailHeaders() {
 }
 
 /**
+ * Automatically triggers mailbox maintenance (filter deduplication and legacy label cleanup)
+ * once every 6 hours or on the first trigger tick after a new deployment.
+ */
+function runPeriodicMaintenanceIfNeeded_() {
+  try {
+    var props = PropertiesService.getScriptProperties()
+    var lastMaint = props.getProperty('LAST_MAINTENANCE_PASS_TS')
+    var now = new Date().getTime()
+    // Run if never run, or if 6 hours elapsed
+    if (!lastMaint || now - parseInt(lastMaint, 10) > 6 * 60 * 60 * 1000) {
+      console.log(
+        '[runPeriodicMaintenanceIfNeeded_] Executing scheduled mailbox label and filter cleanup...'
+      )
+      auditAndCleanDuplicateFiltersInGmail()
+      cleanupLegacyConflictingLabelsInGmail()
+      props.setProperty('LAST_MAINTENANCE_PASS_TS', String(now))
+    }
+  } catch (e) {
+    console.warn(
+      '[runPeriodicMaintenanceIfNeeded_] Maintenance check error: ' + e.message
+    )
+  }
+}
+
+/**
+ * Audits and removes duplicate or obsolete Gmail filters in the user's account.
+ */
+function auditAndCleanDuplicateFiltersInGmail() {
+  if (
+    typeof Gmail === 'undefined' ||
+    !Gmail.Users ||
+    !Gmail.Users.Settings ||
+    !Gmail.Users.Settings.Filters
+  ) {
+    console.log(
+      '[auditAndCleanDuplicateFiltersInGmail] Advanced Gmail API service not available. Skipped.'
+    )
+    return { total: 0, removed: 0 }
+  }
+
+  try {
+    var filtersRes = Gmail.Users.Settings.Filters.list('me')
+    var filters = filtersRes.filter || []
+    console.log(
+      '[auditAndCleanDuplicateFiltersInGmail] Total active Gmail filters found: ' +
+        filters.length
+    )
+
+    var seenFromRules = {}
+    var removedCount = 0
+
+    for (var i = 0; i < filters.length; i++) {
+      var f = filters[i]
+      var crit = f.criteria || {}
+      var shouldRemove = false
+      var reason = ''
+
+      var fromSender = (crit.from || '').trim().toLowerCase()
+      if (fromSender) {
+        if (seenFromRules[fromSender]) {
+          shouldRemove = true
+          reason = 'Duplicate filter for sender: ' + fromSender
+        } else {
+          seenFromRules[fromSender] = true
+        }
+      }
+
+      if (shouldRemove) {
+        try {
+          Gmail.Users.Settings.Filters.remove('me', f.id)
+          removedCount++
+          console.log(
+            '[auditAndCleanDuplicateFiltersInGmail] Removed filter (' +
+              reason +
+              '): ID ' +
+              f.id
+          )
+        } catch (err) {
+          console.warn(
+            '[auditAndCleanDuplicateFiltersInGmail] Failed to remove filter ' +
+              f.id +
+              ': ' +
+              err.message
+          )
+        }
+      }
+    }
+
+    console.log(
+      '[auditAndCleanDuplicateFiltersInGmail] Filter cleanup complete. Removed ' +
+        removedCount +
+        ' duplicate filters.'
+    )
+    return { total: filters.length, removed: removedCount }
+  } catch (e) {
+    console.error(
+      '[auditAndCleanDuplicateFiltersInGmail] Error auditing filters: ' +
+        e.message
+    )
+    return { total: 0, removed: 0, error: e.message }
+  }
+}
+
+/**
  * Retroactively scans and removes conflicting labels from threads in Gmail.
- * Resolves multi-label collisions like "Family/DJ & Rachel" appearing on project/domain threads,
- * and fixes Honey BeeHam threads that were tagged with "07_Community_NonProfit".
+ * Resolves multi-label collisions, strips parent domain double-tags, deletes Retention/Permanent,
+ * realigns Family/DJ-Rachel, and prunes legacy flat labels.
  */
 function cleanupLegacyConflictingLabelsInGmail() {
   console.log(
@@ -965,6 +1072,28 @@ function cleanupLegacyConflictingLabelsInGmail() {
   var beekeepingLabel = GmailApp.getUserLabelByName('Projects/Beekeeping')
   var honeyBeeHamLabel = ensureUserLabel('Projects/HoneyBeeHam')
   var householdLabel = ensureUserLabel('01_Household')
+  var financeLabel = GmailApp.getUserLabelByName('02_Finance_Legal')
+  var familyHealthLabel = GmailApp.getUserLabelByName('04_Family_Health')
+  var vehiclesLabel = GmailApp.getUserLabelByName('03_Vehicles')
+
+  // Inverted retention: Delete the Retention/Permanent label definition entirely from the account
+  var permRetLabel = GmailApp.getUserLabelByName('Retention/Permanent')
+  if (permRetLabel) {
+    try {
+      GmailApp.deleteLabel(permRetLabel)
+      console.log(
+        '[cleanupLegacyConflictingLabelsInGmail] Successfully deleted user label "Retention/Permanent" from Gmail account.'
+      )
+    } catch (e) {
+      console.warn(
+        '[cleanupLegacyConflictingLabelsInGmail] Could not delete Retention/Permanent label: ' +
+          e.message
+      )
+    }
+  }
+
+  var djRachelDashLabel = GmailApp.getUserLabelByName('Family/DJ-Rachel')
+  var djRachelAmpLabel = ensureUserLabel('Family/DJ & Rachel')
 
   var queries = [
     'label:"Family/DJ & Rachel" label:"07_Community_NonProfit"',
@@ -973,26 +1102,34 @@ function cleanupLegacyConflictingLabelsInGmail() {
     'label:"07_Community_NonProfit" label:"Projects/HoneyBeeHam"',
     'label:"Projects/Beekeeping" label:"Projects/HoneyBeeHam"',
     'from:honey4beeham@gmail.com label:"07_Community_NonProfit"',
-    'label:"Retention/Permanent"',
     'label:"Family/DJ-Rachel"',
+    'label:"02_Finance_Legal" label:"Finance/Purchases"',
+    'label:"02_Finance_Legal" label:"Finance/Banking"',
+    'label:"02_Finance_Legal" label:"Finance/Bills"',
+    'label:"02_Finance_Legal" label:"Finance/Insurance"',
+    'label:"04_Family_Health" label:"Family/School-Toby"',
+    'label:"04_Family_Health" label:"Family/DJ & Rachel"',
+    'label:"01_Household" label:"Projects/HoneyBeeHam"',
+    'label:"01_Household" label:"Household/Travel"',
+    'label:"03_Vehicles" label:"Vehicles/Rental-Cars"',
+    'label:"07_Community_NonProfit" label:"Projects/Beekeeping"',
+    'label:"07_Community_NonProfit" label:"Projects/HOG"',
   ]
-
-  var permRetLabel = GmailApp.getUserLabelByName('Retention/Permanent')
-  var djRachelDashLabel = GmailApp.getUserLabelByName('Family/DJ-Rachel')
-  var djRachelAmpLabel = ensureUserLabel('Family/DJ & Rachel')
 
   var cleanedCount = 0
 
   for (var q = 0; q < queries.length; q++) {
     var queryStr = queries[q]
     var threads = GmailApp.search(queryStr, 0, 50)
-    console.log(
-      '[cleanupLegacyConflictingLabelsInGmail] Query "' +
-        queryStr +
-        '": found ' +
-        threads.length +
-        ' thread(s)'
-    )
+    if (threads.length > 0) {
+      console.log(
+        '[cleanupLegacyConflictingLabelsInGmail] Query "' +
+          queryStr +
+          '": found ' +
+          threads.length +
+          ' thread(s)'
+      )
+    }
 
     for (var i = 0; i < threads.length; i++) {
       var thread = threads[i]
@@ -1000,21 +1137,23 @@ function cleanupLegacyConflictingLabelsInGmail() {
       var messages = thread.getMessages()
       var from = messages.length > 0 ? messages[0].getFrom() || '' : ''
 
-      if (queryStr === 'label:"Retention/Permanent"') {
-        if (permRetLabel) {
-          thread.removeLabel(permRetLabel)
-          console.log(
-            '[cleanupLegacyConflictingLabelsInGmail] Stripped Retention/Permanent: ' +
-              subject
-          )
-        }
-      } else if (queryStr === 'label:"Family/DJ-Rachel"') {
+      if (queryStr === 'label:"Family/DJ-Rachel"') {
         if (djRachelDashLabel) thread.removeLabel(djRachelDashLabel)
         thread.addLabel(djRachelAmpLabel)
         console.log(
           '[cleanupLegacyConflictingLabelsInGmail] Realigned Family/DJ-Rachel -> Family/DJ & Rachel: ' +
             subject
         )
+      } else if (queryStr.indexOf('label:"02_Finance_Legal"') === 0) {
+        if (financeLabel) thread.removeLabel(financeLabel)
+      } else if (queryStr.indexOf('label:"04_Family_Health"') === 0) {
+        if (familyHealthLabel) thread.removeLabel(familyHealthLabel)
+      } else if (queryStr.indexOf('label:"01_Household"') === 0) {
+        if (householdLabel) thread.removeLabel(householdLabel)
+      } else if (queryStr.indexOf('label:"03_Vehicles"') === 0) {
+        if (vehiclesLabel) thread.removeLabel(vehiclesLabel)
+      } else if (queryStr.indexOf('label:"07_Community_NonProfit"') === 0) {
+        if (nonProfitLabel) thread.removeLabel(nonProfitLabel)
       } else {
         var isHoneyBeeHam =
           /honey|beeham|candle|beeswax|made market|pepper place|coffee fest|thecarycompany/i.test(
@@ -1064,13 +1203,15 @@ function cleanupLegacyConflictingLabelsInGmail() {
         fThreads[ft].removeLabel(fLabel)
         cleanedCount++
       }
-      console.log(
-        '[cleanupLegacyConflictingLabelsInGmail] Stripped flat label "' +
-          flatLabels[fl] +
-          '" from ' +
-          fThreads.length +
-          ' thread(s).'
-      )
+      if (fThreads.length > 0) {
+        console.log(
+          '[cleanupLegacyConflictingLabelsInGmail] Stripped flat label "' +
+            flatLabels[fl] +
+            '" from ' +
+            fThreads.length +
+            ' thread(s).'
+        )
+      }
     }
   }
 
@@ -1096,5 +1237,7 @@ if (typeof module !== 'undefined' && module.exports) {
     cleanConflictingLabels: cleanConflictingLabels,
     cleanupLegacyConflictingLabelsInGmail:
       cleanupLegacyConflictingLabelsInGmail,
+    auditAndCleanDuplicateFiltersInGmail: auditAndCleanDuplicateFiltersInGmail,
+    runPeriodicMaintenanceIfNeeded_: runPeriodicMaintenanceIfNeeded_,
   }
 }
