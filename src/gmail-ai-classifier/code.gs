@@ -961,15 +961,41 @@ function backfillOriginalEmailHeaders() {
 function runPeriodicMaintenanceIfNeeded_() {
   try {
     var props = PropertiesService.getScriptProperties()
+    var backlogComplete =
+      props.getProperty('BACKLOG_CLEANUP_COMPLETE') === 'true'
     var lastMaint = props.getProperty('LAST_MAINTENANCE_PASS_TS')
     var now = new Date().getTime()
-    // Run if never run, or if 6 hours elapsed
-    if (!lastMaint || now - parseInt(lastMaint, 10) > 6 * 60 * 60 * 1000) {
+    var sixHoursElapsed =
+      !lastMaint || now - parseInt(lastMaint, 10) > 6 * 60 * 60 * 1000
+
+    // If backlog is not complete, sweep on every 5-minute cycle until 0 matching threads remain!
+    // Once backlog is complete, only run maintenance check every 6 hours.
+    var shouldRunCleanup = !backlogComplete || sixHoursElapsed
+
+    if (shouldRunCleanup) {
+      if (sixHoursElapsed) {
+        auditAndCleanDuplicateFiltersInGmail()
+      }
+
       console.log(
-        '[runPeriodicMaintenanceIfNeeded_] Executing scheduled mailbox label and filter cleanup...'
+        '[runPeriodicMaintenanceIfNeeded_] Executing mailbox label cleanup sweep (backlogComplete=' +
+          backlogComplete +
+          ')...'
       )
-      auditAndCleanDuplicateFiltersInGmail()
-      cleanupLegacyConflictingLabelsInGmail()
+      var cleanedCount = cleanupLegacyConflictingLabelsInGmail()
+      if (cleanedCount === 0) {
+        props.setProperty('BACKLOG_CLEANUP_COMPLETE', 'true')
+        console.log(
+          '[runPeriodicMaintenanceIfNeeded_] Mailbox backlog cleanup completed! 0 conflicting threads found.'
+        )
+      } else {
+        props.setProperty('BACKLOG_CLEANUP_COMPLETE', 'false')
+        console.log(
+          '[runPeriodicMaintenanceIfNeeded_] Backlog still active: cleaned ' +
+            cleanedCount +
+            ' threads this cycle. Will continue sweeping on next trigger.'
+        )
+      }
       props.setProperty('LAST_MAINTENANCE_PASS_TS', String(now))
     }
   } catch (e) {
@@ -1219,6 +1245,7 @@ function cleanupLegacyConflictingLabelsInGmail() {
     '[cleanupLegacyConflictingLabelsInGmail] Completed cleanup. Total threads updated: ' +
       cleanedCount
   )
+  return cleanedCount
 }
 
 if (typeof module !== 'undefined' && module.exports) {
