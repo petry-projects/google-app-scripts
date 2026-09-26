@@ -3,7 +3,7 @@
  * Runs natively inside Google Apps Script (V8 runtime).
  */
 
-var GMAIL_AI_CLASSIFIER_VERSION = 'v1.6.0-gmail-strict-single-label'
+var GMAIL_AI_CLASSIFIER_VERSION = 'v1.7.0-strict-single-label-no-autofilters'
 
 function processEmailsWithAiClassifier() {
   console.log(
@@ -58,7 +58,7 @@ function processEmailsWithAiClassifier() {
 
     var classification = classifyWithGemini(sender, subject, snippet, config)
     if (classification) {
-      // Clean up any pre-existing conflicting core domain labels
+      // Clean up any pre-existing conflicting core domain labels, sub-labels, flat labels, and Retention/Permanent
       cleanConflictingLabels(
         thread,
         classification.canonicalDomain,
@@ -66,30 +66,18 @@ function processEmailsWithAiClassifier() {
         config
       )
 
-      // 1. Single Domain & Single Sub-Label Tagging
-      if (classification.canonicalDomain) {
-        var targetLabel = ensureUserLabel(classification.canonicalDomain)
+      // 1. Single Primary Label Tagging (Sub-label preferred; canonicalDomain if no sub-label)
+      var primaryTag = classification.subLabel || classification.canonicalDomain
+      if (primaryTag) {
+        var targetLabel = ensureUserLabel(primaryTag)
         thread.addLabel(targetLabel)
         console.log(
-          '[processEmailsWithAiClassifier] Tagged thread with domain label: ' +
-            classification.canonicalDomain
+          '[processEmailsWithAiClassifier] Tagged thread with single primary label: ' +
+            primaryTag
         )
 
-        if (classification.subLabel) {
-          var subLabelObj = ensureUserLabel(classification.subLabel)
-          thread.addLabel(subLabelObj)
-          console.log(
-            '[processEmailsWithAiClassifier] Tagged thread with single sub-label: ' +
-              classification.subLabel
-          )
-        }
-
-        // Auto-Create Filter Rule if Confidence >= 0.95
-        if (classification.confidence >= config.autoFilterConfidenceThreshold) {
-          var ruleLabel =
-            classification.subLabel || classification.canonicalDomain
-          createGmailFilterRule(sender, ruleLabel)
-        }
+        // Note: Permanent Gmail filter auto-creation is deactivated to prevent
+        // filter duplication, cumulative rule firing, and multi-label collisions.
 
         // Sync Progressive Disclosure Summary to GitHub
         if (config.githubToken) {
@@ -168,39 +156,106 @@ function processEmailsWithAiClassifier() {
 }
 
 /**
- * Removes any pre-existing conflicting Core Domain labels or Sub-Labels to enforce strict 2-level hierarchy.
+ * Removes any pre-existing conflicting Core Domain labels, Sub-Labels, legacy flat labels,
+ * and redundant 'Retention/Permanent' tags to enforce a strict, clean label budget.
  */
 function cleanConflictingLabels(thread, targetDomain, targetSubLabel, config) {
   try {
     var existingLabels = thread.getLabels()
-    var canonicalDomains = config.canonicalDomains
+    var canonicalDomains = config.canonicalDomains || []
+
+    var legacyFlatLabels = [
+      'Finance',
+      'Household',
+      'Family',
+      'Projects',
+      'Work',
+      'Community',
+      'Tech',
+      'Purchases',
+      'Banking',
+      'Bills',
+      'eBills',
+      'Insurance',
+      'iDCFS',
+      'Naomi',
+      'Sent',
+      'Archives',
+    ]
 
     for (var j = 0; j < existingLabels.length; j++) {
-      var lName = existingLabels[j].getName()
+      var lObj = existingLabels[j]
+      var lName = lObj.getName()
 
-      // Check if label is a Core Domain label that doesn't match targetDomain
-      for (var d = 0; d < canonicalDomains.length; d++) {
-        var cd = canonicalDomains[d]
-        if (lName === cd && cd !== targetDomain) {
-          thread.removeLabel(existingLabels[j])
+      // 1. Strip redundant Retention/Permanent (Inverted Model: blank = permanent)
+      if (lName === 'Retention/Permanent') {
+        thread.removeLabel(lObj)
+        console.log(
+          '[cleanConflictingLabels] Stripped Retention/Permanent: ' + lName
+        )
+        continue
+      }
+
+      // 2. Protect valid short-lived retention expiration tags
+      if (lName.indexOf('Retention/') === 0) {
+        continue
+      }
+
+      // 3. Protect global status and system labels
+      if (lName === (config.processedLabel || 'Processed')) {
+        continue
+      }
+
+      // 4. Clean legacy flat labels
+      for (var f = 0; f < legacyFlatLabels.length; f++) {
+        if (lName.toLowerCase() === legacyFlatLabels[f].toLowerCase()) {
+          thread.removeLabel(lObj)
           console.log(
-            '[cleanConflictingLabels] Removed conflicting domain label: ' +
-              lName
+            '[cleanConflictingLabels] Stripped legacy flat label: ' + lName
           )
           break
         }
       }
 
-      // Remove conflicting sub-labels if they don't match targetSubLabel
+      // 5. Clean conflicting or redundant Core Domain labels
+      for (var d = 0; d < canonicalDomains.length; d++) {
+        var cd = canonicalDomains[d]
+        // If thread has a sub-label, strip core domain codes (e.g. 01_Household) to avoid double-tagging
+        if (lName === cd && (targetSubLabel || cd !== targetDomain)) {
+          thread.removeLabel(lObj)
+          console.log(
+            '[cleanConflictingLabels] Removed domain code label: ' + lName
+          )
+          break
+        }
+      }
+
+      // 6. Clean conflicting sub-labels if they don't match targetSubLabel
       if (
         lName.indexOf('/') !== -1 &&
         lName !== targetSubLabel &&
-        lName.indexOf('Archives') === -1
+        lName.indexOf('Archives') === -1 &&
+        lName.indexOf('Retention/') === -1
       ) {
-        thread.removeLabel(existingLabels[j])
-        console.log(
-          '[cleanConflictingLabels] Removed conflicting sub-label: ' + lName
-        )
+        // Also handle the Family/DJ-Rachel vs Family/DJ & Rachel alias
+        if (
+          (targetSubLabel === 'Family/DJ & Rachel' &&
+            lName === 'Family/DJ-Rachel') ||
+          (targetSubLabel === 'Family/DJ-Rachel' &&
+            lName === 'Family/DJ & Rachel')
+        ) {
+          if (lName !== targetSubLabel) {
+            thread.removeLabel(lObj)
+            console.log(
+              '[cleanConflictingLabels] Cleaned alternate alias label: ' + lName
+            )
+          }
+        } else {
+          thread.removeLabel(lObj)
+          console.log(
+            '[cleanConflictingLabels] Removed conflicting sub-label: ' + lName
+          )
+        }
       }
     }
   } catch (e) {
@@ -395,7 +450,7 @@ function classifyWithGemini(sender, subject, snippet, config) {
     'STRICT CLASSIFICATION RULES:\n' +
     "1. MEDIA & PLATFORM NEWSLETTERS (Medium, NYT, Substack, Epoch Times, LinkedIn digests, event/news blasts): Treat strictly as Promotional / Newsletter and return null for canonicalDomain. Do NOT classify under '06_Work_Career' or '04_Family_Health'. Set category to 'Promotions' or 'Social', action to 'keep'.\n" +
     "2. UTILITY & TECH BILLS (AT&T, Google Cloud, Electric, Water): Classify under '02_Finance_Legal' (sub-label 'Finance/Banking') or '05_Tech_Infrastructure' (sub-label 'Tech/Alerts-Monitoring'). Set category to 'Updates', action to 'keep'.\n" +
-    "3. MARRIAGE & ADULT FAMILY (WinShape, Marriage retreats, DJ & Rachel personal correspondence): Classify under '04_Family_Health' (sub-label 'Family/DJ-Rachel'). Set category to 'Primary', action to 'keep'. Note: If an email is about Rachel's business/hobby Honey BeeHam or candle making, do NOT label as Family/DJ-Rachel; classify under '01_Household' (sub-label 'Projects/HoneyBeeHam').\n" +
+    "3. MARRIAGE & ADULT FAMILY (WinShape, Marriage retreats, DJ & Rachel personal correspondence): Classify under '04_Family_Health' (sub-label 'Family/DJ & Rachel'). Set category to 'Primary', action to 'keep'. Note: If an email is about Rachel's business/hobby Honey BeeHam or candle making, do NOT label as Family/DJ & Rachel; classify under '01_Household' (sub-label 'Projects/HoneyBeeHam').\n" +
     "4. NON-PROFIT CHARITY & BEEKEEPING ASSOCIATION (Helping One Guy / HOG 501(c)(3) charity records, Jefferson County Beekeepers Association Board of Directors / JeffCo Bees BOD official non-profit communications, Faith outreach, and MyBroodMinder hive telemetry alerts): Classify strictly under '07_Community_NonProfit' (sub-labels 'Projects/HOG', 'Community/JeffCo-Bees-BOD', or 'Projects/Beekeeping'). Set category to 'Updates', action to 'keep'. Do NOT classify commercial Honey BeeHam vendor, candle craft, jar packaging, or honey sales here.\n" +
     "5. HEALTH NEWSLETTERS & MEDICAL BULLETINS (WebMD, Epoch Health, drug recall news digests): Treat as Newsletter and return null for canonicalDomain. Reserve '04_Family_Health' strictly for personal family medical records, doctor visits, patient portals, and school/kids health notes.\n" +
     "6. E-COMMERCE PROMOTIONS & SOCIAL DIGESTS (Lowes, Nextdoor, American Meadows, Hydrobuilder, OpenAI pricing promos): Return null for canonicalDomain. Set category to 'Promotions' or 'Social'.\n" +
@@ -574,30 +629,11 @@ function ensureUserLabel(labelName) {
 }
 
 function createGmailFilterRule(senderEmail, targetLabelName) {
-  if (typeof Gmail === 'undefined' || !Gmail.Users || !Gmail.Users.Settings) {
-    console.log(
-      '[createGmailFilterRule] Advanced Gmail API service not enabled in script. Skipping filter creation.'
-    )
-    return
-  }
-
-  try {
-    var targetLabel = ensureUserLabel(targetLabelName)
-    var filter = {
-      criteria: { from: senderEmail },
-      action: { addLabelIds: [targetLabel.getId()] },
-    }
-    Gmail.Users.Settings.Filters.create(filter, 'me')
-    console.log(
-      '[createGmailFilterRule] Created permanent Gmail filter rule for sender: ' +
-        senderEmail
-    )
-  } catch (e) {
-    console.warn(
-      '[createGmailFilterRule] Filter rule creation skipped/failed:',
-      e.message
-    )
-  }
+  // Decommissioned: Static filter auto-creation causes multi-label collisions,
+  // filter bloat, and duplicate rules across multi-purpose senders.
+  console.log(
+    '[createGmailFilterRule] Permanent filter auto-creation is permanently decommissioned. No-op.'
+  )
 }
 
 function getNotePathForDomain(domain, subLabel) {
@@ -937,7 +973,13 @@ function cleanupLegacyConflictingLabelsInGmail() {
     'label:"07_Community_NonProfit" label:"Projects/HoneyBeeHam"',
     'label:"Projects/Beekeeping" label:"Projects/HoneyBeeHam"',
     'from:honey4beeham@gmail.com label:"07_Community_NonProfit"',
+    'label:"Retention/Permanent"',
+    'label:"Family/DJ-Rachel"',
   ]
+
+  var permRetLabel = GmailApp.getUserLabelByName('Retention/Permanent')
+  var djRachelDashLabel = GmailApp.getUserLabelByName('Family/DJ-Rachel')
+  var djRachelAmpLabel = ensureUserLabel('Family/DJ & Rachel')
 
   var cleanedCount = 0
 
@@ -957,29 +999,78 @@ function cleanupLegacyConflictingLabelsInGmail() {
       var subject = thread.getFirstMessageSubject() || ''
       var messages = thread.getMessages()
       var from = messages.length > 0 ? messages[0].getFrom() || '' : ''
-      var isHoneyBeeHam =
-        /honey|beeham|candle|beeswax|made market|pepper place|coffee fest|thecarycompany/i.test(
-          subject + ' ' + from
-        )
 
-      if (isHoneyBeeHam) {
-        if (djRachelLabel) thread.removeLabel(djRachelLabel)
-        if (nonProfitLabel) thread.removeLabel(nonProfitLabel)
-        if (beekeepingLabel) thread.removeLabel(beekeepingLabel)
-        thread.addLabel(householdLabel)
-        thread.addLabel(honeyBeeHamLabel)
+      if (queryStr === 'label:"Retention/Permanent"') {
+        if (permRetLabel) {
+          thread.removeLabel(permRetLabel)
+          console.log(
+            '[cleanupLegacyConflictingLabelsInGmail] Stripped Retention/Permanent: ' +
+              subject
+          )
+        }
+      } else if (queryStr === 'label:"Family/DJ-Rachel"') {
+        if (djRachelDashLabel) thread.removeLabel(djRachelDashLabel)
+        thread.addLabel(djRachelAmpLabel)
         console.log(
-          '[cleanupLegacyConflictingLabelsInGmail] Realigned HoneyBeeHam thread: ' +
+          '[cleanupLegacyConflictingLabelsInGmail] Realigned Family/DJ-Rachel -> Family/DJ & Rachel: ' +
             subject
         )
       } else {
-        if (djRachelLabel) thread.removeLabel(djRachelLabel)
-        console.log(
-          '[cleanupLegacyConflictingLabelsInGmail] Stripped redundant Family/DJ & Rachel: ' +
-            subject
-        )
+        var isHoneyBeeHam =
+          /honey|beeham|candle|beeswax|made market|pepper place|coffee fest|thecarycompany/i.test(
+            subject + ' ' + from
+          )
+
+        if (isHoneyBeeHam) {
+          if (djRachelLabel) thread.removeLabel(djRachelLabel)
+          if (nonProfitLabel) thread.removeLabel(nonProfitLabel)
+          if (beekeepingLabel) thread.removeLabel(beekeepingLabel)
+          thread.addLabel(householdLabel)
+          thread.addLabel(honeyBeeHamLabel)
+          console.log(
+            '[cleanupLegacyConflictingLabelsInGmail] Realigned HoneyBeeHam thread: ' +
+              subject
+          )
+        } else {
+          if (djRachelLabel) thread.removeLabel(djRachelLabel)
+          console.log(
+            '[cleanupLegacyConflictingLabelsInGmail] Stripped redundant Family/DJ & Rachel: ' +
+              subject
+          )
+        }
       }
       cleanedCount++
+    }
+  }
+
+  // Final pass: Clean any legacy flat labels from recently active threads
+  var flatLabels = [
+    'Finance',
+    'Household',
+    'Family',
+    'Projects',
+    'Work',
+    'Purchases',
+    'Banking',
+    'Bills',
+    'eBills',
+    'Insurance',
+  ]
+  for (var fl = 0; fl < flatLabels.length; fl++) {
+    var fLabel = GmailApp.getUserLabelByName(flatLabels[fl])
+    if (fLabel) {
+      var fThreads = GmailApp.search('label:"' + flatLabels[fl] + '"', 0, 50)
+      for (var ft = 0; ft < fThreads.length; ft++) {
+        fThreads[ft].removeLabel(fLabel)
+        cleanedCount++
+      }
+      console.log(
+        '[cleanupLegacyConflictingLabelsInGmail] Stripped flat label "' +
+          flatLabels[fl] +
+          '" from ' +
+          fThreads.length +
+          ' thread(s).'
+      )
     }
   }
 
