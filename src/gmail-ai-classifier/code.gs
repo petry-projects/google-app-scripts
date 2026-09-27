@@ -1,11 +1,15 @@
-/* istanbul ignore file */
-/* sonar.javascript.skipCoverage */
 /**
  * Main entry point for Gemini AI-Powered Semantic Email Classification and Auto-Filter Engine.
  * Runs natively inside Google Apps Script (V8 runtime).
- * NOSONAR — GAS runtime entry point, not testable in Node.js environment
  */
+
+var GMAIL_AI_CLASSIFIER_VERSION = 'v1.7.0-strict-single-label-no-autofilters'
+
 function processEmailsWithAiClassifier() {
+  console.log(
+    '[processEmailsWithAiClassifier] Engine Version: ' +
+      GMAIL_AI_CLASSIFIER_VERSION
+  )
   console.log(
     '[processEmailsWithAiClassifier] Starting AI semantic email processing...'
   )
@@ -54,34 +58,33 @@ function processEmailsWithAiClassifier() {
 
     var classification = classifyWithGemini(sender, subject, snippet, config)
     if (classification) {
-      // 1. Domain & Sub-Label Tagging
-      if (classification.canonicalDomain) {
-        var targetLabel = ensureUserLabel(classification.canonicalDomain)
+      // Clean up any pre-existing conflicting core domain labels, sub-labels, flat labels, and Retention/Permanent
+      cleanConflictingLabels(
+        thread,
+        classification.canonicalDomain,
+        classification.subLabel,
+        config
+      )
+
+      // 1. Single Primary Label Tagging (Sub-label preferred; canonicalDomain if no sub-label)
+      var primaryTag = classification.subLabel || classification.canonicalDomain
+      if (primaryTag) {
+        var targetLabel = ensureUserLabel(primaryTag)
         thread.addLabel(targetLabel)
         console.log(
-          '[processEmailsWithAiClassifier] Tagged thread with domain label: ' +
-            classification.canonicalDomain
+          '[processEmailsWithAiClassifier] Tagged thread with single primary label: ' +
+            primaryTag
         )
 
-        if (classification.subLabel) {
-          var subLabelObj = ensureUserLabel(classification.subLabel)
-          thread.addLabel(subLabelObj)
-          console.log(
-            '[processEmailsWithAiClassifier] Tagged thread with sub-label: ' +
-              classification.subLabel
-          )
-        }
-
-        // Auto-Create Filter Rule if Confidence >= 0.95
-        if (classification.confidence >= config.autoFilterConfidenceThreshold) {
-          var ruleLabel =
-            classification.subLabel || classification.canonicalDomain
-          createGmailFilterRule(sender, ruleLabel)
-        }
+        // Note: Permanent Gmail filter auto-creation is deactivated to prevent
+        // filter duplication, cumulative rule firing, and multi-label collisions.
 
         // Sync Progressive Disclosure Summary to GitHub
         if (config.githubToken) {
-          var notePath = getNotePathForDomain(classification.canonicalDomain)
+          var notePath = getNotePathForDomain(
+            classification.canonicalDomain,
+            classification.subLabel
+          )
           if (notePath) {
             var dateStr = Utilities.formatDate(
               firstMessage.getDate(),
@@ -96,6 +99,11 @@ function processEmailsWithAiClassifier() {
               classification.summary,
               config.userAccountEmail
             )
+            assertNoAsciiReplacement_(
+              (subject || '') + (classification.summary || ''),
+              entryMd
+            )
+            assertClean_(entryMd, 'new entry for ' + notePath)
             appendMarkdownEntryToGitHubRepo(
               notePath,
               entryMd,
@@ -106,15 +114,26 @@ function processEmailsWithAiClassifier() {
       }
 
       // 2. Action Handling (Trash, Archive, Mark Read)
-      if (classification.action === 'trash') {
-        thread.moveToTrash()
+      // Safety Shield: Never trash or archive threads sent/replied by the user!
+      var userSent = isThreadSentOrRepliedByUser(
+        thread,
+        config.userAccountEmail
+      )
+      if (!userSent) {
+        if (classification.action === 'trash') {
+          thread.moveToTrash()
+          console.log(
+            '[processEmailsWithAiClassifier] Action: Moved spam/unwanted thread to TRASH.'
+          )
+        } else if (classification.action === 'archive') {
+          thread.moveToArchive()
+          console.log(
+            '[processEmailsWithAiClassifier] Action: Archived thread out of INBOX.'
+          )
+        }
+      } else {
         console.log(
-          '[processEmailsWithAiClassifier] Action: Moved spam/unwanted thread to TRASH.'
-        )
-      } else if (classification.action === 'archive') {
-        thread.moveToArchive()
-        console.log(
-          '[processEmailsWithAiClassifier] Action: Archived thread out of INBOX.'
+          '[processEmailsWithAiClassifier] Shield: Preserved thread in INBOX because user sent/replied to it.'
         )
       }
 
@@ -123,6 +142,15 @@ function processEmailsWithAiClassifier() {
         console.log(
           '[processEmailsWithAiClassifier] Action: Marked thread as READ.'
         )
+      }
+
+      // 3. Category Tab Shifting (Path B: Push to Updates/Promotions/Social/Primary)
+      if (
+        classification.category &&
+        classification.action !== 'archive' &&
+        classification.action !== 'trash'
+      ) {
+        setGmailCategoryTab(thread, classification.category)
       }
     }
 
@@ -137,6 +165,217 @@ function processEmailsWithAiClassifier() {
 }
 
 /**
+ * Removes any pre-existing conflicting Core Domain labels, Sub-Labels, legacy flat labels,
+ * and redundant 'Retention/Permanent' tags to enforce a strict, clean label budget.
+ */
+function cleanConflictingLabels(thread, targetDomain, targetSubLabel, config) {
+  try {
+    var existingLabels = thread.getLabels()
+    var canonicalDomains = config.canonicalDomains || []
+
+    var legacyFlatLabels = [
+      'Finance',
+      'Household',
+      'Family',
+      'Projects',
+      'Work',
+      'Community',
+      'Tech',
+      'Purchases',
+      'Banking',
+      'Bills',
+      'eBills',
+      'Insurance',
+      'Sent',
+      'Archives',
+    ]
+
+    for (var j = 0; j < existingLabels.length; j++) {
+      var lObj = existingLabels[j]
+      var lName = lObj.getName()
+
+      // 1. Strip redundant Retention/Permanent (Inverted Model: blank = permanent)
+      if (lName === 'Retention/Permanent') {
+        thread.removeLabel(lObj)
+        console.log(
+          '[cleanConflictingLabels] Stripped Retention/Permanent: ' + lName
+        )
+        continue
+      }
+
+      // 2. Protect valid short-lived retention expiration tags
+      if (lName.indexOf('Retention/') === 0) {
+        continue
+      }
+
+      // 3. Protect global status and system labels
+      if (lName === (config.processedLabel || 'Processed')) {
+        continue
+      }
+
+      // 4. Clean legacy flat labels
+      for (var f = 0; f < legacyFlatLabels.length; f++) {
+        if (lName.toLowerCase() === legacyFlatLabels[f].toLowerCase()) {
+          thread.removeLabel(lObj)
+          console.log(
+            '[cleanConflictingLabels] Stripped legacy flat label: ' + lName
+          )
+          break
+        }
+      }
+
+      // 5. Clean conflicting or redundant Core Domain labels
+      for (var d = 0; d < canonicalDomains.length; d++) {
+        var cd = canonicalDomains[d]
+        // If thread has a sub-label, strip core domain codes (e.g. 01_Household) to avoid double-tagging
+        if (lName === cd && (targetSubLabel || cd !== targetDomain)) {
+          thread.removeLabel(lObj)
+          console.log(
+            '[cleanConflictingLabels] Removed domain code label: ' + lName
+          )
+          break
+        }
+      }
+
+      // 6. Clean conflicting sub-labels if they don't match targetSubLabel
+      if (
+        lName.indexOf('/') !== -1 &&
+        lName !== targetSubLabel &&
+        lName.indexOf('Archives') === -1 &&
+        lName.indexOf('Retention/') === -1
+      ) {
+        thread.removeLabel(lObj)
+        console.log(
+          '[cleanConflictingLabels] Removed conflicting sub-label: ' + lName
+        )
+      }
+    }
+  } catch (e) {
+    console.warn('[cleanConflictingLabels] Error cleaning labels: ' + e.message)
+  }
+}
+
+/**
+ * Automatically purges emails older than their category retention policy (2 years for Promotions/Social/Forums).
+ * Core household domains (01_Household - 07_Community_NonProfit), Primary, Updates, Starred, and User Replied/Sent threads are 100% EXEMPT.
+ */
+function purgeExpiredEmailsByRetentionPolicy() {
+  console.log(
+    '[purgeExpiredEmailsByRetentionPolicy] Starting weekly category retention cleanup...'
+  )
+  var config = getAiClassifierConfig()
+
+  // Explicitly exclude threads sent by user or containing user replies
+  var retentionQuery =
+    '(category:promotions OR category:social OR category:forums) older_than:2y -is:starred -from:me'
+
+  var threads = GmailApp.search(retentionQuery, 0, 50)
+  console.log(
+    '[purgeExpiredEmailsByRetentionPolicy] Found ' +
+      threads.length +
+      ' expired thread(s) matching 2-year retention query.'
+  )
+
+  if (threads.length === 0) {
+    return
+  }
+
+  var coreDomainLabels = config.canonicalDomains
+  var trashedCount = 0
+
+  for (var i = 0; i < threads.length; i++) {
+    var thread = threads[i]
+    var labels = thread.getLabels()
+    var isExempt = false
+
+    // Safety Shield 1: Check if thread contains any Core Household Domain label
+    for (var l = 0; l < labels.length; l++) {
+      var labelName = labels[l].getName()
+      for (var cd = 0; cd < coreDomainLabels.length; cd++) {
+        if (labelName.indexOf(coreDomainLabels[cd]) !== -1) {
+          isExempt = true
+          break
+        }
+      }
+      if (isExempt) break
+    }
+
+    // Safety Shield 2: Check if user sent a message or replied in this thread
+    if (!isExempt) {
+      if (isThreadSentOrRepliedByUser(thread, config.userAccountEmail)) {
+        isExempt = true
+      }
+    }
+
+    if (!isExempt) {
+      thread.moveToTrash()
+      trashedCount++
+    } else {
+      console.log(
+        '[purgeExpiredEmailsByRetentionPolicy] Exempted thread from trash (contains core domain label or user reply): ' +
+          thread.getFirstMessageSubject()
+      )
+    }
+  }
+
+  console.log(
+    '[purgeExpiredEmailsByRetentionPolicy] Retention cleanup complete. Moved ' +
+      trashedCount +
+      ' expired thread(s) to Trash.'
+  )
+}
+
+/**
+ * Checks if a thread contains any messages sent or replied by the account owner.
+ */
+function isThreadSentOrRepliedByUser(thread, userEmail) {
+  try {
+    var messages = thread.getMessages()
+    var primaryEmail = (
+      userEmail ||
+      Session.getEffectiveUser().getEmail() ||
+      ''
+    ).toLowerCase()
+    for (var m = 0; m < messages.length; m++) {
+      var fromAddr = messages[m].getFrom().toLowerCase()
+      if (primaryEmail && fromAddr.indexOf(primaryEmail) !== -1) {
+        return true
+      }
+    }
+  } catch (e) {
+    console.warn(
+      '[isThreadSentOrRepliedByUser] Error checking message senders:',
+      e.message
+    )
+  }
+  return false
+}
+
+/**
+ * Sets up a weekly cloud trigger to run purgeExpiredEmailsByRetentionPolicy every Sunday at 1:00 AM.
+ */
+function setupWeeklyRetentionTrigger() {
+  var triggers = ScriptApp.getProjectTriggers()
+  for (var i = 0; i < triggers.length; i++) {
+    if (
+      triggers[i].getHandlerFunction() === 'purgeExpiredEmailsByRetentionPolicy'
+    ) {
+      ScriptApp.deleteTrigger(triggers[i])
+    }
+  }
+
+  ScriptApp.newTrigger('purgeExpiredEmailsByRetentionPolicy')
+    .timeBased()
+    .onWeekDay(ScriptApp.WeekDay.SUNDAY)
+    .atHour(1)
+    .create()
+
+  console.log(
+    '[setupWeeklyRetentionTrigger] Established weekly Sunday 1:00 AM retention cleanup trigger.'
+  )
+}
+
+/**
  * Creates an automatic Cloud Trigger that runs email classification every 5 minutes 24/7.
  */
 function setupFiveMinuteTrigger() {
@@ -145,8 +384,9 @@ function setupFiveMinuteTrigger() {
     .timeBased()
     .everyMinutes(5)
     .create()
+  setupWeeklyRetentionTrigger()
   console.log(
-    '[setupFiveMinuteTrigger] Successfully established 5-minute recurring cloud trigger.'
+    '[setupFiveMinuteTrigger] Successfully established 5-minute recurring cloud trigger and weekly retention trigger.'
   )
 }
 
@@ -200,17 +440,30 @@ function classifyWithGemini(sender, subject, snippet, config) {
     JSON.stringify(config.canonicalDomains) +
     '.\n\n' +
     'STRICT CLASSIFICATION RULES:\n' +
-    "1. MEDIA & PLATFORM NEWSLETTERS (Medium, NYT, Substack, Epoch Times, LinkedIn digests, event/news blasts): Treat strictly as Promotional / Newsletter and return null for canonicalDomain. Do NOT classify under '06_Work_Career' or '04_Family_Health_School'. Set category to 'Promotions' or 'Social', action to 'keep'.\n" +
-    "2. UTILITY & TECH BILLS (AT&T, Google Cloud, Electric, Water): Classify under '02_Finance_Legal' (sub-label 'Finance/Banking') or '05_Tech_Infrastructure' (sub-label 'Tech/Alerts-Monitoring'). Set category to 'Updates', action to 'keep'.\n" +
-    "3. MARRIAGE & ADULT FAMILY (WinShape, Marriage retreats, Spouse & Primary personal): Classify under '04_Family_Health_School' (sub-label 'Family/Spouse-Primary'). Set category to 'Primary', action to 'keep'.\n" +
-    "4. BEEKEEPING & MYBROODMINDER ALERTS (MyBroodMinder, Hive telemetry alerts, BOD): Classify under '07_Community_NonProfit' (sub-label 'Projects/Beekeeping'). Set category to 'Updates', action to 'keep'.\n" +
-    "5. HEALTH NEWSLETTERS & MEDICAL BULLETINS (WebMD, Epoch Health, drug recall news digests): Treat as Newsletter and return null for canonicalDomain. Reserve '04_Family_Health_School' strictly for personal family medical records, doctor visits, patient portals, and school/kids health notes.\n" +
-    "6. E-COMMERCE PROMOTIONS & SOCIAL DIGESTS (Lowes, Nextdoor, American Meadows, Hydrobuilder): Return null for canonicalDomain. Set category to 'Promotions' or 'Social'.\n" +
-    "7. SCHOOL PORTALS & PARENTSQUARE (ParentSquare, Magic City Acceptance Academy, MCAA, school shuttle notifications, school attendance): Classify under '04_Family_Health_School' (sub-label 'Family/School-Child'). Set category to 'Updates' or 'Primary', action to 'keep'.\n" +
-    "8. TECH WEBINARS & PRODUCT MARKETING (Google Cloud webinars, 'Register Now', product marketing, tech promos): Treat as Promotional / Marketing and return null for canonicalDomain. Reserve '05_Tech_Infrastructure' strictly for active system alerts, security warnings, spend cap notifications, and project quota/outage alerts.\n" +
-    "9. HOBBY & STORE MARKETING (Lorob Bees, Foxhound Bee Company, e-commerce store newsletters, product announcements): Treat as Promotional / Marketing and return null for canonicalDomain. Reserve '07_Community_NonProfit' / 'Projects/Beekeeping' strictly for active hive telemetry alerts (MyBroodMinder) and official non-profit BOD communications.\n" +
+    "1. MEDIA & PLATFORM NEWSLETTERS (Medium, Substack, LinkedIn digests, event/news blasts): Treat strictly as Promotional / Newsletter and return null for canonicalDomain. Do NOT classify under '06_Work_Career' or '04_Family_Health'. Set category to 'Promotions', action to 'archive'.\n" +
+    "2. UTILITY & TECH BILLS (Electric, Gas, Water, Internet, Phone, Cloud infrastructure): Classify under '02_Finance_Legal' (sub-label 'Finance/Banking' or 'Finance/Bills') or '05_Tech_Infrastructure' (sub-label 'Tech/Alerts-Monitoring'). CRITICAL TRIAGE: If the bill is due and requires manual payment / action (no auto-pay confirmed), set category to 'Primary', action to 'keep'. If auto-pay is confirmed scheduled/active, set category to 'Updates', action to 'archive'.\n" +
+    "3. MARRIAGE & ADULT FAMILY (Personal correspondence, family retreats, marital planning): Classify under '04_Family_Health' (sub-label 'Family/Personal-Correspondence'). Set category to 'Primary', action to 'keep'.\n" +
+    "4. NON-PROFIT CHARITY & VOLUNTEERING (501(c)(3) charity records, volunteer schedules, non-profit Board of Directors official communications, telemetry alerts): Classify strictly under '07_Community_NonProfit' (sub-labels 'Projects/Charity', 'Community/BOD', or 'Projects/Telemetry'). For volunteer shift reminders, set category to 'Updates', action to 'keep'. For general newsletters or recap blasts, set category to 'Updates', action to 'archive'.\n" +
+    "5. HEALTH & MEDICAL (Personal family medical records, doctor visits, patient portals, hospital records, prescription notices): Classify under '04_Family_Health' (sub-label 'Family/Medical'). If prescription is ready or doctor appointment requires action, set category to 'Primary', action to 'keep'. For health newsletters (health blogs, drug recalls), treat as Newsletter (canonicalDomain: null, category: 'Promotions', action: 'archive').\n" +
+    "6. E-COMMERCE PROMOTIONS & RETAIL DEALS (Retail coupons, store offers, e-commerce promotional discounts): Return null for canonicalDomain. Set category to 'Promotions', action to 'archive'.\n" +
+    "7. SCHOOL PORTALS & STUDENT EDUCATION: Classify educational portals, student coursework, teacher updates, and school tuition/transportation invoices under '04_Family_Health' (sub-label 'Family/School-Student' or specific configured student label). If invoice/bill has auto-pay confirmed scheduled, set category to 'Updates', action to 'archive'. If bill requires manual payment or is a direct teacher/academic note, set category to 'Primary', action to 'keep'. If routine daily menu/lunch platform digest, set category to 'Updates', action to 'archive'.\n" +
+    "8. TECH WEBINARS & PRODUCT MARKETING (Cloud webinars, 'Register Now', product marketing, tech promos): Treat as Promotional / Marketing and return null for canonicalDomain. Reserve '05_Tech_Infrastructure' strictly for active system alerts, security warnings, spend cap notifications, and project quota/outage alerts. Set category to 'Promotions', action to 'archive'.\n" +
+    "9. HOBBY & STORE MARKETING (Commercial hobby stores, e-commerce store newsletters, product announcements): Treat as Promotional / Marketing and return null for canonicalDomain. Reserve '07_Community_NonProfit' strictly for active telemetry alerts and official non-profit communications. Set category to 'Promotions', action to 'archive'.\n" +
     "10. SPAM & PHISHING & UNWANTED SOLICITATION: Set action to 'trash'.\n" +
-    "11. ROUTINE NOISY NOTIFICATIONS (Known daily digest notifications that require no reading): Set action to 'mark_read' or 'archive'.\n\n" +
+    "11. ROUTINE AUTHENTICATION & FINANCIAL TRANSFER NOTIFICATIONS (Login/SSO confirmations, routine identity verifications, internal account transfers, automated git notifications): If routine successful sign-in or transfer, classify under '02_Finance_Legal' (sub-label 'Finance/Banking') or '05_Tech_Infrastructure' and set category to 'Updates', action to 'archive'. If suspicious login alert or password reset, set category to 'Primary', action to 'keep'.\n" +
+    "12. ORDER CONFIRMATIONS, SHIPMENTS & RECEIPTS (Order confirmations, purchase receipts, invoices, delivery confirmations): Classify under '02_Finance_Legal' (sub-label 'Finance/Purchases') or '01_Household' / '03_Vehicles'. While order is placed or in-transit, set category to 'Updates', action to 'keep'. When package is marked delivered or completed, set category to 'Updates', action to 'archive'.\n" +
+    "13. SINGLE SUB-LABEL RULE: Return AT MOST ONE subLabel string per email (the single best matching sub-label, e.g. 'Finance/Banking' or 'Family/School-Student'). Do NOT stack multiple sub-labels.\n" +
+    "14. UNSOLICITED REAL ESTATE & INVESTMENT SOLICITATION (Cold wholesaler property blasts, 'Off-Market Investment Opportunity', 'We Buy Houses', unsolicited real estate deal blasts): Treat as Promotional / Solicitation and return null for canonicalDomain. Do NOT classify under '02_Finance_Legal' or '01_Household'. Reserve '02_Finance_Legal' strictly for personal bank statements, mortgages, tax documents, credit cards, and active legal records. Set action to 'trash'.\n" +
+    "15. SMALL BUSINESS, ARTISANAL CRAFT & HOBBY SALES: Classify inventory orders, wholesale invoices, artisanal sales, market vendor receipts, and business compliance forms under '01_Household' (sub-label 'Projects/Business') or '02_Finance_Legal' (sub-label 'Finance/Purchases' if pure purchase receipt/invoice). Set category to 'Updates', action to 'keep'. Under NO circumstances classify business sales under '07_Community_NonProfit'!\n" +
+    "16. TAX FORMS, CHARITABLE DONATIONS & COURT ORDERS (1095-C, 1098, W2, tax returns, tax agency notices, donation receipts, court orders, legal closing orders): Classify under '02_Finance_Legal' (sub-labels 'Finance/Taxes', 'Finance/Charitable-Donations', or 'Finance/Legal'). CRITICAL TRIAGE: If action-required tax notice or audit/response deadline, set category to 'Primary', action to 'keep'. For routine tax forms, annual reports, or charitable receipts, set category to 'Updates', action to 'keep'.\n" +
+    "17. JOB POSTINGS, RESUMES & CAREER INTERVIEWS (Job announcements, interview schedules, recruiter messages, resume feedback): Classify under '06_Work_Career' (sub-label 'Work/Career'). Set category to 'Primary' or 'Updates', action to 'keep'.\n" +
+    "18. CAR RENTALS & TRAVEL RESERVATION CONFIRMATIONS (Car rentals, airline flights, hotel reservations, travel check-ins): Classify under '01_Household' (sub-label 'Household/Travel') or '03_Vehicles' (sub-label 'Vehicles/Rental-Cars'). Set category to 'Updates', action to 'keep'.\n\n"
+
+  if (config.customPromptRules) {
+    prompt += 'USER CUSTOM DOMAIN RULES:\n' + config.customPromptRules + '\n\n'
+  }
+
+  prompt +=
     'Sender: ' +
     sender +
     '\n' +
@@ -220,7 +473,7 @@ function classifyWithGemini(sender, subject, snippet, config) {
     'Body Snippet: ' +
     snippet +
     '\n\n' +
-    'Return JSON ONLY: {"canonicalDomain": "<domain-key>", "subLabel": "<domain-sublabel>", "category": "<category>", "action": "keep", "confidence": 0.xx, "title": "<title>", "summary": "<summary>"}\n' +
+    'Return JSON ONLY: {"canonicalDomain": "01_Household", "subLabel": "Household/Travel", "category": "Updates", "action": "keep", "confidence": 0.98, "title": "Short Title", "summary": "2 sentence executive summary"}\n' +
     "Valid categories: 'Primary', 'Updates', 'Promotions', 'Social', 'Forums'.\n" +
     "Valid actions: 'keep', 'archive', 'trash', 'mark_read'."
 
@@ -232,12 +485,14 @@ function classifyWithGemini(sender, subject, snippet, config) {
     ],
   }
 
-  // Endpoint Priority Matrix featuring High-Free-Tier Gemma 4 31B and Gemini 3.x
+  // Cascading High-Quality Gemini 3.x Model Matrix
   var endpoints = [
-    'https://generativelanguage.googleapis.com/v1beta/models/gemma-4-31b-it:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent',
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent',
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent',
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent',
   ]
 
   for (var e = 0; e < endpoints.length; e++) {
@@ -338,7 +593,7 @@ function parseRetryDelayMs(response) {
     if (retryHeader) {
       var seconds = parseInt(retryHeader, 10)
       if (!isNaN(seconds) && seconds > 0) {
-        return Math.min(seconds * 1000, 30000) // Cap max sleep at 30 seconds to prevent GAS execution timeout
+        return Math.min(seconds * 1000, 30000)
       }
     }
 
@@ -359,7 +614,7 @@ function parseRetryDelayMs(response) {
   } catch (e) {
     console.warn('[parseRetryDelayMs] Failed to parse retry delay:', e.message)
   }
-  return 5000 // 5-second default fallback
+  return 5000
 }
 
 function ensureUserLabel(labelName) {
@@ -372,43 +627,22 @@ function ensureUserLabel(labelName) {
 }
 
 function createGmailFilterRule(senderEmail, targetLabelName) {
-  if (typeof Gmail === 'undefined' || !Gmail.Users || !Gmail.Users.Settings) {
-    console.log(
-      '[createGmailFilterRule] Advanced Gmail API service not enabled in script. Skipping filter creation.'
-    )
-    return
-  }
-
-  try {
-    var targetLabel = ensureUserLabel(targetLabelName)
-    var filter = {
-      criteria: { from: senderEmail },
-      action: { addLabelIds: [targetLabel.getId()] },
-    }
-    Gmail.Users.Settings.Filters.create(filter, 'me')
-    console.log(
-      '[createGmailFilterRule] Created permanent Gmail filter rule for sender: ' +
-        senderEmail
-    )
-  } catch (e) {
-    console.warn(
-      '[createGmailFilterRule] Filter rule creation skipped/failed:',
-      e.message
-    )
-  }
+  // Decommissioned: Static filter auto-creation causes multi-label collisions,
+  // filter bloat, and duplicate rules across multi-purpose senders.
+  console.log(
+    '[createGmailFilterRule] Permanent filter auto-creation is permanently decommissioned. No-op.'
+  )
 }
 
-function getNotePathForDomain(domain) {
+function getNotePathForDomain(domain, subLabel) {
   var map = {
-    '01_Household': 'household-vault/birmingham/index.md',
-    '02_Finance_Legal': 'household-vault/finances/index.md',
-    '03_Vehicles': 'household-vault/vehicles/index.md',
-    '04_Family_Health_School': 'household-vault/kids/index.md',
-    '05_Tech_Infrastructure':
-      'household-vault/our-technology/digital-backups/index.md',
-    '06_Work_Career': 'dp-work-notes/notes/index.md',
-    '07_Community_NonProfit':
-      'helpingoneguy/organization/organization/index.md',
+    '01_Household': 'household/primary/index.md',
+    '02_Finance_Legal': 'household/finances/index.md',
+    '03_Vehicles': 'household/vehicles/index.md',
+    '04_Family_Health': 'household/kids/index.md',
+    '05_Tech_Infrastructure': 'household/technology/index.md',
+    '06_Work_Career': 'work/notes/index.md',
+    '07_Community_NonProfit': 'community/organization/index.md',
   }
   return map[domain] || null
 }
@@ -431,13 +665,355 @@ function formatProgressiveDisclosureEntry(
   return entry
 }
 
+/**
+ * Computes search date range object ({ after: 'YYYY/MM/DD', before: 'YYYY/MM/DD' }) around a given date string.
+ */
+function getSearchDateRange_(dateStr, days) {
+  var parts = dateStr.split('-')
+  var year = parseInt(parts[0], 10)
+  var month = parseInt(parts[1], 10) - 1
+  var day = parseInt(parts[2], 10)
+  var dt = new Date(year, month, day)
+
+  var beforeDt = new Date(dt.getTime() + (days + 1) * 86400000)
+  var afterDt = new Date(dt.getTime() - days * 86400000)
+
+  function fmt(d) {
+    var y = d.getFullYear()
+    var m = ('0' + (d.getMonth() + 1)).slice(-2)
+    var da = ('0' + d.getDate()).slice(-2)
+    return y + '/' + m + '/' + da
+  }
+  return { after: fmt(afterDt), before: fmt(beforeDt) }
+}
+
+/**
+ * Searches Gmail for original raw subject and from header corresponding to a damaged entry.
+ */
+function searchGmailForOriginalHeader_(senderEmail, dateStr, damagedSubject) {
+  try {
+    var range = getSearchDateRange_(dateStr, 2)
+    var query =
+      'from:' +
+      senderEmail +
+      ' after:' +
+      range.after +
+      ' before:' +
+      range.before
+    var threads = GmailApp.search(query, 0, 10)
+    var normDamaged = damagedSubject.toLowerCase().replace(/[^a-z0-9]/g, '')
+    if (!normDamaged) return null
+
+    for (var t = 0; t < threads.length; t++) {
+      var messages = threads[t].getMessages()
+      for (var m = 0; m < messages.length; m++) {
+        var msg = messages[m]
+        var realSub = msg.getSubject()
+        var normReal = realSub.toLowerCase().replace(/[^a-z0-9]/g, '')
+        if (
+          normReal === normDamaged ||
+          (normDamaged.length > 8 &&
+            (normReal.indexOf(normDamaged) !== -1 ||
+              normDamaged.indexOf(normReal) !== -1))
+        ) {
+          return {
+            subject: realSub,
+            from: msg.getFrom(),
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[searchGmailForOriginalHeader_] Search error: ' + e.message)
+  }
+  return null
+}
+
+/**
+ * Fetches file content and SHA from GitHub REST API.
+ */
+function fetchGitHubFileContent_(filePath, token) {
+  var url =
+    'https://api.github.com/repos/don-petry/self-private/contents/' + filePath
+  var options = {
+    method: 'get',
+    headers: {
+      Authorization: 'Bearer ' + token,
+      Accept: 'application/vnd.github.v3+json',
+      'User-Agent': 'GoogleAppsScript-Ingester',
+    },
+    muteHttpExceptions: true,
+  }
+  var res = UrlFetchApp.fetch(url, options)
+  if (res.getResponseCode() === 200) {
+    var data = JSON.parse(res.getContentText())
+    var rawContent = Utilities.newBlob(
+      Utilities.base64Decode(data.content)
+    ).getDataAsString()
+    return { content: rawContent, sha: data.sha }
+  }
+  return null
+}
+
+/**
+ * Commits updated file content to GitHub REST API.
+ */
+function commitGitHubFileDirect_(
+  filePath,
+  updatedContent,
+  sha,
+  commitMessage,
+  token
+) {
+  var url =
+    'https://api.github.com/repos/don-petry/self-private/contents/' + filePath
+  var encoded = Utilities.base64Encode(
+    Utilities.newBlob(updatedContent).getBytes()
+  )
+  var payload = {
+    message: commitMessage,
+    content: encoded,
+    sha: sha,
+  }
+  var options = {
+    method: 'put',
+    contentType: 'application/json',
+    headers: {
+      Authorization: 'Bearer ' + token,
+      Accept: 'application/vnd.github.v3+json',
+      'User-Agent': 'GoogleAppsScript-Ingester',
+    },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true,
+  }
+  var res = UrlFetchApp.fetch(url, options)
+  return res.getResponseCode() === 200 || res.getResponseCode() === 201
+}
+
+/**
+ * One-time backfill helper that queries Gmail to restore exact original UTF-8
+ * Subject and From headers for historical activity log entries that were flattened to '?'.
+ */
+function backfillOriginalEmailHeaders() {
+  console.log(
+    '[backfillOriginalEmailHeaders] Starting historical header restoration from Gmail...'
+  )
+  var config = getAiClassifierConfig()
+  if (!config.githubToken) {
+    console.error('[backfillOriginalEmailHeaders] GITHUB_PAT is missing.')
+    return
+  }
+
+  var targetFiles = [
+    'household/finances/index.md',
+    'community/organization/index.md',
+    'household/kids/index.md',
+    'household/primary/index.md',
+    'household/technology/index.md',
+    'household/vehicles/index.md',
+    'work/notes/index.md',
+  ]
+
+  var totalRestored = 0
+
+  for (var f = 0; f < targetFiles.length; f++) {
+    var filePath = targetFiles[f]
+    console.log('[backfillOriginalEmailHeaders] Processing: ' + filePath)
+
+    var fileData = fetchGitHubFileContent_(filePath, config.githubToken)
+    if (!fileData) {
+      console.log(
+        '[backfillOriginalEmailHeaders] File not found or empty: ' + filePath
+      )
+      continue
+    }
+
+    var lines = fileData.content.split('\n')
+    var modified = false
+    var fileRestoredCount = 0
+    var currentDate = null
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i]
+      var dateMatch = line.match(/^#{2,4} (\d{4}-\d{2}-\d{2})/)
+      if (dateMatch) {
+        currentDate = dateMatch[1]
+        continue
+      }
+
+      if (
+        line.indexOf('- **Subject**:') === 0 &&
+        line.indexOf('?') !== -1 &&
+        currentDate
+      ) {
+        var damagedSubject = line.substring('- **Subject**: '.length).trim()
+
+        var fromLine = ''
+        for (
+          var j = Math.max(0, i - 3);
+          j <= Math.min(lines.length - 1, i + 3);
+          j++
+        ) {
+          if (lines[j].indexOf('- **From**:') === 0) {
+            fromLine = lines[j].substring('- **From**: '.length).trim()
+            break
+          }
+        }
+
+        var senderEmail = ''
+        var emailMatch = fromLine.match(/<([^>]+)>/)
+        if (emailMatch) {
+          senderEmail = emailMatch[1]
+        } else if (fromLine.indexOf('@') !== -1) {
+          senderEmail = fromLine
+        }
+
+        if (senderEmail) {
+          var realEmail = searchGmailForOriginalHeader_(
+            senderEmail,
+            currentDate,
+            damagedSubject
+          )
+          if (realEmail && realEmail.subject) {
+            console.log(
+              '[backfillOriginalEmailHeaders] Restoring: "' +
+                damagedSubject +
+                '" -> "' +
+                realEmail.subject +
+                '"'
+            )
+            lines[i] = '- **Subject**: ' + realEmail.subject
+            modified = true
+            fileRestoredCount++
+            totalRestored++
+
+            for (
+              var k = Math.max(0, i - 3);
+              k <= Math.min(lines.length - 1, i + 3);
+              k++
+            ) {
+              if (
+                lines[k].indexOf('- **From**:') === 0 &&
+                lines[k].indexOf('?') !== -1 &&
+                realEmail.from
+              ) {
+                lines[k] = '- **From**: ' + realEmail.from
+                break
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (modified) {
+      var newContent = lines.join('\n')
+      var commitMsg =
+        'chore(notes): restore ' +
+        fileRestoredCount +
+        ' original Gmail headers in ' +
+        filePath
+      commitGitHubFileDirect_(
+        filePath,
+        newContent,
+        fileData.sha,
+        commitMsg,
+        config.githubToken
+      )
+      console.log(
+        '[backfillOriginalEmailHeaders] Successfully updated ' +
+          filePath +
+          ' (' +
+          fileRestoredCount +
+          ' headers restored).'
+      )
+    } else {
+      console.log(
+        '[backfillOriginalEmailHeaders] No damaged headers to restore in ' +
+          filePath
+      )
+    }
+  }
+
+  console.log(
+    '[backfillOriginalEmailHeaders] Finished header restoration. Total headers restored: ' +
+      totalRestored
+  )
+}
+
+/**
+ * Sets the Gmail system category tab (Primary, Updates, Promotions, Social, Forums)
+ * via the Advanced Gmail API.
+ */
+function setGmailCategoryTab(thread, targetCategory) {
+  if (
+    typeof Gmail === 'undefined' ||
+    !Gmail.Users ||
+    !Gmail.Users.Threads ||
+    !Gmail.Users.Threads.modify
+  ) {
+    return
+  }
+
+  var catMap = {
+    Primary: 'CATEGORY_PERSONAL',
+    Updates: 'CATEGORY_UPDATES',
+    Promotions: 'CATEGORY_PROMOTIONS',
+    Social: 'CATEGORY_SOCIAL',
+    Forums: 'CATEGORY_FORUMS',
+  }
+
+  var targetId = catMap[targetCategory]
+  if (!targetId) return
+
+  var allCategoryIds = [
+    'CATEGORY_PERSONAL',
+    'CATEGORY_UPDATES',
+    'CATEGORY_PROMOTIONS',
+    'CATEGORY_SOCIAL',
+    'CATEGORY_FORUMS',
+  ]
+
+  var removeIds = allCategoryIds.filter(function (id) {
+    return id !== targetId
+  })
+
+  try {
+    Gmail.Users.Threads.modify(
+      {
+        addLabelIds: [targetId],
+        removeLabelIds: removeIds,
+      },
+      'me',
+      thread.getId()
+    )
+    console.log(
+      '[setGmailCategoryTab] Assigned category ' +
+        targetId +
+        ' to thread: ' +
+        thread.getFirstMessageSubject()
+    )
+  } catch (e) {
+    console.warn(
+      '[setGmailCategoryTab] Could not modify thread category: ' + e.message
+    )
+  }
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     processEmailsWithAiClassifier: processEmailsWithAiClassifier,
+    purgeExpiredEmailsByRetentionPolicy: purgeExpiredEmailsByRetentionPolicy,
+    setupWeeklyRetentionTrigger: setupWeeklyRetentionTrigger,
     setupFiveMinuteTrigger: setupFiveMinuteTrigger,
     stopAllTriggers: stopAllTriggers,
     classifyWithGemini: classifyWithGemini,
     ensureUserLabel: ensureUserLabel,
     createGmailFilterRule: createGmailFilterRule,
+    backfillOriginalEmailHeaders: backfillOriginalEmailHeaders,
+    getSearchDateRange_: getSearchDateRange_,
+    searchGmailForOriginalHeader_: searchGmailForOriginalHeader_,
+    cleanConflictingLabels: cleanConflictingLabels,
+    setGmailCategoryTab: setGmailCategoryTab,
   }
 }

@@ -346,10 +346,345 @@ function processThreadBatch(threads, config, services) {
   return results
 }
 
+const GITHUB_REPO_OWNER = 'don-petry'
+const GITHUB_REPO_NAME = 'self-private'
+
+const RULE6_PATTERNS = [
+  [/\S \? \S/, "' ? ' between words (was an em dash or a · separator)"],
+  [/\?\?/, "'??' (was a multi-codepoint emoji)"],
+  [/[A-Za-z]\?[A-Za-z]/, "'?' inside a word (was a curly apostrophe)"],
+  [/\uFFFD/, 'U+FFFD replacement character'],
+]
+
+/** Refuse to write an entry that already shows mojibake. */
+function assertClean_(text, what) {
+  if (!text) return
+  for (let i = 0; i < RULE6_PATTERNS.length; i++) {
+    if (RULE6_PATTERNS[i][0].test(text)) {
+      throw new Error(
+        'Rule 6: refusing to write ' + what + ' — ' + RULE6_PATTERNS[i][1]
+      )
+    }
+  }
+}
+
+/** Refuse to write when a non-ASCII char in the source text became '?' on the way out. */
+function assertNoAsciiReplacement_(source, rendered) {
+  if (!source || !rendered) return
+  if (rendered.indexOf('?') === -1) return
+  const lost = []
+  for (let i = 0; i < source.length; i++) {
+    const c = source.charAt(i)
+    if (
+      c.charCodeAt(0) > 127 &&
+      rendered.indexOf(c) === -1 &&
+      lost.indexOf(c) === -1
+    ) {
+      lost.push(c)
+    }
+  }
+  if (lost.length) {
+    throw new Error(
+      'Rule 6: refusing to write text that flattened non-ASCII to "?": ' +
+        lost.join(' ') +
+        ' — encode as UTF-8, not ASCII.'
+    )
+  }
+}
+
+function extractTopicTitleFromPath(filePath) {
+  const parts = filePath.split('/')
+  const topic = parts.length > 1 ? parts[parts.length - 2] : parts[0]
+  return topic.replace(/-/g, ' ').replace(/\b\w/g, function (l) {
+    return l.toUpperCase()
+  })
+}
+
+function insertEntryIntoLogSection(fullContent, newEntry) {
+  const detailsMarker = '</details>'
+  const detailsIndex = fullContent.indexOf(detailsMarker)
+
+  if (detailsIndex !== -1) {
+    return (
+      fullContent.substring(0, detailsIndex) +
+      newEntry +
+      '\n' +
+      fullContent.substring(detailsIndex)
+    )
+  }
+
+  const section3Marker = '## 3. Ingested Activity'
+  const section3Index = fullContent.indexOf(section3Marker)
+
+  if (section3Index !== -1) {
+    const lineBreakIndex = fullContent.indexOf('\n', section3Index)
+    return (
+      fullContent.substring(0, lineBreakIndex + 1) +
+      newEntry +
+      '\n' +
+      fullContent.substring(lineBreakIndex + 1)
+    )
+  }
+
+  return fullContent + '\n' + newEntry
+}
+
+function formatProgressiveDisclosureEntry(
+  dateStr,
+  title,
+  sender,
+  subject,
+  summaryText,
+  accountEmail
+) {
+  let entry = '\n### ' + dateStr + ' — ' + title + '\n'
+  entry += '- **Account**: ' + accountEmail + '\n'
+  entry += '- **From**: ' + sender + '\n'
+  entry += '- **Subject**: ' + subject + '\n'
+  if (summaryText) {
+    entry += '- **Summary**:\n  > ' + summaryText.trim() + '\n'
+  }
+  return entry
+}
+
+function getNotePathForDomain(domain, _subLabel) {
+  const map = {
+    '01_Household': 'household/primary/index.md',
+    '02_Finance_Legal': 'household/finances/index.md',
+    '03_Vehicles': 'household/vehicles/index.md',
+    '04_Family_Health': 'household/kids/index.md',
+    '05_Tech_Infrastructure': 'household/technology/index.md',
+    '06_Work_Career': 'work/notes/index.md',
+    '07_Community_NonProfit': 'community/organization/index.md',
+  }
+  return map[domain] || null
+}
+
+function appendMarkdownEntryToGitHubRepo(
+  filePath,
+  entryMd,
+  commitMessage,
+  services
+) {
+  const props =
+    services?.PropertiesService ||
+    (typeof PropertiesService !== 'undefined' ? PropertiesService : null)
+  const githubToken = props?.getScriptProperties()?.getProperty('GITHUB_PAT')
+  if (!githubToken) {
+    console.log(
+      '[gitHubSync] GITHUB_PAT ScriptProperty not set. Skipping GitHub commit.'
+    )
+    return false
+  }
+
+  const sleep = services?.sleepFn || _sleep
+  const maxRetries = 3
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const result = executeGitHubCommit(
+      filePath,
+      entryMd,
+      commitMessage,
+      githubToken,
+      services
+    )
+    if (result === true || result === 'IDEMPOTENT_SKIP') {
+      return true
+    }
+    console.log(
+      '[gitHubSync] Retry attempt',
+      attempt,
+      'of',
+      maxRetries,
+      'for',
+      filePath
+    )
+    sleep(1000 * attempt)
+  }
+
+  console.error(
+    '[gitHubSync] Failed to commit entry to GitHub after',
+    maxRetries,
+    'attempts:',
+    filePath
+  )
+  return false
+}
+
+function executeGitHubCommit(
+  filePath,
+  entryMd,
+  commitMessage,
+  githubToken,
+  services
+) {
+  const urlFetchApp =
+    services?.UrlFetchApp ||
+    (typeof UrlFetchApp !== 'undefined' ? UrlFetchApp : null)
+  const utils =
+    services?.Utilities || (typeof Utilities !== 'undefined' ? Utilities : null)
+
+  const url =
+    'https://api.github.com/repos/' +
+    GITHUB_REPO_OWNER +
+    '/' +
+    GITHUB_REPO_NAME +
+    '/contents/' +
+    filePath
+  const headers = {
+    Authorization: 'token ' + githubToken,
+    Accept: 'application/vnd.github.v3+json',
+    'User-Agent': 'Google-Apps-Script',
+  }
+
+  try {
+    const getOptions = {
+      method: 'get',
+      headers: headers,
+      muteHttpExceptions: true,
+    }
+    const res = urlFetchApp.fetch(url, getOptions)
+    const statusCode = res.getResponseCode()
+
+    let sha = null
+    let rawContent = ''
+
+    if (statusCode === 404) {
+      console.log(
+        '[gitHubSync] File not found on GitHub (HTTP 404). Initializing new note:',
+        filePath
+      )
+      const topicTitle = extractTopicTitleFromPath(filePath)
+      const dateStr = utils?.formatDate
+        ? utils.formatDate(new Date(), 'GMT', 'yyyy-MM-dd')
+        : new Date().toISOString().slice(0, 10)
+      rawContent =
+        '---\ntitle: ' +
+        topicTitle +
+        '\ncreated: ' +
+        dateStr +
+        '\nnotebook: household\nsection: general\n---\n\n' +
+        '# ' +
+        topicTitle +
+        '\n\n' +
+        '## 1. Executive Summary & Active Status\n- Ingested records log.\n\n' +
+        '## 2. Key References & Quick Links\n| Topic | Asset |\n| :--- | :--- |\n\n' +
+        '## 3. Ingested Activity Logs\n<details open><summary><b>Activity Logs</b></summary>\n</details>\n'
+    } else if (statusCode === 200) {
+      const fileData = JSON.parse(res.getContentText())
+      sha = fileData.sha
+      rawContent = utils
+        .newBlob(utils.base64Decode(fileData.content))
+        .getDataAsString()
+
+      if (
+        rawContent.indexOf(entryMd.trim()) !== -1 ||
+        (commitMessage && rawContent.indexOf(commitMessage) !== -1)
+      ) {
+        console.log(
+          '[gitHubSync] Idempotent Skip: Entry already exists in',
+          filePath
+        )
+        return 'IDEMPOTENT_SKIP'
+      }
+    } else {
+      console.error(
+        '[gitHubSync] Error fetching file from GitHub (HTTP ' +
+          statusCode +
+          '):',
+        res.getContentText()
+      )
+      return false
+    }
+
+    const updatedContent = insertEntryIntoLogSection(rawContent, entryMd)
+
+    assertClean_(entryMd, 'new entry for ' + filePath)
+    if (rawContent) {
+      assertNoAsciiReplacement_(rawContent, updatedContent)
+    }
+    assertNoAsciiReplacement_(entryMd, updatedContent)
+
+    const base64Updated = utils.base64Encode(
+      utils.newBlob(updatedContent).getBytes()
+    )
+
+    const putPayload = {
+      message:
+        commitMessage ||
+        'feat(ingestion): append ingested document entry via Google Apps Script',
+      content: base64Updated,
+      branch: 'main',
+    }
+    if (sha) {
+      putPayload.sha = sha
+    }
+
+    const putOptions = {
+      method: 'put',
+      headers: headers,
+      contentType: 'application/json',
+      payload: JSON.stringify(putPayload),
+      muteHttpExceptions: true,
+    }
+
+    const putRes = urlFetchApp.fetch(url, putOptions)
+    const putStatus = putRes.getResponseCode()
+
+    if (putStatus === 200 || putStatus === 201) {
+      console.log(
+        '[gitHubSync] Successfully committed markdown entry to GitHub:',
+        filePath
+      )
+      return true
+    } else if (putStatus === 409) {
+      console.warn('[gitHubSync] SHA collision (HTTP 409) on file:', filePath)
+      return false
+    } else {
+      console.error(
+        '[gitHubSync] Error committing to GitHub (HTTP ' + putStatus + '):',
+        putRes.getContentText()
+      )
+      return false
+    }
+  } catch (e) {
+    console.error('[gitHubSync] Exception calling GitHub API:', e.message)
+    return false
+  }
+}
+
+function getSearchDateRange_(dateStr, days) {
+  const parts = dateStr.split('-')
+  const year = parseInt(parts[0], 10)
+  const month = parseInt(parts[1], 10) - 1
+  const day = parseInt(parts[2], 10)
+  const dt = new Date(year, month, day)
+
+  const beforeDt = new Date(dt.getTime() + (days + 1) * 86400000)
+  const afterDt = new Date(dt.getTime() - days * 86400000)
+
+  function fmt(d) {
+    const y = d.getFullYear()
+    const m = ('0' + (d.getMonth() + 1)).slice(-2)
+    const da = ('0' + d.getDate()).slice(-2)
+    return y + '/' + m + '/' + da
+  }
+  return { after: fmt(afterDt), before: fmt(beforeDt) }
+}
+
 module.exports = {
   validateClassification,
   classifyEmailWithGemini,
   ensureGmailLabel,
   createPermanentGmailFilter,
   processThreadBatch,
+  RULE6_PATTERNS,
+  assertClean_,
+  assertNoAsciiReplacement_,
+  extractTopicTitleFromPath,
+  insertEntryIntoLogSection,
+  formatProgressiveDisclosureEntry,
+  getNotePathForDomain,
+  appendMarkdownEntryToGitHubRepo,
+  executeGitHubCommit,
+  getSearchDateRange_,
 }
