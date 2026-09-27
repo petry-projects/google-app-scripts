@@ -41,7 +41,7 @@ Run `setupFiveMinuteTrigger()` in Apps Script under Account #2.
   - `05_Tech_Infrastructure`: Google Cloud spend alerts, security warnings, backup status.
   - `06_Work_Career`: Professional notes, work expenses, architecture docs.
   - `07_Community_NonProfit`: Sensor telemetry, non-profit BOD notes, charity updates.
-- **2-Year Category Retention Engine**: Automatically purges promotional, social, and forum emails older than 2 years every Sunday at 1:00 AM, while keeping core domain and personal threads **indefinitely**.
+- **2-Year Category Retention Engine**: Automatically purges promotional, social, and forum emails older than 2 years every Sunday at 1:00 AM, while keeping core threads **indefinitely**. The retention guard exempts any thread carrying a canonical-domain label **or one of its classifier sub-labels** (e.g. `Finance/Banking`), plus starred and user-sent/replied threads — so a core message tagged only with its sub-label is never trashed.
 
 ---
 
