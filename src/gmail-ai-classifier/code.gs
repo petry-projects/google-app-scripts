@@ -119,22 +119,38 @@ function processEmailsWithAiClassifier() {
         thread,
         config.userAccountEmail
       )
-      if (!userSent) {
+      // Confidence Shield: destructive actions (trash/archive move mail out of
+      // the Inbox) must only run on a well-formed, high-confidence response.
+      // A malformed or manipulated Gemini payload (missing/low confidence,
+      // unknown action verb) can NEVER trash or hide mail — it falls through and
+      // the thread is preserved in the Inbox.
+      var requestedDestructive =
+        classification.action === 'trash' || classification.action === 'archive'
+      var destructiveOk = isDestructiveActionAllowed_(classification)
+      if (userSent && requestedDestructive) {
+        console.log(
+          '[processEmailsWithAiClassifier] Shield: Preserved thread in INBOX because user sent/replied to it.'
+        )
+      } else if (requestedDestructive && !destructiveOk) {
+        console.warn(
+          '[processEmailsWithAiClassifier] Shield: Skipped destructive action "' +
+            classification.action +
+            '" (low/invalid confidence ' +
+            classification.confidence +
+            '); preserved thread in INBOX.'
+        )
+      } else if (requestedDestructive) {
         if (classification.action === 'trash') {
           thread.moveToTrash()
           console.log(
             '[processEmailsWithAiClassifier] Action: Moved spam/unwanted thread to TRASH.'
           )
-        } else if (classification.action === 'archive') {
+        } else {
           thread.moveToArchive()
           console.log(
             '[processEmailsWithAiClassifier] Action: Archived thread out of INBOX.'
           )
         }
-      } else {
-        console.log(
-          '[processEmailsWithAiClassifier] Shield: Preserved thread in INBOX because user sent/replied to it.'
-        )
       }
 
       if (classification.action === 'mark_read' || classification.markRead) {
@@ -289,6 +305,12 @@ function purgeExpiredEmailsByRetentionPolicy() {
     var isExempt = false
 
     // Safety Shield 1: Check if thread contains any Core Household Domain label
+    // OR any classifier sub-label. Under the strict single-label model a saved
+    // core thread often carries ONLY its sub-label (e.g. "Finance/Banking") with
+    // the canonical-domain code stripped, so exempting canonical codes alone
+    // would let the 2-year purge trash indefinitely-retained core mail. Any
+    // user sub-label (contains '/', excluding the ephemeral Retention/* tags)
+    // therefore also grants exemption.
     for (var l = 0; l < labels.length; l++) {
       var labelName = labels[l].getName()
       for (var cd = 0; cd < coreDomainLabels.length; cd++) {
@@ -298,6 +320,13 @@ function purgeExpiredEmailsByRetentionPolicy() {
         }
       }
       if (isExempt) break
+      if (
+        labelName.indexOf('/') !== -1 &&
+        labelName.indexOf('Retention/') !== 0
+      ) {
+        isExempt = true
+        break
+      }
     }
 
     // Safety Shield 2: Check if user sent a message or replied in this thread
@@ -330,15 +359,19 @@ function purgeExpiredEmailsByRetentionPolicy() {
  */
 function isThreadSentOrRepliedByUser(thread, userEmail) {
   try {
+    // userEmail is pre-computed once by the caller from config.userAccountEmail.
+    // Never call Session.getEffectiveUser().getEmail() here: this function runs
+    // inside per-thread loops (processEmailsWithAiClassifier, retention purge),
+    // so re-fetching the static owner email would be an expensive API call per
+    // iteration.
+    var primaryEmail = (userEmail || '').toLowerCase()
+    if (!primaryEmail) {
+      return false
+    }
     var messages = thread.getMessages()
-    var primaryEmail = (
-      userEmail ||
-      Session.getEffectiveUser().getEmail() ||
-      ''
-    ).toLowerCase()
     for (var m = 0; m < messages.length; m++) {
       var fromAddr = messages[m].getFrom().toLowerCase()
-      if (primaryEmail && fromAddr.indexOf(primaryEmail) !== -1) {
+      if (fromAddr.indexOf(primaryEmail) !== -1) {
         return true
       }
     }
@@ -349,6 +382,32 @@ function isThreadSentOrRepliedByUser(thread, userEmail) {
     )
   }
   return false
+}
+
+/**
+ * Guards destructive actions (trash/archive) behind a strict validation of the
+ * parsed Gemini response. Returns true only when the action is a recognized
+ * destructive verb AND the response carries a finite confidence at or above the
+ * destructive-action minimum. Any malformed, manipulated, or low-confidence
+ * response returns false so the thread is preserved in the Inbox.
+ */
+var DESTRUCTIVE_CONFIDENCE_MIN = 0.85
+
+function isDestructiveActionAllowed_(classification) {
+  if (!classification || typeof classification !== 'object') {
+    return false
+  }
+  if (
+    classification.action !== 'trash' &&
+    classification.action !== 'archive'
+  ) {
+    return false
+  }
+  var confidence = classification.confidence
+  if (typeof confidence !== 'number' || !isFinite(confidence)) {
+    return false
+  }
+  return confidence >= DESTRUCTIVE_CONFIDENCE_MIN
 }
 
 /**
@@ -688,6 +747,22 @@ function getSearchDateRange_(dateStr, days) {
 }
 
 /**
+ * Detects evidence of mojibake (UTF-8 flattened to '?') in a line, distinct from
+ * a legitimate question mark. A standalone trailing '?' (e.g. "Ready?") is NOT
+ * mojibake; a '?' inside a word, a spaced ' ? ' separator, a doubled '??', or a
+ * U+FFFD replacement character is.
+ */
+function hasMojibakeMarker_(text) {
+  if (!text) return false
+  return (
+    /\S \? \S/.test(text) ||
+    /\?\?/.test(text) ||
+    /[A-Za-z]\?[A-Za-z]/.test(text) ||
+    /�/.test(text)
+  )
+}
+
+/**
  * Searches Gmail for original raw subject and from header corresponding to a damaged entry.
  */
 function searchGmailForOriginalHeader_(senderEmail, dateStr, damagedSubject) {
@@ -701,6 +776,11 @@ function searchGmailForOriginalHeader_(senderEmail, dateStr, damagedSubject) {
       ' before:' +
       range.before
     var threads = GmailApp.search(query, 0, 10)
+    // Gmail search does not guarantee ordering; sort by last-message date
+    // (newest first) so the closest matching thread is selected deterministically.
+    threads.sort(function (a, b) {
+      return b.getLastMessageDate() - a.getLastMessageDate()
+    })
     var normDamaged = damagedSubject.toLowerCase().replace(/[^a-z0-9]/g, '')
     if (!normDamaged) return null
 
@@ -843,7 +923,7 @@ function backfillOriginalEmailHeaders() {
 
       if (
         line.indexOf('- **Subject**:') === 0 &&
-        line.indexOf('?') !== -1 &&
+        hasMojibakeMarker_(line) &&
         currentDate
       ) {
         var damagedSubject = line.substring('- **Subject**: '.length).trim()
@@ -874,7 +954,16 @@ function backfillOriginalEmailHeaders() {
             currentDate,
             damagedSubject
           )
-          if (realEmail && realEmail.subject) {
+          if (
+            realEmail &&
+            realEmail.subject &&
+            realEmail.subject !== damagedSubject &&
+            /[^\x00-\x7F]/.test(realEmail.subject)
+          ) {
+            // Only restore when the Gmail subject differs from the flattened
+            // value AND actually reintroduces non-ASCII content. This prevents a
+            // legitimate subject like "Ready?" from being overwritten by a
+            // similarly-named-but-different message ("Ready").
             console.log(
               '[backfillOriginalEmailHeaders] Restoring: "' +
                 damagedSubject +
@@ -894,7 +983,7 @@ function backfillOriginalEmailHeaders() {
             ) {
               if (
                 lines[k].indexOf('- **From**:') === 0 &&
-                lines[k].indexOf('?') !== -1 &&
+                hasMojibakeMarker_(lines[k]) &&
                 realEmail.from
               ) {
                 lines[k] = '- **From**: ' + realEmail.from
@@ -913,13 +1002,24 @@ function backfillOriginalEmailHeaders() {
         fileRestoredCount +
         ' original Gmail headers in ' +
         filePath
-      commitGitHubFileDirect_(
+      var committed = commitGitHubFileDirect_(
         filePath,
         newContent,
         fileData.sha,
         commitMsg,
         config.githubToken
       )
+      if (!committed) {
+        console.error(
+          '[backfillOriginalEmailHeaders] Failed to commit updates to ' +
+            filePath +
+            '; not counting ' +
+            fileRestoredCount +
+            ' header(s) as restored.'
+        )
+        totalRestored -= fileRestoredCount
+        continue
+      }
       console.log(
         '[backfillOriginalEmailHeaders] Successfully updated ' +
           filePath +

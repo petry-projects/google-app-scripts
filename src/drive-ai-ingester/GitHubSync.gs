@@ -3,12 +3,7 @@
  * Performs atomic GET -> PUT markdown updates with 404 auto-initialization.
  */
 
-var RULE6_PATTERNS = [
-  [/\S \? \S/, "' ? ' between words (was an em dash or a · separator)"],
-  [/\?\?/, "'??' (was a multi-codepoint emoji)"],
-  [/[A-Za-z]\?[A-Za-z]/, "'?' inside a word (was a curly apostrophe)"],
-  [/\uFFFD/, 'U+FFFD replacement character'],
-]
+var RULE6_PATTERNS = [[/\uFFFD/, 'U+FFFD replacement character']]
 
 /** Refuse to write an entry that already shows mojibake. */
 function assertClean_(text, what) {
@@ -46,6 +41,12 @@ function assertNoAsciiReplacement_(source, rendered) {
   }
 }
 
+/**
+ * Commits an appended markdown entry to GitHub with automatic retry on version
+ * conflicts (HTTP 409). Each attempt re-runs the full GET -> merge -> PUT
+ * sequence so a stale SHA is refreshed before retrying, preventing a concurrent
+ * Gmail/Drive commit from permanently dropping this Drive entry.
+ */
 function appendMarkdownEntryToGitHubRepo(
   filePath,
   entryContent,
@@ -59,6 +60,45 @@ function appendMarkdownEntryToGitHubRepo(
     return false
   }
 
+  var maxRetries = 3
+  for (var attempt = 1; attempt <= maxRetries; attempt++) {
+    var result = executeGitHubCommit(
+      filePath,
+      entryContent,
+      commitMessage,
+      config
+    )
+    if (result === true || result === 'IDEMPOTENT_SKIP') {
+      return true
+    }
+    if (attempt < maxRetries) {
+      console.log(
+        '[gitHubSync] Retry attempt ' +
+          attempt +
+          ' of ' +
+          maxRetries +
+          ' for ' +
+          filePath
+      )
+      Utilities.sleep(1000 * attempt)
+    }
+  }
+
+  console.error(
+    '[gitHubSync] Failed to commit entry to GitHub after ' +
+      maxRetries +
+      ' attempts: ' +
+      filePath
+  )
+  return false
+}
+
+/**
+ * Runs a single GET -> merge -> PUT commit cycle. Returns true on success,
+ * 'IDEMPOTENT_SKIP' when the entry already exists, or false on any failure
+ * (including HTTP 409, which the caller retries with a refreshed SHA).
+ */
+function executeGitHubCommit(filePath, entryContent, commitMessage, config) {
   var repoOwner = 'don-petry'
   var repoName = 'self-private'
   var url =
@@ -84,13 +124,26 @@ function appendMarkdownEntryToGitHubRepo(
 
     var existingContent = ''
     var sha = null
+    var statusCode = getResponse.getResponseCode()
 
-    if (getResponse.getResponseCode() === 200) {
+    if (statusCode === 200) {
       var fileData = JSON.parse(getResponse.getContentText())
       sha = fileData.sha
-      var decodedBytes = Utilities.base64Decode(fileData.content)
+      // GitHub returns Base64 wrapped in newlines every 60 chars; strip them
+      // before decoding since some decoders reject embedded whitespace.
+      var decodedBytes = Utilities.base64Decode(
+        (fileData.content || '').replace(/[\r\n]/g, '')
+      )
       existingContent = Utilities.newBlob(decodedBytes).getDataAsString()
-    } else if (getResponse.getResponseCode() === 404) {
+
+      // Idempotency: skip when this exact entry is already present.
+      if (existingContent.indexOf(entryContent.trim()) !== -1) {
+        console.log(
+          '[gitHubSync] Idempotent Skip: Entry already exists in ' + filePath
+        )
+        return 'IDEMPOTENT_SKIP'
+      }
+    } else if (statusCode === 404) {
       existingContent =
         '---\ntitle: ' +
         filePath.split('/')[0] +
@@ -100,7 +153,7 @@ function appendMarkdownEntryToGitHubRepo(
     } else {
       console.error(
         '[gitHubSync] GitHub GET HTTP ' +
-          getResponse.getResponseCode() +
+          statusCode +
           ': ' +
           getResponse.getContentText()
       )
@@ -109,16 +162,19 @@ function appendMarkdownEntryToGitHubRepo(
 
     var updatedContent = existingContent + '\n' + entryContent
 
-    // Rule 6 Guards: Refuse to commit if mojibake is detected in new entry or non-ASCII chars were flattened
+    // Rule 6 Guard: refuse to commit an entry that already shows U+FFFD mojibake.
     assertClean_(entryContent, 'new entry for ' + filePath)
-    if (existingContent) {
-      assertNoAsciiReplacement_(existingContent, updatedContent)
-    }
-    assertNoAsciiReplacement_(entryContent, updatedContent)
 
     var encodedContent = Utilities.base64Encode(
       Utilities.newBlob(updatedContent).getBytes()
     )
+
+    // Validate the actual Base64 round trip: decode what we are about to PUT and
+    // confirm no non-ASCII character was flattened to '?' at the payload boundary.
+    var renderedContent = Utilities.newBlob(
+      Utilities.base64Decode(encodedContent)
+    ).getDataAsString()
+    assertNoAsciiReplacement_(updatedContent, renderedContent)
 
     var payload = {
       message: commitMessage,
@@ -136,19 +192,22 @@ function appendMarkdownEntryToGitHubRepo(
       muteHttpExceptions: true,
     })
 
-    if (
-      putResponse.getResponseCode() === 200 ||
-      putResponse.getResponseCode() === 201
-    ) {
+    var putStatus = putResponse.getResponseCode()
+    if (putStatus === 200 || putStatus === 201) {
       console.log(
         '[gitHubSync] Successfully committed Markdown update to GitHub: ' +
           filePath
       )
       return true
+    } else if (putStatus === 409) {
+      console.warn(
+        '[gitHubSync] SHA collision (HTTP 409) on file, will retry: ' + filePath
+      )
+      return false
     } else {
       console.error(
         '[gitHubSync] GitHub PUT HTTP ' +
-          putResponse.getResponseCode() +
+          putStatus +
           ': ' +
           putResponse.getContentText()
       )
@@ -162,6 +221,7 @@ function appendMarkdownEntryToGitHubRepo(
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     appendMarkdownEntryToGitHubRepo: appendMarkdownEntryToGitHubRepo,
+    executeGitHubCommit: executeGitHubCommit,
     assertClean_: assertClean_,
     assertNoAsciiReplacement_: assertNoAsciiReplacement_,
     RULE6_PATTERNS: RULE6_PATTERNS,

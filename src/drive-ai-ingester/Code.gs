@@ -23,6 +23,18 @@ function processDriveFilesWithAiIngester() {
     return
   }
 
+  // Concurrency guard: the 15-minute trigger can overlap with a still-running
+  // execution. Without a lock, two runs could both pass the [AI_INDEXED] check
+  // for the same file and race on the same GitHub file (SHA conflict) while both
+  // mark the Drive file indexed. A single script lock serializes runs.
+  var lock = LockService.getScriptLock()
+  if (!lock.tryLock(1000)) {
+    console.log(
+      '[processDriveFilesWithAiIngester] Another ingestion run is in progress; skipping this trigger.'
+    )
+    return
+  }
+
   var processedCount = 0
   var inspectedCount = 0
   var MAX_FILES_PER_RUN = 10
@@ -50,15 +62,13 @@ function processDriveFilesWithAiIngester() {
         continue
       }
 
-      // 2. Filter non-media document types in JavaScript
+      // 2. Filter to document types whose CONTENTS we can actually extract.
+      // Sheets, PDFs, Word/Excel, etc. are intentionally excluded until
+      // type-specific extraction exists: admitting them would send only the
+      // filename to the AI, producing tags/summaries that ignore the document
+      // body and permanently mark the file [AI_INDEXED] with a misclassification.
       var isDocument =
-        mime === MimeType.GOOGLE_DOCS ||
-        mime === MimeType.GOOGLE_SHEETS ||
-        mime === MimeType.PDF ||
-        mime === MimeType.PLAIN_TEXT ||
-        mime.indexOf('wordprocessingml') !== -1 ||
-        mime.indexOf('msword') !== -1 ||
-        mime.indexOf('spreadsheet') !== -1
+        mime === MimeType.GOOGLE_DOCS || mime === MimeType.PLAIN_TEXT
 
       if (!isDocument) {
         continue
@@ -80,8 +90,19 @@ function processDriveFilesWithAiIngester() {
       var metadata = analyzeDocumentWithAi(file.getName(), fileText, config)
 
       if (metadata) {
-        // 3. Apply Dual-Layer Metadata Tags
-        applyDualLayerTagsToDriveFile(file, metadata)
+        // 3. Apply Dual-Layer Metadata Tags. Only proceed to GitHub sync,
+        // success logging, and the processed counter when the [AI_INDEXED]
+        // marker was actually persisted; otherwise leave the file eligible for
+        // retry on a later run.
+        var tagged = applyDualLayerTagsToDriveFile(file, metadata)
+        if (!tagged) {
+          console.warn(
+            '[processDriveFilesWithAiIngester] Tagging failed; skipping GitHub sync and leaving file for retry: ' +
+              file.getName()
+          )
+          Utilities.sleep(2000)
+          continue
+        }
 
         // 4. Sync Executive Summary & Drive Link to GitHub self-private
         if (config.githubToken) {
@@ -126,6 +147,8 @@ function processDriveFilesWithAiIngester() {
       '[processDriveFilesWithAiIngester] Exception during Drive file iteration: ' +
         err.message
     )
+  } finally {
+    lock.releaseLock()
   }
 
   console.log(
@@ -152,14 +175,25 @@ function setupFifteenMinuteDriveTrigger() {
 }
 
 /**
- * Clears all active time-driven triggers for this script.
+ * Clears only this ingester's own time-driven triggers, leaving unrelated
+ * project automation (e.g. other handlers) intact.
  */
 function stopAllDriveTriggers() {
   var triggers = ScriptApp.getProjectTriggers()
+  var removed = 0
   for (var i = 0; i < triggers.length; i++) {
-    ScriptApp.deleteTrigger(triggers[i])
+    if (
+      triggers[i].getHandlerFunction() === 'processDriveFilesWithAiIngester'
+    ) {
+      ScriptApp.deleteTrigger(triggers[i])
+      removed++
+    }
   }
-  console.log('[stopAllDriveTriggers] All script triggers removed.')
+  console.log(
+    '[stopAllDriveTriggers] Removed ' +
+      removed +
+      ' processDriveFilesWithAiIngester trigger(s).'
+  )
 }
 
 function extractFileContentText(file) {
@@ -288,14 +322,22 @@ function analyzeDocumentWithAi(fileName, fileText, config) {
   return null
 }
 
+/**
+ * Applies the two metadata layers to a Drive file. Returns true ONLY when the
+ * [AI_INDEXED] marker is persisted in the file description (Layer 1) — that
+ * marker is what suppresses reprocessing on later runs. A Layer 2 (embedded
+ * front-matter) failure is logged but does not flip the status, because the
+ * marker is already persisted. If Layer 1 fails, returns false so the caller
+ * skips GitHub sync and leaves the file eligible for retry on the next run.
+ */
 function applyDualLayerTagsToDriveFile(file, metadata) {
-  try {
-    var tagsStr = (metadata.tags || []).join(', ')
-    var peopleStr = (metadata.people || []).join(', ')
-    var domainStr = metadata.canonicalDomain || ''
-    var sublabelStr = metadata.subLabel || ''
+  var tagsStr = (metadata.tags || []).join(', ')
+  var peopleStr = (metadata.people || []).join(', ')
+  var domainStr = metadata.canonicalDomain || ''
+  var sublabelStr = metadata.subLabel || ''
 
-    // 1. Layer 1: Native Drive File Description Metadata Tagging
+  // 1. Layer 1: Native Drive File Description Metadata Tagging (persists [AI_INDEXED])
+  try {
     var currDesc = file.getDescription() || ''
     if (currDesc.indexOf('[AI_INDEXED]') === -1) {
       var tagBlock =
@@ -314,8 +356,19 @@ function applyDualLayerTagsToDriveFile(file, metadata) {
           file.getName()
       )
     }
+  } catch (e) {
+    console.error(
+      '[applyDualLayerTagsToDriveFile] Layer 1 failed; [AI_INDEXED] NOT persisted for ' +
+        file.getName() +
+        ': ' +
+        e.message
+    )
+    return false
+  }
 
-    // 2. Layer 2: Embedded Document Front-Matter Header (Google Docs)
+  // 2. Layer 2: Embedded Document Front-Matter Header (Google Docs).
+  // Best-effort: the indexing marker is already persisted above.
+  try {
     if (file.getMimeType() === MimeType.GOOGLE_DOCS) {
       var doc = DocumentApp.openById(file.getId())
       var body = doc.getBody()
@@ -353,10 +406,14 @@ function applyDualLayerTagsToDriveFile(file, metadata) {
     }
   } catch (e) {
     console.warn(
-      '[applyDualLayerTagsToDriveFile] Error applying dual-layer tags: ' +
+      '[applyDualLayerTagsToDriveFile] Layer 2 (front-matter) failed for ' +
+        file.getName() +
+        ' (marker already persisted): ' +
         e.message
     )
   }
+
+  return true
 }
 
 function extractJsonSubstring(text) {

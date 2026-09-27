@@ -159,9 +159,9 @@ describe('GitHub Sync & Rule 6 Mojibake Guards', () => {
       )
     })
 
-    test('handles single segment paths', () => {
+    test('handles single segment paths and strips the file extension', () => {
       expect(extractTopicTitleFromPath('digital-backups.md')).toBe(
-        'Digital Backups.Md'
+        'Digital Backups'
       )
     })
   })
@@ -696,6 +696,87 @@ describe('GitHub Sync & Rule 6 Mojibake Guards', () => {
 
         expect(success).toBe(true)
         expect(attempts).toBe(3)
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    test('returns false on an unexpected PUT status (e.g. 422)', () => {
+      global.UrlFetchApp = {
+        fetch: jest.fn((url, options) => {
+          if (options.method === 'get') {
+            return {
+              getResponseCode: () => 200,
+              getContentText: () =>
+                JSON.stringify({
+                  sha: 'abc123sha',
+                  content: Utilities.base64Encode(
+                    Utilities.newBlob(
+                      '# Doc\n<details open><summary>Logs</summary>\n</details>'
+                    ).getBytes()
+                  ),
+                }),
+            }
+          }
+          return {
+            getResponseCode: () => 422,
+            getContentText: () => JSON.stringify({ message: 'Unprocessable' }),
+          }
+        }),
+      }
+
+      const result = executeGitHubCommit(
+        'household/finances/index.md',
+        '### 2026-09-12 — New Entry',
+        'feat(ingestion): New Entry',
+        'ghp_faketoken'
+      )
+      expect(result).toBe(false)
+    })
+
+    test('appendMarkdownEntryToGitHubRepo returns false after exhausting retries on persistent conflict', () => {
+      jest.useFakeTimers()
+      try {
+        global.PropertiesService = {
+          getScriptProperties: () => ({
+            getProperty: (k) => (k === 'GITHUB_PAT' ? 'ghp_valid' : ''),
+          }),
+        }
+
+        let getCalls = 0
+        global.UrlFetchApp = {
+          fetch: jest.fn((url, options) => {
+            if (options.method === 'get') {
+              getCalls++
+              return {
+                getResponseCode: () => 200,
+                getContentText: () =>
+                  JSON.stringify({
+                    sha: 'sha' + getCalls,
+                    content: Utilities.base64Encode(
+                      Utilities.newBlob(
+                        '# Doc\n<details open><summary>Logs</summary>\n</details>'
+                      ).getBytes()
+                    ),
+                  }),
+              }
+            }
+            // Every PUT collides (HTTP 409) -> executeGitHubCommit returns false
+            return {
+              getResponseCode: () => 409,
+              getContentText: () => JSON.stringify({ message: 'Conflict' }),
+            }
+          }),
+        }
+
+        const result = appendMarkdownEntryToGitHubRepo(
+          'household/finances/index.md',
+          '### 2026-09-12 — Persistent Conflict',
+          'feat(ingestion): Conflict'
+        )
+
+        expect(result).toBe(false)
+        expect(getCalls).toBe(3) // one full GET->PUT cycle per retry attempt
       } finally {
         jest.useRealTimers()
       }
