@@ -69,3 +69,11 @@ To keep this codebase a **clean, generic, reusable open-source harness** suitabl
 - **Generic Rule Refinement**: When common patterns emerge (e.g., delivered vs. in-transit shipments, auto-paid vs. manual bills), update the generic open-source rules so all users benefit.
 - **Entity Attribution Tuning**: When student, school, or organization attribution shifts, update the user configuration mapping.
 - **Verification**: Run unit tests (`npm test -- src/gmail-ai-classifier`) to verify that prompt and classification changes maintain zero regressions.
+
+### 4. Continuous Audit & Anomaly Detection
+
+To catch classification drift, orphan threads, and label collisions autonomously:
+
+- **`setupDailyAuditTrigger()`**: Sets up a daily 6:00 AM time-driven trigger that runs `auditEmailClassifications()`. (Automatically enabled when invoking `setupFiveMinuteTrigger()`).
+- **`auditEmailClassifications()`**: Inspects threads processed in the last 2 days for missing domain labels, conflicting multiple domains, or suspicious category mismatches (e.g. unfiled receipts or misrouted promotional emails).
+- **Audit Email Digest**: Optionally configure the `AUDIT_DIGEST_EMAIL` ScriptProperty to receive an automated notification whenever anomalies are detected, prompting targeted tuning via `CUSTOM_PROMPT_RULES`.

@@ -14,6 +14,11 @@ function getAiClassifierConfig() {
       props.getProperty('USER_ACCOUNT_EMAIL') ||
       'household-member@gmail.com',
     customPromptRules: props.getProperty('CUSTOM_PROMPT_RULES') || '',
+    auditDigestEmail: props.getProperty('AUDIT_DIGEST_EMAIL') || '',
+    auditLookbackDays: parseInt(
+      props.getProperty('AUDIT_LOOKBACK_DAYS') || '2',
+      10
+    ),
     processedLabel: 'Processed',
     unprocessedQuery: 'in:inbox -label:Processed',
     autoFilterConfidenceThreshold: 0.95,

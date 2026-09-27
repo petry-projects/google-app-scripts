@@ -685,6 +685,200 @@ function getSearchDateRange_(dateStr, days) {
   return { after: fmt(afterDt), before: fmt(beforeDt) }
 }
 
+/**
+ * Audits a collection of processed Gmail threads for classification anomalies.
+ *
+ * @param {Array} threads - Array of GmailThread-like objects
+ * @param {Object} config - Classifier config
+ * @returns {Object} report - { scannedCount, flaggedCount, findings, summary }
+ */
+function auditClassifications(threads, config) {
+  const canonicalDomains = (config && config.canonicalDomains) || [
+    '01_Household',
+    '02_Finance_Legal',
+    '03_Vehicles',
+    '04_Family_Health',
+    '05_Tech_Infrastructure',
+    '06_Work_Career',
+    '07_Community_NonProfit',
+  ]
+
+  const PROMO_KEYWORDS =
+    /\b(sale|\d+% off|deal of the day|clearance|limited time offer|coupon|shop now)\b/i
+  const NEWSLETTER_KEYWORDS =
+    /\b(weekly digest|daily digest|newsletter|roundup|top stories)\b/i
+  const ORDER_KEYWORDS =
+    /\b(order confirmation|your order|receipt|payment received|invoice|shipped)\b/i
+
+  const findings = []
+
+  if (!Array.isArray(threads)) {
+    return {
+      scannedCount: 0,
+      flaggedCount: 0,
+      findings: [],
+      summary: 'No threads to audit.',
+    }
+  }
+
+  threads.forEach((thread) => {
+    if (!thread) return
+    const id =
+      typeof thread.getId === 'function' ? thread.getId() : thread.id || ''
+    const subject =
+      typeof thread.getFirstMessageSubject === 'function'
+        ? thread.getFirstMessageSubject()
+        : thread.subject || ''
+
+    let sender = ''
+    if (typeof thread.getMessages === 'function') {
+      const msgs = thread.getMessages()
+      if (msgs && msgs.length > 0 && typeof msgs[0].getFrom === 'function') {
+        sender = msgs[0].getFrom()
+      }
+    } else if (thread.sender) {
+      sender = thread.sender
+    }
+
+    let rawLabels = []
+    if (typeof thread.getLabels === 'function') {
+      const labelObjs = thread.getLabels() || []
+      rawLabels = labelObjs.map((l) =>
+        typeof l.getName === 'function' ? l.getName() : String(l)
+      )
+    } else if (Array.isArray(thread.labels)) {
+      rawLabels = thread.labels
+    }
+
+    const assignedCanonical = rawLabels.filter(
+      (l) => canonicalDomains.includes(l) || /^0[1-7]_/.test(l)
+    )
+    const flags = []
+
+    // 1. Missing Domain
+    if (assignedCanonical.length === 0) {
+      flags.push(
+        'MISSING_CANONICAL_DOMAIN: Thread marked as processed has no canonical domain label.'
+      )
+    }
+
+    // 2. Conflicting Domains
+    if (assignedCanonical.length > 1) {
+      flags.push(
+        'CONFLICTING_DOMAINS: Multiple canonical domain labels assigned: ' +
+          assignedCanonical.join(', ')
+      )
+    }
+
+    // 3. Heuristic Checks
+    const fullText = (subject + ' ' + sender).toLowerCase()
+    if (ORDER_KEYWORDS.test(fullText)) {
+      const hasFinanceOrHousehold = assignedCanonical.some(
+        (l) =>
+          l.includes('02_Finance_Legal') ||
+          l.includes('01_Household') ||
+          l.includes('03_Vehicles')
+      )
+      if (assignedCanonical.length > 0 && !hasFinanceOrHousehold) {
+        flags.push(
+          'SUSPICIOUS_ROUTING: Purchase/receipt keywords detected but domain is ' +
+            assignedCanonical.join(', ') +
+            ' instead of 02_Finance_Legal.'
+        )
+      }
+    }
+
+    if (PROMO_KEYWORDS.test(subject) && assignedCanonical.length > 0) {
+      const hasMarketingSublabel = rawLabels.some((l) =>
+        /promo|marketing|deal|coupon/i.test(l)
+      )
+      if (!hasMarketingSublabel) {
+        flags.push(
+          'PROMOTIONAL_CONTENT: Promotional sale keywords in subject tagged under core domain ' +
+            assignedCanonical.join(', ') +
+            ' without marketing sub-label.'
+        )
+      }
+    }
+
+    if (NEWSLETTER_KEYWORDS.test(subject) && assignedCanonical.length > 0) {
+      const hasNewsletterSublabel = rawLabels.some((l) =>
+        /newsletter|digest|news/i.test(l)
+      )
+      if (!hasNewsletterSublabel) {
+        flags.push(
+          'UNLABELED_NEWSLETTER: Generic newsletter/digest subject tagged under core domain ' +
+            assignedCanonical.join(', ') +
+            ' without newsletter sub-label.'
+        )
+      }
+    }
+
+    if (flags.length > 0) {
+      findings.push({
+        threadId: id,
+        subject: subject,
+        sender: sender,
+        canonicalLabels: assignedCanonical,
+        allLabels: rawLabels,
+        flags: flags,
+      })
+    }
+  })
+
+  return {
+    scannedCount: threads.length,
+    flaggedCount: findings.length,
+    findings: findings,
+    summary:
+      'Audited ' +
+      threads.length +
+      ' thread(s); ' +
+      findings.length +
+      ' anomaly flag(s) identified.',
+  }
+}
+
+/**
+ * Formats an audit report into a human-readable email digest or log message.
+ *
+ * @param {Object} report - Result from auditClassifications
+ * @returns {string} Formatted digest text
+ */
+function formatAuditDigest(report) {
+  if (!report || report.flaggedCount === 0) {
+    return (
+      'Gmail AI Classifier Audit: All ' +
+      (report ? report.scannedCount : 0) +
+      ' analyzed threads are compliant. No anomalies detected.'
+    )
+  }
+
+  let text = '===================================================\n'
+  text += '   GMAIL AI CLASSIFICATION AUDIT REPORT\n'
+  text += '===================================================\n'
+  text += report.summary + '\n\n'
+
+  report.findings.forEach((finding, idx) => {
+    text +=
+      idx + 1 + '. Subject: "' + (finding.subject || '(no subject)') + '"\n'
+    text += '   Sender:  ' + (finding.sender || '(unknown)') + '\n'
+    text +=
+      '   Labels:  ' + (finding.canonicalLabels.join(', ') || '(none)') + '\n'
+    text += '   Flags:\n'
+    finding.flags.forEach((f) => {
+      text += '     • ' + f + '\n'
+    })
+    text += '\n'
+  })
+
+  text += '---------------------------------------------------\n'
+  text +=
+    'Tuning Action: Update ScriptProperty CUSTOM_PROMPT_RULES to add calibrated sender rules.\n'
+  text += '===================================================\n'
+  return text
+}
+
 module.exports = {
   validateClassification,
   classifyEmailWithGemini,
@@ -701,4 +895,6 @@ module.exports = {
   appendMarkdownEntryToGitHubRepo,
   executeGitHubCommit,
   getSearchDateRange_,
+  auditClassifications,
+  formatAuditDigest,
 }
