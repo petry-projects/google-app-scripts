@@ -435,6 +435,281 @@ function setupWeeklyRetentionTrigger() {
 }
 
 /**
+ * Sets up a daily cloud trigger to run auditEmailClassifications every morning at 6:00 AM.
+ */
+function setupDailyAuditTrigger() {
+  var triggers = ScriptApp.getProjectTriggers()
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'auditEmailClassifications') {
+      ScriptApp.deleteTrigger(triggers[i])
+    }
+  }
+
+  ScriptApp.newTrigger('auditEmailClassifications')
+    .timeBased()
+    .everyDays(1)
+    .atHour(6)
+    .create()
+
+  console.log(
+    '[setupDailyAuditTrigger] Established daily 6:00 AM classification audit trigger.'
+  )
+}
+
+/**
+ * Daily audit routine that inspects recently processed threads for classification anomalies,
+ * missing or duplicate domain labels, and potential prompt tuning opportunities.
+ * Logs anomalies to console and optionally emails a digest if AUDIT_DIGEST_EMAIL is configured.
+ */
+function auditEmailClassifications() {
+  console.log(
+    '[auditEmailClassifications] Starting daily classification audit sweep...'
+  )
+  var config = getAiClassifierConfig()
+  var lookback = config.auditLookbackDays || 2
+  var query = 'label:' + config.processedLabel + ' newer_than:' + lookback + 'd'
+
+  var threads = GmailApp.search(query, 0, 50)
+  console.log(
+    '[auditEmailClassifications] Found ' +
+      threads.length +
+      ' processed thread(s) in last ' +
+      lookback +
+      ' day(s).'
+  )
+
+  var report = auditClassifications(threads, config)
+  console.log('[auditEmailClassifications] ' + report.summary)
+
+  if (report.flaggedCount > 0) {
+    var digest = formatAuditDigest(report)
+    console.warn('[auditEmailClassifications] Anomalies detected:\n' + digest)
+
+    if (config.auditDigestEmail) {
+      try {
+        GmailApp.sendEmail(
+          config.auditDigestEmail,
+          '[Gmail AI Classifier] Daily Classification Audit: ' +
+            report.flaggedCount +
+            ' anomalies detected',
+          digest
+        )
+        console.log(
+          '[auditEmailClassifications] Audit digest email sent to ' +
+            config.auditDigestEmail
+        )
+      } catch (e) {
+        console.error(
+          '[auditEmailClassifications] Failed to send audit digest email:',
+          e.message
+        )
+      }
+    }
+  } else {
+    console.log(
+      '[auditEmailClassifications] All analyzed threads are compliant with taxonomy rules.'
+    )
+  }
+
+  return report
+}
+
+/**
+ * Audits a collection of processed Gmail threads for classification anomalies.
+ *
+ * @param {Array} threads - Array of GmailThread-like objects
+ * @param {Object} config - Classifier config
+ * @returns {Object} report - { scannedCount, flaggedCount, findings, summary }
+ */
+function auditClassifications(threads, config) {
+  var canonicalDomains = (config && config.canonicalDomains) || [
+    '01_Household',
+    '02_Finance_Legal',
+    '03_Vehicles',
+    '04_Family_Health',
+    '05_Tech_Infrastructure',
+    '06_Work_Career',
+    '07_Community_NonProfit',
+  ]
+
+  var PROMO_KEYWORDS =
+    /\b(sale|\d+% off|deal of the day|clearance|limited time offer|coupon|shop now)\b/i
+  var NEWSLETTER_KEYWORDS =
+    /\b(weekly digest|daily digest|newsletter|roundup|top stories)\b/i
+  var ORDER_KEYWORDS =
+    /\b(order confirmation|your order|receipt|payment received|invoice|shipped)\b/i
+
+  var findings = []
+
+  if (!Array.isArray(threads)) {
+    return {
+      scannedCount: 0,
+      flaggedCount: 0,
+      findings: [],
+      summary: 'No threads to audit.',
+    }
+  }
+
+  threads.forEach(function (thread) {
+    if (!thread) return
+    var id =
+      typeof thread.getId === 'function' ? thread.getId() : thread.id || ''
+    var subject =
+      typeof thread.getFirstMessageSubject === 'function'
+        ? thread.getFirstMessageSubject()
+        : thread.subject || ''
+
+    var sender = ''
+    if (typeof thread.getMessages === 'function') {
+      var msgs = thread.getMessages()
+      if (msgs && msgs.length > 0 && typeof msgs[0].getFrom === 'function') {
+        sender = msgs[0].getFrom()
+      }
+    } else if (thread.sender) {
+      sender = thread.sender
+    }
+
+    var rawLabels = []
+    if (typeof thread.getLabels === 'function') {
+      var labelObjs = thread.getLabels() || []
+      rawLabels = labelObjs.map(function (l) {
+        return typeof l.getName === 'function' ? l.getName() : String(l)
+      })
+    } else if (Array.isArray(thread.labels)) {
+      rawLabels = thread.labels
+    }
+
+    var assignedCanonical = rawLabels.filter(function (l) {
+      return canonicalDomains.indexOf(l) !== -1 || /^0[1-7]_/.test(l)
+    })
+    var flags = []
+
+    // 1. Missing Domain
+    if (assignedCanonical.length === 0) {
+      flags.push(
+        'MISSING_CANONICAL_DOMAIN: Thread marked as processed has no canonical domain label.'
+      )
+    }
+
+    // 2. Conflicting Domains
+    if (assignedCanonical.length > 1) {
+      flags.push(
+        'CONFLICTING_DOMAINS: Multiple canonical domain labels assigned: ' +
+          assignedCanonical.join(', ')
+      )
+    }
+
+    // 3. Heuristic Checks
+    var fullText = (subject + ' ' + sender).toLowerCase()
+    if (ORDER_KEYWORDS.test(fullText)) {
+      var hasFinanceOrHousehold = assignedCanonical.some(function (l) {
+        return (
+          l.indexOf('02_Finance_Legal') !== -1 ||
+          l.indexOf('01_Household') !== -1 ||
+          l.indexOf('03_Vehicles') !== -1
+        )
+      })
+      if (assignedCanonical.length > 0 && !hasFinanceOrHousehold) {
+        flags.push(
+          'SUSPICIOUS_ROUTING: Purchase/receipt keywords detected but domain is ' +
+            assignedCanonical.join(', ') +
+            ' instead of 02_Finance_Legal.'
+        )
+      }
+    }
+
+    if (PROMO_KEYWORDS.test(subject) && assignedCanonical.length > 0) {
+      var hasMarketingSublabel = rawLabels.some(function (l) {
+        return /promo|marketing|deal|coupon/i.test(l)
+      })
+      if (!hasMarketingSublabel) {
+        flags.push(
+          'PROMOTIONAL_CONTENT: Promotional sale keywords in subject tagged under core domain ' +
+            assignedCanonical.join(', ') +
+            ' without marketing sub-label.'
+        )
+      }
+    }
+
+    if (NEWSLETTER_KEYWORDS.test(subject) && assignedCanonical.length > 0) {
+      var hasNewsletterSublabel = rawLabels.some(function (l) {
+        return /newsletter|digest|news/i.test(l)
+      })
+      if (!hasNewsletterSublabel) {
+        flags.push(
+          'UNLABELED_NEWSLETTER: Generic newsletter/digest subject tagged under core domain ' +
+            assignedCanonical.join(', ') +
+            ' without newsletter sub-label.'
+        )
+      }
+    }
+
+    if (flags.length > 0) {
+      findings.push({
+        threadId: id,
+        subject: subject,
+        sender: sender,
+        canonicalLabels: assignedCanonical,
+        allLabels: rawLabels,
+        flags: flags,
+      })
+    }
+  })
+
+  return {
+    scannedCount: threads.length,
+    flaggedCount: findings.length,
+    findings: findings,
+    summary:
+      'Audited ' +
+      threads.length +
+      ' thread(s); ' +
+      findings.length +
+      ' anomaly flag(s) identified.',
+  }
+}
+
+/**
+ * Formats an audit report into a human-readable email digest or log message.
+ *
+ * @param {Object} report - Result from auditClassifications
+ * @returns {string} Formatted digest text
+ */
+function formatAuditDigest(report) {
+  if (!report || report.flaggedCount === 0) {
+    return (
+      'Gmail AI Classifier Audit: All ' +
+      (report ? report.scannedCount : 0) +
+      ' analyzed threads are compliant. No anomalies detected.'
+    )
+  }
+
+  var text = '===================================================\n'
+  text += '   GMAIL AI CLASSIFICATION AUDIT REPORT\n'
+  text += '===================================================\n'
+  text += report.summary + '\n\n'
+
+  report.findings.forEach(function (finding, idx) {
+    text +=
+      idx + 1 + '. Subject: "' + (finding.subject || '(no subject)') + '"\n'
+    text += '   Sender:  ' + (finding.sender || '(unknown)') + '\n'
+    text +=
+      '   Labels:  ' + (finding.canonicalLabels.join(', ') || '(none)') + '\n'
+    text += '   Flags:\n'
+    finding.flags.forEach(function (f) {
+      text += '     • ' + f + '\n'
+    })
+    text += '\n'
+  })
+
+  text += '---------------------------------------------------\n'
+  text +=
+    'Tuning Action: Update ScriptProperty CUSTOM_PROMPT_RULES to add calibrated sender rules.\n'
+  text += '===================================================\n'
+  return text
+}
+
+/**
  * Creates an automatic Cloud Trigger that runs email classification every 5 minutes 24/7.
  */
 function setupFiveMinuteTrigger() {
@@ -444,8 +719,9 @@ function setupFiveMinuteTrigger() {
     .everyMinutes(5)
     .create()
   setupWeeklyRetentionTrigger()
+  setupDailyAuditTrigger()
   console.log(
-    '[setupFiveMinuteTrigger] Successfully established 5-minute recurring cloud trigger and weekly retention trigger.'
+    '[setupFiveMinuteTrigger] Successfully established 5-minute recurring cloud trigger, weekly retention trigger, and daily audit trigger.'
   )
 }
 
