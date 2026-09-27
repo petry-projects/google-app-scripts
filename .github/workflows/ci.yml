@@ -1,4 +1,4 @@
-name: CI
+name: CI Pipeline
 
 permissions: {}
 
@@ -57,6 +57,9 @@ jobs:
 
       - name: Type check
         run: npm run typecheck
+
+      - name: Strict No-PII Check
+        run: npm run check:pii
 
   autofix:
     needs: build-and-test
