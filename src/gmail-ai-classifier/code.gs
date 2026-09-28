@@ -5,11 +5,63 @@
 
 var GMAIL_AI_CLASSIFIER_VERSION = 'v1.7.0-strict-single-label-no-autofilters'
 
+function remediateUnlabeledUtilityThreads() {
+  try {
+    var query =
+      'water OR "water works" OR bwwb OR "caw-al.gov" OR "Central Alabama Water" OR "Funding Account Details"'
+    var threads = GmailApp.search(query, 0, 15)
+    console.log(
+      '[remediateUnlabeledUtilityThreads] Found ' +
+        threads.length +
+        ' candidate thread(s).'
+    )
+
+    var targetSubLabel = 'Finance/Banking'
+    var targetDomain = '02_Finance_Legal'
+    var remediatedCount = 0
+
+    for (var i = 0; i < threads.length; i++) {
+      var t = threads[i]
+      var labels = t.getLabels().map(function (l) {
+        return l.getName()
+      })
+
+      var hasDomain = labels.indexOf(targetDomain) !== -1
+      var hasSubLabel =
+        labels.indexOf('Finance/Banking') !== -1 ||
+        labels.indexOf('Finance/Bills') !== -1
+
+      // If thread already carries the core domain or appropriate sub-label, skip
+      if (hasDomain || hasSubLabel) {
+        continue
+      }
+
+      console.log(
+        '[remediateUnlabeledUtilityThreads] Remediating utility thread missing domain label: ' +
+          t.getFirstMessageSubject()
+      )
+      var labelObj = ensureUserLabel(targetSubLabel)
+      t.addLabel(labelObj)
+      setGmailCategoryTab(t, 'Updates')
+      remediatedCount++
+    }
+
+    console.log(
+      '[remediateUnlabeledUtilityThreads] Successfully remediated ' +
+        remediatedCount +
+        ' thread(s).'
+    )
+  } catch (e) {
+    console.error('[remediateUnlabeledUtilityThreads] Error: ' + e.message)
+  }
+}
+
 function processEmailsWithAiClassifier() {
   console.log(
     '[processEmailsWithAiClassifier] Engine Version: ' +
       GMAIL_AI_CLASSIFIER_VERSION
   )
+  remediateUnlabeledUtilityThreads()
   console.log(
     '[processEmailsWithAiClassifier] Starting AI semantic email processing...'
   )
@@ -168,10 +220,14 @@ function processEmailsWithAiClassifier() {
       ) {
         setGmailCategoryTab(thread, classification.category)
       }
-    }
 
-    // Apply Single Global Processed Label (preserves INBOX visibility unless trashed/archived)
-    thread.addLabel(processedLabel)
+      // Apply Single Global Processed Label (preserves INBOX visibility unless trashed/archived)
+      thread.addLabel(processedLabel)
+    } else {
+      console.warn(
+        '[processEmailsWithAiClassifier] Classification failed or returned null; preserving thread unprocessed for retry.'
+      )
+    }
 
     // Sleep 2 seconds between emails to avoid hitting API rate limits
     Utilities.sleep(2000)
@@ -776,7 +832,7 @@ function classifyWithGemini(sender, subject, snippet, config) {
     '.\n\n' +
     'STRICT CLASSIFICATION RULES:\n' +
     "1. MEDIA & PLATFORM NEWSLETTERS (Medium, Substack, LinkedIn digests, event/news blasts): Treat strictly as Promotional / Newsletter and return null for canonicalDomain. Do NOT classify under '06_Work_Career' or '04_Family_Health'. Set category to 'Promotions', action to 'archive'.\n" +
-    "2. UTILITY & TECH BILLS (Electric, Gas, Water, Internet, Phone, Cloud infrastructure): Classify under '02_Finance_Legal' (sub-label 'Finance/Banking' or 'Finance/Bills') or '05_Tech_Infrastructure' (sub-label 'Tech/Alerts-Monitoring'). CRITICAL TRIAGE: If the bill is due and requires manual payment / action (no auto-pay confirmed), set category to 'Primary', action to 'keep'. If auto-pay is confirmed scheduled/active, set category to 'Updates', action to 'archive'.\n" +
+    "2. UTILITY & TECH BILLS & ACCOUNTS (Electric, Gas, Water, Internet, Phone, Cloud infrastructure, and utility payment/funding accounts): Classify all utility bills, statements, payment confirmations, and account/funding setup notices under '02_Finance_Legal' (or '05_Tech_Infrastructure' for tech cloud infrastructure). Use sub-label 'Finance/Bills' for statements, usage notices, and invoices; use 'Finance/Banking' for funding accounts, payment methods, bank linkages, autopay setups, and portal migration notices. CRITICAL TRIAGE: If the bill is due and requires manual payment / action (no auto-pay confirmed), set category to 'Primary', action to 'keep'. If auto-pay or funding confirmation is scheduled/active/confirmed, set category to 'Updates', action to 'archive'.\n" +
     "3. MARRIAGE & ADULT FAMILY (Personal correspondence, family retreats, marital planning): Classify under '04_Family_Health' (sub-label 'Family/Personal-Correspondence'). Set category to 'Primary', action to 'keep'.\n" +
     "4. NON-PROFIT CHARITY & VOLUNTEERING (501(c)(3) charity records, volunteer schedules, non-profit Board of Directors official communications, telemetry alerts): Classify strictly under '07_Community_NonProfit' (sub-labels 'Projects/Charity', 'Community/BOD', or 'Projects/Telemetry'). For volunteer shift reminders, set category to 'Updates', action to 'keep'. For general newsletters or recap blasts, set category to 'Updates', action to 'archive'.\n" +
     "5. HEALTH & MEDICAL (Personal family medical records, doctor visits, patient portals, hospital records, prescription notices): Classify under '04_Family_Health' (sub-label 'Family/Medical'). If prescription is ready or doctor appointment requires action, set category to 'Primary', action to 'keep'. For health newsletters (health blogs, drug recalls), treat as Newsletter (canonicalDomain: null, category: 'Promotions', action: 'archive').\n" +
@@ -785,7 +841,7 @@ function classifyWithGemini(sender, subject, snippet, config) {
     "8. TECH WEBINARS & PRODUCT MARKETING (Cloud webinars, 'Register Now', product marketing, tech promos): Treat as Promotional / Marketing and return null for canonicalDomain. Reserve '05_Tech_Infrastructure' strictly for active system alerts, security warnings, spend cap notifications, and project quota/outage alerts. Set category to 'Promotions', action to 'archive'.\n" +
     "9. HOBBY & STORE MARKETING (Commercial hobby stores, e-commerce store newsletters, product announcements): Treat as Promotional / Marketing and return null for canonicalDomain. Reserve '07_Community_NonProfit' strictly for active telemetry alerts and official non-profit communications. Set category to 'Promotions', action to 'archive'.\n" +
     "10. SPAM & PHISHING & UNWANTED SOLICITATION: Set action to 'trash'.\n" +
-    "11. ROUTINE AUTHENTICATION & FINANCIAL TRANSFER NOTIFICATIONS (Login/SSO confirmations, routine identity verifications, internal account transfers, automated git notifications): If routine successful sign-in or transfer, classify under '02_Finance_Legal' (sub-label 'Finance/Banking') or '05_Tech_Infrastructure' and set category to 'Updates', action to 'archive'. If suspicious login alert or password reset, set category to 'Primary', action to 'keep'.\n" +
+    "11. ROUTINE AUTHENTICATION & FINANCIAL TRANSFER NOTIFICATIONS (Login/SSO confirmations, linked funding/bank account setups, routine identity verifications, internal account transfers, automated git notifications): If routine successful sign-in, linked funding account, or transfer, classify under '02_Finance_Legal' (sub-label 'Finance/Banking') or '05_Tech_Infrastructure' and set category to 'Updates', action to 'archive'. If suspicious login alert or password reset, set category to 'Primary', action to 'keep'.\n" +
     "12. ORDER CONFIRMATIONS, SHIPMENTS & RECEIPTS (Order confirmations, purchase receipts, invoices, delivery confirmations): Classify under '02_Finance_Legal' (sub-label 'Finance/Purchases') or '01_Household' / '03_Vehicles'. While order is placed or in-transit, set category to 'Updates', action to 'keep'. When package is marked delivered or completed, set category to 'Updates', action to 'archive'.\n" +
     "13. SINGLE SUB-LABEL RULE: Return AT MOST ONE subLabel string per email (the single best matching sub-label, e.g. 'Finance/Banking' or 'Family/School-Student'). Do NOT stack multiple sub-labels.\n" +
     "14. UNSOLICITED REAL ESTATE & INVESTMENT SOLICITATION (Cold wholesaler property blasts, 'Off-Market Investment Opportunity', 'We Buy Houses', unsolicited real estate deal blasts): Treat as Promotional / Solicitation and return null for canonicalDomain. Do NOT classify under '02_Finance_Legal' or '01_Household'. Reserve '02_Finance_Legal' strictly for personal bank statements, mortgages, tax documents, credit cards, and active legal records. Set action to 'trash'.\n" +
