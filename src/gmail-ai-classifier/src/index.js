@@ -44,6 +44,83 @@ function _sleep(ms) {
 }
 
 /**
+ * Constructs an Ontological Knowledge Graph & Triage Matrix prompt for Gemini classification.
+ * Uses positive invariant domain scopes, an orthogonal lifecycle triage matrix,
+ * and user entity graph injection, eliminating negative exclusion rules.
+ *
+ * @param {Object} config - Classifier configuration (canonicalDomains, customPromptRules)
+ * @param {string} sender - Email sender header
+ * @param {string} subject - Email subject line
+ * @param {string} snippet - Email body snippet
+ * @returns {string} Prompt text for Gemini API
+ */
+function buildOntologicalPrompt(config, sender, subject, snippet) {
+  const domains = (config && config.canonicalDomains) || []
+  let prompt =
+    'You are an executive email classifier. Perform semantic classification into ONE canonical domain key from: ' +
+    JSON.stringify(domains) +
+    ' (or null if non-canonical).\n\n' +
+    '=== TIER 1: DOMAIN TAXONOMY ONTOLOGY (POSITIVE INVARIANTS) ===\n' +
+    'Classify emails based on what each domain positively governs:\n' +
+    "• '01_Household': Physical residence, real estate property, maintenance, home repairs, contractor invoices, home utilities, household inventory, travel/lodging reservations, and artisanal home craft/business sales. Valid sub-labels: 'Household/Property', 'Household/Maintenance', 'Household/Travel', 'Projects/Business'.\n" +
+    "• '02_Finance_Legal': Personal banking, checking/savings, credit cards, investments, mortgages, personal tax filings (W-2, 1098, 1099, returns), utility payment accounts/funding, purchase invoices/receipts, insurance policies, legal filings, court orders, and formal contracts. Valid sub-labels: 'Finance/Banking', 'Finance/Bills', 'Finance/Purchases', 'Finance/Taxes', 'Finance/Charitable-Donations', 'Finance/Legal'.\n" +
+    "• '03_Vehicles': Personal automobile titles, registrations, vehicle insurance, automotive maintenance, repairs, parts, and car rental reservations. Valid sub-labels: 'Vehicles/Maintenance', 'Vehicles/Purchases', 'Vehicles/Rental-Cars'.\n" +
+    "• '04_Family_Health': Family correspondence, healthcare records, doctor appointments, patient portals, prescriptions, elder care, and student education/coursework/school portals. Valid sub-labels: 'Family/Medical', 'Family/Personal-Correspondence', 'Family/School-Student', 'Family/Legal', 'Family/Correspondence'.\n" +
+    "• '05_Tech_Infrastructure': Cloud hosting, server infrastructure, domains/DNS, network hardware, security alerts, system telemetry, and developer platform quota/outage alerts. Valid sub-labels: 'Tech/Cloud', 'Tech/Security', 'Tech/Alerts'.\n" +
+    "• '06_Work_Career': Professional employment, career advancement, job applications, recruiter correspondence, interview schedules, employer benefits, and consulting. Valid sub-labels: 'Work/Career', 'Work/Employer'.\n" +
+    "• '07_Community_NonProfit': Official 501(c)(3) charities, non-profit boards of directors, volunteer shift schedules, civic records, and community telemetry. Valid sub-labels: 'Projects/Charity', 'Community/BOD', 'Projects/Telemetry'.\n\n" +
+    'NON-CANONICAL EMAILS (canonicalDomain: null):\n' +
+    '• Media & platform newsletters (Substack, Medium, LinkedIn digests, news recaps, blogs, trade publications).\n' +
+    '• Retail marketing, store discounts, commercial coupons, e-commerce promotional blasts.\n' +
+    '• Commercial webinars, product demos, vendor marketing broadcasts.\n' +
+    '• Unsolicited real estate cold calls, off-market wholesaler pitches, bulk solicitation.\n\n' +
+    'AUTOMATED SEARCH & MONITORING ALERTS (Google Alerts, Talkwalker, CourtListener, web mentions):\n' +
+    'Route monitoring alerts strictly according to the subject entity being monitored:\n' +
+    "• Person, family member, elder care, or genealogy monitoring -> '04_Family_Health' ('Family/Legal' or 'Family/Correspondence') or '02_Finance_Legal' ('Finance/Legal').\n" +
+    "• Municipal, neighborhood, zoning, or real property monitoring -> '01_Household' ('Household/Property').\n" +
+    "• Corporate, business, industry, or career monitoring -> '06_Work_Career' ('Work/Career').\n" +
+    "• General news or unassigned media mention -> canonicalDomain: null (category: 'Updates', action: 'archive').\n" +
+    '• Student or school sub-labels apply only when the monitored alert query specifically targets an academic program or school.\n\n' +
+    '=== TIER 2: ORTHOGONAL TRIAGE MATRIX (LIFECYCLE STATE) ===\n' +
+    'Determine category and action based on the lifecycle state of the email:\n' +
+    '1. Action_Required (Manual bills due without auto-pay, direct personal/teacher messages needing reply, audit/response deadlines, suspicious login alerts, ready prescriptions):\n' +
+    "   -> category: 'Primary', action: 'keep'\n" +
+    '2. Informational_Feed (Automated search/monitoring alerts, active orders in transit, routine tax forms/receipts, volunteer reminders, upcoming travel itineraries):\n' +
+    "   -> category: 'Updates', action: 'keep'\n" +
+    '3. Completed_Transaction (Confirmed scheduled auto-payments, delivered packages, successful SSO/sign-ins, routine lunch menu digests, bank transfers):\n' +
+    "   -> category: 'Updates', action: 'archive'\n" +
+    '4. Broadcast_Marketing (Commercial promos, retail discounts, vendor newsletters):\n' +
+    "   -> category: 'Promotions', action: 'archive'\n" +
+    '5. Spam_Solicitation (Phishing, scam attempts, cold wholesaler pitches):\n' +
+    "   -> category: 'Promotions', action: 'trash'\n\n" +
+    '=== CONSTRAINTS ===\n' +
+    '• Single Sub-Label Invariant: Return AT MOST ONE sub-label string (e.g. "Finance/Banking" or "Family/School-Student"). Do not stack or combine multiple sub-labels.\n\n'
+
+  if (config && config.customPromptRules) {
+    prompt +=
+      '=== TIER 3: USER ENTITY KNOWLEDGE GRAPH & CUSTOM RULES ===\n' +
+      config.customPromptRules +
+      '\n\n'
+  }
+
+  prompt +=
+    'Sender: ' +
+    sender +
+    '\n' +
+    'Subject: ' +
+    subject +
+    '\n' +
+    'Body Snippet: ' +
+    snippet +
+    '\n\n' +
+    'Return JSON ONLY: {"canonicalDomain": "01_Household", "subLabel": "Household/Property", "category": "Updates", "action": "keep", "confidence": 0.98, "title": "Short Title", "summary": "2 sentence executive summary"}\n' +
+    "Valid categories: 'Primary', 'Updates', 'Promotions', 'Social', 'Forums'.\n" +
+    "Valid actions: 'keep', 'archive', 'trash', 'mark_read'."
+
+  return prompt
+}
+
+/**
  * Calls the Gemini REST API and returns a validated classification object, or null.
  *
  * Returns null on network errors, malformed responses, refused responses, or
@@ -1469,6 +1546,7 @@ function persistCanonicalAttachmentsToDrive(
 module.exports = {
   validateClassification,
   classifyEmailWithGemini,
+  buildOntologicalPrompt,
   ensureGmailLabel,
   createPermanentGmailFilter,
   processThreadBatch,
