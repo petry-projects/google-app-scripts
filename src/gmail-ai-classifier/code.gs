@@ -1558,8 +1558,40 @@ var SUBLABEL_TO_FOLDER_MAP = {
   'community/charity': 'Community_BOD',
 }
 
-var TRACKING_OR_SIG_PATTERN =
-  /^(image\d{3}|signature|logo|icon|spacer|pixel|tracking|banner|facebook|twitter|instagram|linkedin|youtube)\.(png|jpe?g|gif|webp|bmp|ico)$/i
+var TRACKING_IMAGE_EXTS = {
+  png: true,
+  jpg: true,
+  jpeg: true,
+  gif: true,
+  webp: true,
+  bmp: true,
+  ico: true,
+}
+var TRACKING_STEM_NAMES = {
+  signature: true,
+  logo: true,
+  icon: true,
+  spacer: true,
+  pixel: true,
+  tracking: true,
+  banner: true,
+  facebook: true,
+  twitter: true,
+  instagram: true,
+  linkedin: true,
+  youtube: true,
+}
+
+function isTrackingOrSigImageName_(fileName) {
+  if (!fileName || typeof fileName !== 'string') return false
+  var dotIndex = fileName.lastIndexOf('.')
+  if (dotIndex <= 0) return false
+  var ext = fileName.slice(dotIndex + 1).toLowerCase()
+  if (!TRACKING_IMAGE_EXTS[ext]) return false
+  var stem = fileName.slice(0, dotIndex).toLowerCase()
+  if (TRACKING_STEM_NAMES[stem]) return true
+  return /^image\d{3}$/.test(stem)
+}
 
 /**
  * Computes MD5 hex digest for a GAS blob.
@@ -1672,7 +1704,7 @@ function isEligibleAttachment(att) {
   ).toLowerCase()
 
   // 2. Filter out known tracking / signature image names (< 25KB)
-  if (TRACKING_OR_SIG_PATTERN.test(cleanName) && size < 25 * 1024) {
+  if (isTrackingOrSigImageName_(cleanName) && size < 25 * 1024) {
     return false
   }
 
@@ -1699,12 +1731,7 @@ function getOrCreateChildFolder_(parentFolder, folderName) {
  * Idempotently traverses or creates the 2-level Drive taxonomy path (Domain / Subfolder).
  */
 function ensureDriveTaxonomyFolder(canonicalDomain, subfolderName, driveApp) {
-  var drive =
-    driveApp !== undefined
-      ? driveApp
-      : typeof DriveApp !== 'undefined'
-        ? DriveApp
-        : null
+  var drive = driveApp || (typeof DriveApp !== 'undefined' ? DriveApp : null)
   if (!drive) {
     throw new Error('DriveApp service unavailable')
   }
@@ -1722,41 +1749,45 @@ function ensureDriveTaxonomyFolder(canonicalDomain, subfolderName, driveApp) {
   return getOrCreateChildFolder_(domainFolder, subfolderName)
 }
 
+function extractBlobBytes_(blob) {
+  if (blob && typeof blob.getBytes === 'function') {
+    return blob.getBytes()
+  }
+  if (blob && blob.bytes) {
+    return blob.bytes
+  }
+  return []
+}
+
+function extractFileSize_(file) {
+  if (!file) return 0
+  if (typeof file.getSize === 'function') {
+    return file.getSize()
+  }
+  if (file.size !== undefined) {
+    return file.size
+  }
+  return 0
+}
+
 /**
  * Checks if an exact duplicate file already exists in target folder (size match + MD5 hash).
  */
 function isDuplicateAttachment(existingFiles, newFileBlob, helperFns) {
-  var hashFn = (helperFns && helperFns.getFileHash) || getFileHash
-  var newFileBytes
-  if (newFileBlob && typeof newFileBlob.getBytes === 'function') {
-    newFileBytes = newFileBlob.getBytes()
-  } else if (newFileBlob && newFileBlob.bytes) {
-    newFileBytes = newFileBlob.bytes
-  } else {
-    newFileBytes = []
+  if (!existingFiles || typeof existingFiles.hasNext !== 'function') {
+    return false
   }
+  var hashFn = (helperFns && helperFns.getFileHash) || getFileHash
+  var newFileBytes = extractBlobBytes_(newFileBlob)
   var newFileLength = newFileBytes.length
   var newFileHash = hashFn(newFileBlob)
 
-  while (
-    existingFiles &&
-    typeof existingFiles.hasNext === 'function' &&
-    existingFiles.hasNext()
-  ) {
+  while (existingFiles.hasNext()) {
     var existingFile = existingFiles.next()
-
-    // Compare sizes first (fast fail)
-    var existingSize =
-      typeof existingFile.getSize === 'function'
-        ? existingFile.getSize()
-        : existingFile.size !== undefined
-          ? existingFile.size
-          : 0
-    if (existingSize !== newFileLength) {
+    if (extractFileSize_(existingFile) !== newFileLength) {
       continue
     }
 
-    // Deep check: MD5 hash fingerprint
     var existingBlob =
       typeof existingFile.getBlob === 'function'
         ? existingFile.getBlob()

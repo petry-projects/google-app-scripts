@@ -262,6 +262,39 @@ describe('Drive Attachment Persistence along Taxonomy Path', () => {
       expect(isEligibleAttachment(trackingAtt)).toBe(false)
     })
 
+    test('supports getBytes, bytes, and size fallbacks', () => {
+      const attWithGetBytes = {
+        getName: () => 'document.pdf',
+        getBytes: () => Buffer.from('hello-world-12345'),
+      }
+      expect(isEligibleAttachment(attWithGetBytes)).toBe(true)
+
+      const attWithEmptyBytes = {
+        getName: () => 'empty.pdf',
+        getBytes: () => null,
+      }
+      expect(isEligibleAttachment(attWithEmptyBytes)).toBe(false)
+
+      const attWithBytesProp = {
+        getName: () => 'document2.pdf',
+        bytes: Buffer.from('hello-world-12345'),
+      }
+      expect(isEligibleAttachment(attWithBytesProp)).toBe(true)
+
+      const attWithSizeProp = {
+        name: 'document3.pdf',
+        size: 5000,
+      }
+      expect(isEligibleAttachment(attWithSizeProp)).toBe(true)
+
+      const smallNonTrackingImage = {
+        name: 'other_small.png',
+        contentType: 'image/png',
+        size: 5000,
+      }
+      expect(isEligibleAttachment(smallNonTrackingImage)).toBe(false)
+    })
+
     test('accepts document attachments of all types', () => {
       const docs = [
         'water_bill.pdf',
@@ -314,6 +347,19 @@ describe('Drive Attachment Persistence along Taxonomy Path', () => {
         ensureDriveTaxonomyFolder('01_Household', 'Bills', null)
       ).toThrow('DriveApp service unavailable')
     })
+
+    test('returns domain folder when subfolderName is empty or omitted', () => {
+      const driveApp = createMockDriveApp()
+      const folder = ensureDriveTaxonomyFolder('01_Household', '', driveApp)
+      expect(folder).toBeDefined()
+      expect(folder.getName()).toBe('01_Household')
+    })
+
+    test('throws error when root folder is invalid', () => {
+      expect(() =>
+        ensureDriveTaxonomyFolder('01_Household', 'Bills', {})
+      ).toThrow('DriveApp service unavailable or invalid root folder')
+    })
   })
 
   describe('isDuplicateAttachment & resolveAttachmentName', () => {
@@ -349,6 +395,59 @@ describe('Drive Attachment Persistence along Taxonomy Path', () => {
       })
 
       expect(isDuplicateAttachment(existingFiles, blobDiff)).toBe(false)
+    })
+
+    test('returns false when existingFiles is missing or has no hasNext', () => {
+      expect(isDuplicateAttachment(null, createMockAttachment())).toBe(false)
+      expect(isDuplicateAttachment({}, createMockAttachment())).toBe(false)
+    })
+
+    test('supports newFileBlob as Buffer or object with bytes or null', () => {
+      const folder = createMockFolder('Bills')
+      const existing = folder.getFilesByName('file.pdf')
+      const buf = Buffer.from('test')
+      expect(isDuplicateAttachment(existing, buf)).toBe(false)
+      expect(isDuplicateAttachment(existing, { bytes: buf })).toBe(false)
+      expect(isDuplicateAttachment(existing, null)).toBe(false)
+    })
+
+    test('checks size property on existing file if getSize is missing', () => {
+      const mockExisting = {
+        hasNext: jest.fn().mockReturnValueOnce(true).mockReturnValueOnce(false),
+        next: () => ({
+          size: 10,
+          getBlob: () => ({ getBytes: () => Buffer.from('1234567890') }),
+        }),
+      }
+      const newBlob = {
+        getBytes: () => Buffer.from('1234567890'),
+      }
+      expect(isDuplicateAttachment(mockExisting, newBlob)).toBe(true)
+    })
+
+    test('handles fallback when blob or file has no size or byte accessors', () => {
+      const mockFolder = createMockFolder('Bills')
+      const existing = mockFolder.getFilesByName('file.pdf')
+      expect(isDuplicateAttachment(existing, {})).toBe(false)
+
+      const faultyBlob = {
+        getBytes: () => {
+          throw new Error('Hash calculation error')
+        },
+      }
+      expect(isDuplicateAttachment(existing, faultyBlob)).toBe(false)
+
+      const fileWithoutSizeOrGetSize = {
+        hasNext: jest.fn().mockReturnValueOnce(true).mockReturnValueOnce(false),
+        next: () => ({
+          getBlob: () => ({ bytes: Buffer.from('') }),
+        }),
+      }
+      expect(
+        isDuplicateAttachment(fileWithoutSizeOrGetSize, {
+          bytes: Buffer.from(''),
+        })
+      ).toBe(true)
     })
 
     test('resolveAttachmentName appends timestamp when file of same name exists with different content', () => {
@@ -489,6 +588,62 @@ describe('Drive Attachment Persistence along Taxonomy Path', () => {
       )
       expect(results2).toHaveLength(0)
     })
+
+    test('returns empty array when DriveApp is unavailable in services or global', () => {
+      const thread = { getMessages: () => [] }
+      const classification = { canonicalDomain: '01_Household' }
+      const results = persistCanonicalAttachmentsToDrive(
+        thread,
+        classification,
+        { canonicalDomains: ['01_Household'] },
+        { DriveApp: null }
+      )
+      expect(results).toEqual([])
+    })
+
+    test('handles error when ensureDriveTaxonomyFolder throws', () => {
+      const thread = { getMessages: () => [] }
+      const classification = { canonicalDomain: '01_Household' }
+      const results = persistCanonicalAttachmentsToDrive(
+        thread,
+        classification,
+        { canonicalDomains: ['01_Household'] },
+        { DriveApp: { getRootFolder: () => ({}) } }
+      )
+      expect(results).toEqual([])
+    })
+
+    test('catches and logs error when targetFolder.createFile throws', () => {
+      const att = createMockAttachment({ name: 'bill.pdf', size: 1000 })
+      const thread = {
+        getMessages: () => [{ getAttachments: () => [att] }],
+      }
+      const driveApp = {
+        getRootFolder: () => ({
+          getFoldersByName: () => ({
+            hasNext: () => true,
+            next: () => ({
+              getFoldersByName: () => ({
+                hasNext: () => true,
+                next: () => ({
+                  getFilesByName: () => ({ hasNext: () => false }),
+                  createFile: () => {
+                    throw new Error('Disk quota exceeded')
+                  },
+                }),
+              }),
+            }),
+          }),
+        }),
+      }
+      const results = persistCanonicalAttachmentsToDrive(
+        thread,
+        { canonicalDomain: '01_Household' },
+        { canonicalDomains: ['01_Household'] },
+        { DriveApp: driveApp }
+      )
+      expect(results).toEqual([])
+    })
   })
 
   describe('formatProgressiveDisclosureEntry with Attachments', () => {
@@ -527,6 +682,22 @@ describe('Drive Attachment Persistence along Taxonomy Path', () => {
       expect(entry).toContain(
         '  - [Central_Alabama_Water_Bill.pdf](https://drive.google.com/file/d/test-id-123/view)'
       )
+    })
+
+    test('renders plain attachment name when url is not provided', () => {
+      const attachments = [{ name: 'document_without_link.pdf' }]
+      const entry = formatProgressiveDisclosureEntry(
+        '2026-09-28',
+        'Water Bill Notice',
+        'billing@caw-al.gov',
+        'Account Update',
+        'Notice of water bill update.',
+        'user@example.com',
+        attachments
+      )
+
+      expect(entry).toContain('- **Attachments**:\n')
+      expect(entry).toContain('  - document_without_link.pdf\n')
     })
   })
 })

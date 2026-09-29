@@ -9,6 +9,8 @@ function getAiClassifierConfig() {
   return {
     geminiApiKey: props.getProperty('GEMINI_API_KEY') || '',
     githubToken: props.getProperty('GITHUB_PAT') || '',
+    githubRepoOwner: props.getProperty('GITHUB_REPO_OWNER') || 'don-petry',
+    githubRepoName: props.getProperty('GITHUB_REPO_NAME') || 'self-private',
     userAccountEmail:
       Session.getEffectiveUser().getEmail() ||
       props.getProperty('USER_ACCOUNT_EMAIL') ||
