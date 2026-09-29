@@ -9,8 +9,14 @@
  * - Idempotency Guard (skips duplicate entries)
  */
 
-var GITHUB_REPO_OWNER = 'don-petry'
-var GITHUB_REPO_NAME = 'self-private'
+var GITHUB_REPO_OWNER =
+  (typeof getAiClassifierConfig === 'function' &&
+    getAiClassifierConfig().githubRepoOwner) ||
+  'don-petry'
+var GITHUB_REPO_NAME =
+  (typeof getAiClassifierConfig === 'function' &&
+    getAiClassifierConfig().githubRepoName) ||
+  'self-private'
 
 var RULE6_PATTERNS = [
   [/\S \? \S/, "' ? ' between words (was an em dash or a · separator)"],

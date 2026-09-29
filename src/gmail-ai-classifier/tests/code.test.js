@@ -788,4 +788,49 @@ describe('processThreadBatch', () => {
     expect(results[0].threadId).toBe('t1')
     expect(results[1].threadId).toBe('t2')
   })
+
+  test('persists attachments when services.DriveApp is provided', () => {
+    const thread = makeThread({ id: 't-attach' })
+    const classification = {
+      canonical_label: '01_Household/Primary_House',
+      confidence: 0.98,
+      reasoning: 'ok',
+    }
+    const mockDriveApp = {
+      getRootFolder: jest.fn(() => ({
+        getFoldersByName: jest.fn(() => ({
+          hasNext: () => true,
+          next: () => ({
+            getFoldersByName: jest.fn(() => ({
+              hasNext: () => true,
+              next: () => ({
+                getFilesByName: jest.fn(() => ({ hasNext: () => false })),
+                createFile: jest.fn(() => ({
+                  getId: () => 'f1',
+                  getName: () => 'file.pdf',
+                  getUrl: () => 'https://drive.google.com/file/d/f1',
+                })),
+              }),
+            })),
+            createFolder: jest.fn(),
+          }),
+        })),
+        createFolder: jest.fn(),
+      })),
+    }
+    const services = {
+      GmailApp: {
+        getUserLabelByName: jest.fn((name) => makeLabel(name)),
+        createLabel: jest.fn((name) => makeLabel(name)),
+      },
+      UrlFetchApp: { fetch: jest.fn(() => makeGeminiResponse(classification)) },
+      Gmail: null,
+      DriveApp: mockDriveApp,
+    }
+
+    const results = processThreadBatch([thread], config, services)
+    expect(results).toHaveLength(1)
+    expect(results[0].threadId).toBe('t-attach')
+    expect(Array.isArray(results[0].savedAttachments)).toBe(true)
+  })
 })

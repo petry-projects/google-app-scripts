@@ -148,7 +148,6 @@ function classifyEmailWithGemini(
       return null
     }
   }
-  return null
 }
 
 /**
@@ -467,7 +466,7 @@ function formatProgressiveDisclosureEntry(
     entry += '- **Attachments**:\n'
     for (let a = 0; a < attachments.length; a++) {
       const att = attachments[a]
-      if (att && att.name) {
+      if (att?.name) {
         if (att.url) {
           entry += '  - [' + att.name + '](' + att.url + ')\n'
         } else {
@@ -555,11 +554,18 @@ function executeGitHubCommit(
   const utils =
     services?.Utilities || (typeof Utilities !== 'undefined' ? Utilities : null)
 
+  const repoOwner =
+    services?.githubRepoOwner ||
+    process.env.GITHUB_REPO_OWNER ||
+    GITHUB_REPO_OWNER
+  const repoName =
+    services?.githubRepoName || process.env.GITHUB_REPO_NAME || GITHUB_REPO_NAME
+
   const url =
     'https://api.github.com/repos/' +
-    GITHUB_REPO_OWNER +
+    repoOwner +
     '/' +
-    GITHUB_REPO_NAME +
+    repoName +
     '/contents/' +
     filePath
   const headers = {
@@ -693,23 +699,27 @@ function executeGitHubCommit(
   }
 }
 
+function formatAuditDate_(d) {
+  const y = d.getFullYear()
+  const m = ('0' + (d.getMonth() + 1)).slice(-2)
+  const da = ('0' + d.getDate()).slice(-2)
+  return y + '/' + m + '/' + da
+}
+
 function getSearchDateRange_(dateStr, days) {
   const parts = dateStr.split('-')
-  const year = parseInt(parts[0], 10)
-  const month = parseInt(parts[1], 10) - 1
-  const day = parseInt(parts[2], 10)
+  const year = Number.parseInt(parts[0], 10)
+  const month = Number.parseInt(parts[1], 10) - 1
+  const day = Number.parseInt(parts[2], 10)
   const dt = new Date(year, month, day)
 
   const beforeDt = new Date(dt.getTime() + (days + 1) * 86400000)
   const afterDt = new Date(dt.getTime() - days * 86400000)
 
-  function fmt(d) {
-    const y = d.getFullYear()
-    const m = ('0' + (d.getMonth() + 1)).slice(-2)
-    const da = ('0' + d.getDate()).slice(-2)
-    return y + '/' + m + '/' + da
+  return {
+    after: formatAuditDate_(afterDt),
+    before: formatAuditDate_(beforeDt),
   }
-  return { after: fmt(afterDt), before: fmt(beforeDt) }
 }
 
 /**
@@ -720,7 +730,7 @@ function getSearchDateRange_(dateStr, days) {
  * @returns {Object} report - { scannedCount, flaggedCount, findings, summary }
  */
 function auditClassifications(threads, config) {
-  const canonicalDomains = (config && config.canonicalDomains) || [
+  const canonicalDomains = config?.canonicalDomains || [
     '01_Household',
     '02_Finance_Legal',
     '03_Vehicles',
@@ -1005,8 +1015,41 @@ const SUBLABEL_TO_FOLDER_MAP = {
   'community/charity': 'Community_BOD',
 }
 
-const TRACKING_OR_SIG_PATTERN =
-  /^(image\d{3}|signature|logo|icon|spacer|pixel|tracking|banner|facebook|twitter|instagram|linkedin|youtube)\.(png|jpe?g|gif|webp|bmp|ico)$/i
+const TRACKING_IMAGE_EXTENSIONS = new Set([
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'bmp',
+  'ico',
+])
+
+const TRACKING_STEM_NAMES = new Set([
+  'signature',
+  'logo',
+  'icon',
+  'spacer',
+  'pixel',
+  'tracking',
+  'banner',
+  'facebook',
+  'twitter',
+  'instagram',
+  'linkedin',
+  'youtube',
+])
+
+function isTrackingOrSigImageName(fileName) {
+  if (!fileName || typeof fileName !== 'string') return false
+  const dotIndex = fileName.lastIndexOf('.')
+  if (dotIndex <= 0) return false
+  const ext = fileName.slice(dotIndex + 1).toLowerCase()
+  if (!TRACKING_IMAGE_EXTENSIONS.has(ext)) return false
+  const stem = fileName.slice(0, dotIndex).toLowerCase()
+  if (TRACKING_STEM_NAMES.has(stem)) return true
+  return /^image\d{3}$/.test(stem)
+}
 
 /**
  * Validates whether an email classification represents a canonical domain.
@@ -1025,7 +1068,7 @@ function isCanonicalClassification(classification, config) {
   if (trimmed === '' || trimmed === 'null' || trimmed === 'undefined')
     return false
 
-  const allowedDomains = (config && config.canonicalDomains) || [
+  const allowedDomains = config?.canonicalDomains || [
     '01_Household',
     '02_Finance_Legal',
     '03_Vehicles',
@@ -1116,7 +1159,7 @@ function isEligibleAttachment(att) {
   ).toLowerCase()
 
   // 2. Filter out known tracking / signature image names (< 25KB)
-  if (TRACKING_OR_SIG_PATTERN.test(cleanName) && size < 25 * 1024) {
+  if (isTrackingOrSigImageName(cleanName) && size < 25 * 1024) {
     return false
   }
 
@@ -1148,12 +1191,10 @@ function getOrCreateChildFolder_(parentFolder, folderName) {
  * @returns {Object} Target folder object
  */
 function ensureDriveTaxonomyFolder(canonicalDomain, subfolderName, driveApp) {
-  const drive =
-    driveApp !== undefined
-      ? driveApp
-      : typeof DriveApp !== 'undefined'
-        ? DriveApp
-        : null
+  let drive = driveApp
+  if (typeof drive === 'undefined') {
+    drive = typeof DriveApp !== 'undefined' ? DriveApp : null
+  }
   if (!drive) {
     throw new Error('DriveApp service unavailable')
   }
@@ -1171,6 +1212,34 @@ function ensureDriveTaxonomyFolder(canonicalDomain, subfolderName, driveApp) {
   return getOrCreateChildFolder_(domainFolder, subfolderName)
 }
 
+function extractBlobBytes_(blob) {
+  try {
+    if (typeof blob?.getBytes === 'function') {
+      return blob.getBytes() || Buffer.from('')
+    }
+    if (blob?.bytes) {
+      return blob.bytes
+    }
+    if (Buffer.isBuffer(blob)) {
+      return blob
+    }
+  } catch {
+    return Buffer.from('')
+  }
+  return Buffer.from('')
+}
+
+function extractFileSize_(file) {
+  if (!file) return 0
+  if (typeof file.getSize === 'function') {
+    return file.getSize()
+  }
+  if (file.size !== undefined) {
+    return file.size
+  }
+  return 0
+}
+
 /**
  * Checks if an exact duplicate file already exists in target folder (size match + MD5 hash).
  *
@@ -1180,39 +1249,29 @@ function ensureDriveTaxonomyFolder(canonicalDomain, subfolderName, driveApp) {
  * @returns {boolean}
  */
 function isDuplicateAttachment(existingFiles, newFileBlob, helperFns) {
-  const hashFn = (helperFns && helperFns.getFileHash) || getFileHash
-  let newFileBytes
-  if (newFileBlob && typeof newFileBlob.getBytes === 'function') {
-    newFileBytes = newFileBlob.getBytes()
-  } else if (newFileBlob && newFileBlob.bytes) {
-    newFileBytes = newFileBlob.bytes
-  } else if (Buffer.isBuffer(newFileBlob)) {
-    newFileBytes = newFileBlob
-  } else {
-    newFileBytes = Buffer.from('')
-  }
-  const newFileLength = newFileBytes.length
-  const newFileHash = hashFn(newFileBlob)
-
-  while (
-    existingFiles &&
-    typeof existingFiles.hasNext === 'function' &&
-    existingFiles.hasNext()
+  if (
+    !existingFiles ||
+    typeof existingFiles.hasNext !== 'function' ||
+    !newFileBlob
   ) {
-    const existingFile = existingFiles.next()
+    return false
+  }
+  const hashFn = helperFns?.getFileHash || getFileHash
+  const newFileBytes = extractBlobBytes_(newFileBlob)
+  const newFileLength = newFileBytes.length
+  let newFileHash = ''
+  try {
+    newFileHash = hashFn(newFileBlob)
+  } catch {
+    return false
+  }
 
-    // Compare sizes first (fast fail)
-    const existingSize =
-      typeof existingFile.getSize === 'function'
-        ? existingFile.getSize()
-        : existingFile.size !== undefined
-          ? existingFile.size
-          : 0
-    if (existingSize !== newFileLength) {
+  while (existingFiles.hasNext()) {
+    const existingFile = existingFiles.next()
+    if (extractFileSize_(existingFile) !== newFileLength) {
       continue
     }
 
-    // Deep check: MD5 hash fingerprint
     const existingBlob =
       typeof existingFile.getBlob === 'function'
         ? existingFile.getBlob()
@@ -1293,8 +1352,10 @@ function persistCanonicalAttachmentsToDrive(
     return []
   }
 
-  const driveApp =
-    services?.DriveApp || (typeof DriveApp !== 'undefined' ? DriveApp : null)
+  let driveApp = services?.DriveApp
+  if (typeof driveApp === 'undefined') {
+    driveApp = typeof DriveApp !== 'undefined' ? DriveApp : null
+  }
   if (!driveApp) {
     console.error(
       '[persistCanonicalAttachmentsToDrive] DriveApp is unavailable; cannot persist attachments.'
