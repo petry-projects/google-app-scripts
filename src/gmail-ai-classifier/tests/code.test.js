@@ -835,10 +835,79 @@ describe('processThreadBatch', () => {
   })
 })
 
-describe('Rule 19 and Custom Note Paths in code.gs', () => {
+describe('Ontological Knowledge Graph and Triage Matrix Prompt Architecture', () => {
   const codeGs = require('../code.gs')
+  const { buildOntologicalPrompt } = require('../src/index')
 
-  test('classifyWithGemini includes Rule 19 with Google Alerts and student guardrail', () => {
+  test('buildOntologicalPrompt builds 3-Tier positive invariant prompt without negative exclusions', () => {
+    const config = {
+      canonicalDomains: [
+        '01_Household',
+        '02_Finance_Legal',
+        '03_Vehicles',
+        '04_Family_Health',
+        '05_Tech_Infrastructure',
+        '06_Work_Career',
+        '07_Community_NonProfit',
+      ],
+      customPromptRules:
+        'entities:\n  - name: "Entity Alpha"\n    domain: "04_Family_Health"\n    sublabel: "Family/Legal"',
+    }
+
+    const prompt = buildOntologicalPrompt(
+      config,
+      'alerts@example.com',
+      'Alert - Entity Alpha',
+      'Summary of news mention for Entity Alpha'
+    )
+
+    // Tier 1: Positive Domain Taxonomy Ontology
+    expect(prompt).toContain(
+      '=== TIER 1: DOMAIN TAXONOMY ONTOLOGY (POSITIVE INVARIANTS) ==='
+    )
+    expect(prompt).toContain('01_Household')
+    expect(prompt).toContain('02_Finance_Legal')
+    expect(prompt).toContain('03_Vehicles')
+    expect(prompt).toContain('04_Family_Health')
+    expect(prompt).toContain('05_Tech_Infrastructure')
+    expect(prompt).toContain('06_Work_Career')
+    expect(prompt).toContain('07_Community_NonProfit')
+    expect(prompt).toContain('NON-CANONICAL EMAILS (canonicalDomain: null)')
+
+    // Positive Search & Monitoring Alerts routing
+    expect(prompt).toContain('AUTOMATED SEARCH & MONITORING ALERTS')
+    expect(prompt).toContain('Google Alerts')
+    expect(prompt).toContain(
+      'Student or school sub-labels apply only when the monitored alert query specifically targets an academic program or school'
+    )
+
+    // Tier 2: Orthogonal Triage Matrix
+    expect(prompt).toContain(
+      '=== TIER 2: ORTHOGONAL TRIAGE MATRIX (LIFECYCLE STATE) ==='
+    )
+    expect(prompt).toContain('Action_Required')
+    expect(prompt).toContain('Informational_Feed')
+    expect(prompt).toContain('Completed_Transaction')
+    expect(prompt).toContain('Broadcast_Marketing')
+    expect(prompt).toContain('Spam_Solicitation')
+
+    // Tier 3: Injected Entity Knowledge Graph
+    expect(prompt).toContain(
+      '=== TIER 3: USER ENTITY KNOWLEDGE GRAPH & CUSTOM RULES ==='
+    )
+    expect(prompt).toContain('Entity Alpha')
+
+    // Constraints & Contract
+    expect(prompt).toContain('Single Sub-Label Invariant')
+    expect(prompt).toContain('Return JSON ONLY')
+
+    // Zero negative exclusions invariant verification
+    expect(prompt).not.toContain('Under NO circumstances')
+    expect(prompt).not.toContain('Do NOT classify')
+    expect(prompt).not.toContain('Reserve strictly for')
+  })
+
+  test('classifyWithGemini in code.gs constructs and sends ontological prompt', () => {
     let capturedPrompt = ''
     global.UrlFetchApp = {
       fetch: jest.fn((url, opts) => {
@@ -856,6 +925,11 @@ describe('Rule 19 and Custom Note Paths in code.gs', () => {
                         text: JSON.stringify({
                           canonicalDomain: '04_Family_Health',
                           subLabel: 'Family/Legal',
+                          category: 'Updates',
+                          action: 'keep',
+                          confidence: 0.98,
+                          title: 'Alert Title',
+                          summary: 'Executive summary',
                         }),
                       },
                     ],
@@ -872,18 +946,30 @@ describe('Rule 19 and Custom Note Paths in code.gs', () => {
       geminiApiKey: 'test-key',
     }
 
-    codeGs.classifyWithGemini(
+    const result = codeGs.classifyWithGemini(
       'googlealerts-noreply@google.com',
-      'Google Alert - Person Name',
+      'Google Alert - Elder Relative',
       'news summary snippet',
       testConfig
     )
 
-    expect(capturedPrompt).toContain('19. AUTOMATED SEARCH & MONITORING ALERTS')
-    expect(capturedPrompt).toContain('Google Alerts')
     expect(capturedPrompt).toContain(
-      'Under NO circumstances classify automated search/mention alerts under school/student sub-labels'
+      '=== TIER 1: DOMAIN TAXONOMY ONTOLOGY (POSITIVE INVARIANTS) ==='
     )
+    expect(capturedPrompt).toContain(
+      '=== TIER 2: ORTHOGONAL TRIAGE MATRIX (LIFECYCLE STATE) ==='
+    )
+    expect(capturedPrompt).toContain('Google Alerts')
+    expect(capturedPrompt).not.toContain('Under NO circumstances')
+    expect(result).toEqual({
+      canonicalDomain: '04_Family_Health',
+      subLabel: 'Family/Legal',
+      category: 'Updates',
+      action: 'keep',
+      confidence: 0.98,
+      title: 'Alert Title',
+      summary: 'Executive summary',
+    })
   })
 
   test('getNotePathForDomain supports CUSTOM_NOTE_PATHS from PropertiesService', () => {
