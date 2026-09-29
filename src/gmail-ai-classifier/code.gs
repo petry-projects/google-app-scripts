@@ -3,7 +3,7 @@
  * Runs natively inside Google Apps Script (V8 runtime).
  */
 
-var GMAIL_AI_CLASSIFIER_VERSION = 'v1.7.0-strict-single-label-no-autofilters'
+var GMAIL_AI_CLASSIFIER_VERSION = 'v1.8.0-drive-taxonomy-attachments'
 
 function remediateUnlabeledUtilityThreads() {
   try {
@@ -131,6 +131,18 @@ function processEmailsWithAiClassifier() {
         // Note: Permanent Gmail filter auto-creation is deactivated to prevent
         // filter duplication, cumulative rule firing, and multi-label collisions.
 
+        // Persist Canonical Attachments to Google Drive along Taxonomy Path
+        var savedAttachments = persistCanonicalAttachmentsToDrive(
+          thread,
+          classification,
+          config,
+          {
+            Utilities: Utilities,
+            Session: Session,
+            DriveApp: typeof DriveApp !== 'undefined' ? DriveApp : null,
+          }
+        )
+
         // Sync Progressive Disclosure Summary to GitHub
         if (config.githubToken) {
           var notePath = getNotePathForDomain(
@@ -149,7 +161,8 @@ function processEmailsWithAiClassifier() {
               sender,
               subject,
               classification.summary,
-              config.userAccountEmail
+              config.userAccountEmail,
+              savedAttachments
             )
             assertNoAsciiReplacement_(
               (subject || '') + (classification.summary || ''),
@@ -1044,7 +1057,8 @@ function formatProgressiveDisclosureEntry(
   sender,
   subject,
   summaryText,
-  accountEmail
+  accountEmail,
+  attachments
 ) {
   var entry = '\n### ' + dateStr + ' — ' + title + '\n'
   entry += '- **Account**: ' + accountEmail + '\n'
@@ -1052,6 +1066,19 @@ function formatProgressiveDisclosureEntry(
   entry += '- **Subject**: ' + subject + '\n'
   if (summaryText) {
     entry += '- **Summary**:\n  > ' + summaryText.trim() + '\n'
+  }
+  if (attachments && attachments.length > 0) {
+    entry += '- **Attachments**:\n'
+    for (var a = 0; a < attachments.length; a++) {
+      var att = attachments[a]
+      if (att && att.name) {
+        if (att.url) {
+          entry += '  - [' + att.name + '](' + att.url + ')\n'
+        } else {
+          entry += '  - ' + att.name + '\n'
+        }
+      }
+    }
   }
   return entry
 }
@@ -1432,6 +1459,496 @@ function setGmailCategoryTab(thread, targetCategory) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Attachment Persistence to Google Drive along Taxonomy Path
+// ---------------------------------------------------------------------------
+
+var CANONICAL_TAXONOMY_SUBFOLDERS = {
+  '01_Household': [
+    'Primary_House',
+    'Shop_Build',
+    'Rental_Property',
+    'Archive_Property',
+    'Bills',
+    'Maintenance',
+  ],
+  '02_Finance_Legal': [
+    'Taxes',
+    'Insurance',
+    'Banking',
+    'Legal_Court',
+    'Estate_Planning',
+    'Bills',
+    'Purchases',
+  ],
+  '03_Vehicles': ['Car_Hunt', 'Vehicle_Fleet', 'Maintenance'],
+  '04_Family_Health': [
+    'Family_General',
+    'Students',
+    'Adults',
+    'Medical_Records',
+    'Activities_Camps',
+  ],
+  '05_Tech_Infrastructure': ['NAS_Backups', 'Tasker', 'Hardware_Licenses'],
+  '06_Work_Career': ['Career_Interviews', 'Expenses_Admin'],
+  '07_Community_NonProfit': ['Community_BOD', 'Projects_Telemetry'],
+}
+
+var SUBLABEL_TO_FOLDER_MAP = {
+  // 01_Household
+  'household/primary-property': 'Primary_House',
+  'household/primary_house': 'Primary_House',
+  'household/primary': 'Primary_House',
+  'household/home-maintenance': 'Maintenance',
+  'household/maintenance': 'Maintenance',
+  'household/utilities': 'Bills',
+  'household/bills': 'Bills',
+  'household/shop': 'Shop_Build',
+  'household/shop-build': 'Shop_Build',
+  'household/travel': 'Primary_House',
+
+  // 02_Finance_Legal
+  'finance/banking': 'Banking',
+  'finance/bills': 'Bills',
+  'finance/taxes': 'Taxes',
+  'finance/insurance': 'Insurance',
+  'finance/purchases': 'Purchases',
+  'finance/legal': 'Legal_Court',
+  'finance/legal_court': 'Legal_Court',
+  'finance/charitable-donations': 'Taxes',
+  'finance/estate-planning': 'Estate_Planning',
+  'finance/estate_planning': 'Estate_Planning',
+
+  // 03_Vehicles
+  'vehicles/maintenance': 'Maintenance',
+  'vehicles/parts-orders': 'Maintenance',
+  'vehicles/insurance': 'Insurance',
+  'vehicles/registration': 'Maintenance',
+  'vehicles/rental-cars': 'Maintenance',
+  'vehicles/car-hunt': 'Car_Hunt',
+  'vehicles/car_hunt': 'Car_Hunt',
+
+  // 04_Family_Health
+  'family/medical': 'Medical_Records',
+  'family/medical-records': 'Medical_Records',
+  'family/medical-student': 'Medical_Records',
+  'family/health-general': 'Medical_Records',
+  'family/school-student': 'Students',
+  'family/personal-correspondence': 'Family_General',
+
+  // 05_Tech_Infrastructure
+  'tech/alerts-monitoring': 'NAS_Backups',
+  'tech/backups': 'NAS_Backups',
+  'tech/hardware': 'Hardware_Licenses',
+  'tech/hardware-licenses': 'Hardware_Licenses',
+  'tech/cloud-gcp': 'NAS_Backups',
+
+  // 06_Work_Career
+  'work/career': 'Career_Interviews',
+  'work/notes': 'Career_Interviews',
+  'work/expenses': 'Expenses_Admin',
+  'work/expenses-admin': 'Expenses_Admin',
+  'work/architecture': 'Career_Interviews',
+
+  // 07_Community_NonProfit
+  'projects/charity': 'Community_BOD',
+  'community/bod': 'Community_BOD',
+  'projects/telemetry': 'Projects_Telemetry',
+  'community/nonprofit-bod': 'Community_BOD',
+  'community/charity': 'Community_BOD',
+}
+
+var TRACKING_OR_SIG_PATTERN =
+  /^(image\d{3}|signature|logo|icon|spacer|pixel|tracking|banner|facebook|twitter|instagram|linkedin|youtube)\.(png|jpe?g|gif|webp|bmp|ico)$/i
+
+/**
+ * Computes MD5 hex digest for a GAS blob.
+ */
+function getFileHash(blob) {
+  var digest = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.MD5,
+    blob.getBytes()
+  )
+  return digest
+    .map(function (byte) {
+      return ('0' + (byte & 0xff).toString(16)).slice(-2)
+    })
+    .join('')
+}
+
+/**
+ * Validates whether an email classification represents a canonical domain.
+ * Non-canonical emails (promotions, newsletters, spam) return null/empty for canonicalDomain.
+ */
+function isCanonicalClassification(classification, config) {
+  if (!classification || typeof classification !== 'object') return false
+  var domain = classification.canonicalDomain || classification.canonical_label
+  if (!domain || typeof domain !== 'string') return false
+  var trimmed = domain.trim()
+  if (trimmed === '' || trimmed === 'null' || trimmed === 'undefined')
+    return false
+
+  var allowedDomains = (config && config.canonicalDomains) || [
+    '01_Household',
+    '02_Finance_Legal',
+    '03_Vehicles',
+    '04_Family_Health',
+    '05_Tech_Infrastructure',
+    '06_Work_Career',
+    '07_Community_NonProfit',
+  ]
+
+  return allowedDomains.some(function (d) {
+    return trimmed === d || trimmed.indexOf(d + '/') === 0
+  })
+}
+
+/**
+ * Resolves the 2nd-level Google Drive taxonomy subfolder name given a canonical domain and sub-label.
+ */
+function resolveTaxonomySubfolderName(canonicalDomain, subLabel) {
+  if (subLabel && typeof subLabel === 'string') {
+    var normalized = subLabel.trim().toLowerCase()
+    if (SUBLABEL_TO_FOLDER_MAP[normalized]) {
+      return SUBLABEL_TO_FOLDER_MAP[normalized]
+    }
+
+    var parts = subLabel.split('/')
+    var subPart = (parts.length > 1 ? parts[1] : parts[0]).trim()
+    var sanitized = subPart.replace(/[-\s]+/g, '_')
+
+    var knownSubfolders = CANONICAL_TAXONOMY_SUBFOLDERS[canonicalDomain] || []
+    for (var k = 0; k < knownSubfolders.length; k++) {
+      if (knownSubfolders[k].toLowerCase() === sanitized.toLowerCase()) {
+        return knownSubfolders[k]
+      }
+    }
+
+    if (sanitized.length > 0) return sanitized
+  }
+
+  var defaults = {
+    '01_Household': 'Primary_House',
+    '02_Finance_Legal': 'Banking',
+    '03_Vehicles': 'Maintenance',
+    '04_Family_Health': 'Medical_Records',
+    '05_Tech_Infrastructure': 'NAS_Backups',
+    '06_Work_Career': 'Career_Interviews',
+    '07_Community_NonProfit': 'Community_BOD',
+  }
+  return defaults[canonicalDomain] || 'General'
+}
+
+/**
+ * Evaluates whether an email attachment is an eligible document/payload
+ * and filters out inline images, email signatures, and tracking pixels (< 15KB).
+ */
+function isEligibleAttachment(att) {
+  if (!att) return false
+  var name = typeof att.getName === 'function' ? att.getName() : att.name || ''
+  if (!name || typeof name !== 'string' || name.trim().length === 0)
+    return false
+
+  var size = 0
+  if (typeof att.getSize === 'function') {
+    size = att.getSize()
+  } else if (typeof att.getBytes === 'function') {
+    var bytes = att.getBytes()
+    size = bytes ? bytes.length : 0
+  } else if (att.bytes) {
+    size = att.bytes.length
+  } else if (att.size !== undefined) {
+    size = att.size
+  }
+
+  // 1. Skip empty files
+  if (size <= 0) return false
+
+  var cleanName = name.trim()
+  var mimeType = (
+    typeof att.getContentType === 'function'
+      ? att.getContentType()
+      : att.contentType || ''
+  ).toLowerCase()
+
+  // 2. Filter out known tracking / signature image names (< 25KB)
+  if (TRACKING_OR_SIG_PATTERN.test(cleanName) && size < 25 * 1024) {
+    return false
+  }
+
+  // 3. Filter out small image files (< 15KB) as signature icons / tracking pixels
+  var isImage =
+    mimeType.indexOf('image/') === 0 ||
+    /\.(png|jpe?g|gif|webp|bmp|ico)$/i.test(cleanName)
+  if (isImage && size < 15 * 1024) {
+    return false
+  }
+
+  return true
+}
+
+function getOrCreateChildFolder_(parentFolder, folderName) {
+  var folders = parentFolder.getFoldersByName(folderName)
+  if (folders && typeof folders.hasNext === 'function' && folders.hasNext()) {
+    return folders.next()
+  }
+  return parentFolder.createFolder(folderName)
+}
+
+/**
+ * Idempotently traverses or creates the 2-level Drive taxonomy path (Domain / Subfolder).
+ */
+function ensureDriveTaxonomyFolder(canonicalDomain, subfolderName, driveApp) {
+  var drive =
+    driveApp !== undefined
+      ? driveApp
+      : typeof DriveApp !== 'undefined'
+        ? DriveApp
+        : null
+  if (!drive) {
+    throw new Error('DriveApp service unavailable')
+  }
+
+  var root =
+    typeof drive.getRootFolder === 'function' ? drive.getRootFolder() : drive
+
+  if (!root || typeof root.getFoldersByName !== 'function') {
+    throw new Error('DriveApp service unavailable or invalid root folder')
+  }
+
+  var domainFolder = getOrCreateChildFolder_(root, canonicalDomain)
+  if (!subfolderName) return domainFolder
+
+  return getOrCreateChildFolder_(domainFolder, subfolderName)
+}
+
+/**
+ * Checks if an exact duplicate file already exists in target folder (size match + MD5 hash).
+ */
+function isDuplicateAttachment(existingFiles, newFileBlob, helperFns) {
+  var hashFn = (helperFns && helperFns.getFileHash) || getFileHash
+  var newFileBytes
+  if (newFileBlob && typeof newFileBlob.getBytes === 'function') {
+    newFileBytes = newFileBlob.getBytes()
+  } else if (newFileBlob && newFileBlob.bytes) {
+    newFileBytes = newFileBlob.bytes
+  } else {
+    newFileBytes = []
+  }
+  var newFileLength = newFileBytes.length
+  var newFileHash = hashFn(newFileBlob)
+
+  while (
+    existingFiles &&
+    typeof existingFiles.hasNext === 'function' &&
+    existingFiles.hasNext()
+  ) {
+    var existingFile = existingFiles.next()
+
+    // Compare sizes first (fast fail)
+    var existingSize =
+      typeof existingFile.getSize === 'function'
+        ? existingFile.getSize()
+        : existingFile.size !== undefined
+          ? existingFile.size
+          : 0
+    if (existingSize !== newFileLength) {
+      continue
+    }
+
+    // Deep check: MD5 hash fingerprint
+    var existingBlob =
+      typeof existingFile.getBlob === 'function'
+        ? existingFile.getBlob()
+        : existingFile
+    if (hashFn(existingBlob) === newFileHash) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * Resolves naming conflicts for attachments. If a file of the same name exists
+ * with different content, appends a timestamp before the extension.
+ */
+function resolveAttachmentName(folder, fileName, newFileBlob, options) {
+  if (
+    folder &&
+    typeof folder.getFilesByName === 'function' &&
+    !folder.getFilesByName(fileName).hasNext()
+  ) {
+    return fileName
+  }
+
+  var utils =
+    options && options.Utilities
+      ? options.Utilities
+      : typeof Utilities !== 'undefined'
+        ? Utilities
+        : null
+  var session =
+    options && options.Session
+      ? options.Session
+      : typeof Session !== 'undefined'
+        ? Session
+        : null
+
+  var timeTag =
+    utils &&
+    session &&
+    typeof utils.formatDate === 'function' &&
+    typeof session.getScriptTimeZone === 'function'
+      ? utils.formatDate(new Date(), session.getScriptTimeZone(), '_HHmmssSSS')
+      : '_' + Date.now()
+
+  if (typeof timeTag === 'string' && timeTag.indexOf('_') !== 0) {
+    timeTag = '_' + timeTag.replace(/[^a-zA-Z0-9]/g, '')
+  }
+
+  var renamed = fileName.replace(/(\.[\w-]+)$/i, timeTag + '$1')
+  var finalName = renamed === fileName ? fileName + timeTag : renamed
+
+  if (newFileBlob && typeof newFileBlob.setName === 'function') {
+    newFileBlob.setName(finalName)
+  }
+  return finalName
+}
+
+/**
+ * Persists attached documents from a canonical email thread to Google Drive along
+ * the label's taxonomy path, skipping duplicates and strictly ignoring non-canonical emails.
+ */
+function persistCanonicalAttachmentsToDrive(
+  thread,
+  classification,
+  config,
+  services
+) {
+  // STRICT NON-CANONICAL GATE: If email has no canonical domain, ignore attachments completely!
+  if (!isCanonicalClassification(classification, config)) {
+    console.log(
+      '[persistCanonicalAttachmentsToDrive] Non-canonical or null domain; skipping attachment persistence.'
+    )
+    return []
+  }
+
+  var driveApp =
+    services && services.DriveApp
+      ? services.DriveApp
+      : typeof DriveApp !== 'undefined'
+        ? DriveApp
+        : null
+  if (!driveApp) {
+    console.error(
+      '[persistCanonicalAttachmentsToDrive] DriveApp is unavailable; cannot persist attachments.'
+    )
+    return []
+  }
+
+  var canonicalDomain =
+    classification.canonicalDomain || classification.canonical_label
+  var subLabel = classification.subLabel || ''
+  var subfolderName = resolveTaxonomySubfolderName(canonicalDomain, subLabel)
+
+  var targetFolder
+  try {
+    targetFolder = ensureDriveTaxonomyFolder(
+      canonicalDomain,
+      subfolderName,
+      driveApp
+    )
+  } catch (err) {
+    console.error(
+      '[persistCanonicalAttachmentsToDrive] Failed to ensure taxonomy folder ' +
+        canonicalDomain +
+        '/' +
+        subfolderName +
+        ': ' +
+        err.message
+    )
+    return []
+  }
+
+  var messages =
+    typeof thread.getMessages === 'function' ? thread.getMessages() : []
+  var savedFiles = []
+  var helperFns = {
+    getFileHash: (services && services.getFileHash) || getFileHash,
+  }
+
+  messages.forEach(function (msg) {
+    var attachments =
+      typeof msg.getAttachments === 'function' ? msg.getAttachments() : []
+    attachments.forEach(function (att) {
+      if (!isEligibleAttachment(att)) {
+        console.log(
+          '[persistCanonicalAttachmentsToDrive] Skipped ineligible attachment (signature/tracking pixel or empty): ' +
+            (typeof att.getName === 'function' ? att.getName() : 'unnamed')
+        )
+        return
+      }
+
+      var fileName =
+        typeof att.getName === 'function' ? att.getName() : att.name
+      var newFileBlob =
+        typeof att.copyBlob === 'function' ? att.copyBlob() : att
+      var existingFiles =
+        typeof targetFolder.getFilesByName === 'function'
+          ? targetFolder.getFilesByName(fileName)
+          : null
+
+      if (isDuplicateAttachment(existingFiles, newFileBlob, helperFns)) {
+        console.log(
+          '[persistCanonicalAttachmentsToDrive] Skipped exact duplicate attachment: ' +
+            fileName
+        )
+        return
+      }
+
+      var finalName = resolveAttachmentName(
+        targetFolder,
+        fileName,
+        newFileBlob,
+        services
+      )
+      console.log(
+        '[persistCanonicalAttachmentsToDrive] Saving attachment to ' +
+          canonicalDomain +
+          '/' +
+          subfolderName +
+          ': ' +
+          finalName
+      )
+
+      try {
+        var file = targetFolder.createFile(newFileBlob)
+        var fileId = typeof file.getId === 'function' ? file.getId() : ''
+        var fileUrl =
+          typeof file.getUrl === 'function'
+            ? file.getUrl()
+            : 'https://drive.google.com/file/d/' + fileId
+        savedFiles.push({
+          name: typeof file.getName === 'function' ? file.getName() : finalName,
+          url: fileUrl,
+          id: fileId,
+          domain: canonicalDomain,
+          subfolder: subfolderName,
+        })
+      } catch (saveErr) {
+        console.error(
+          '[persistCanonicalAttachmentsToDrive] Error saving file ' +
+            finalName +
+            ': ' +
+            saveErr.message
+        )
+      }
+    })
+  })
+
+  return savedFiles
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     processEmailsWithAiClassifier: processEmailsWithAiClassifier,
@@ -1447,5 +1964,15 @@ if (typeof module !== 'undefined' && module.exports) {
     searchGmailForOriginalHeader_: searchGmailForOriginalHeader_,
     cleanConflictingLabels: cleanConflictingLabels,
     setGmailCategoryTab: setGmailCategoryTab,
+    isCanonicalClassification: isCanonicalClassification,
+    resolveTaxonomySubfolderName: resolveTaxonomySubfolderName,
+    isEligibleAttachment: isEligibleAttachment,
+    ensureDriveTaxonomyFolder: ensureDriveTaxonomyFolder,
+    isDuplicateAttachment: isDuplicateAttachment,
+    resolveAttachmentName: resolveAttachmentName,
+    persistCanonicalAttachmentsToDrive: persistCanonicalAttachmentsToDrive,
+    getFileHash: getFileHash,
+    CANONICAL_TAXONOMY_SUBFOLDERS: CANONICAL_TAXONOMY_SUBFOLDERS,
+    SUBLABEL_TO_FOLDER_MAP: SUBLABEL_TO_FOLDER_MAP,
   }
 }
