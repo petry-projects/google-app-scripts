@@ -4,6 +4,8 @@
  * with Jest without a live Google Apps Script environment.
  */
 
+const { getFileHash } = require('../../gas-utils')
+
 /**
  * Validates a Gemini classification response object.
  *
@@ -334,12 +336,23 @@ function processThreadBatch(threads, config, services) {
       )
     }
 
+    let savedAttachments = []
+    if (services?.DriveApp) {
+      savedAttachments = persistCanonicalAttachmentsToDrive(
+        thread,
+        classification,
+        config,
+        services
+      )
+    }
+
     results.push({
       threadId: thread.getId(),
       status: 'classified',
       label: classification.canonical_label,
       confidence: classification.confidence,
       filterCreated: filterCreated,
+      savedAttachments: savedAttachments,
     })
   })
 
@@ -440,7 +453,8 @@ function formatProgressiveDisclosureEntry(
   sender,
   subject,
   summaryText,
-  accountEmail
+  accountEmail,
+  attachments
 ) {
   let entry = '\n### ' + dateStr + ' — ' + title + '\n'
   entry += '- **Account**: ' + accountEmail + '\n'
@@ -448,6 +462,19 @@ function formatProgressiveDisclosureEntry(
   entry += '- **Subject**: ' + subject + '\n'
   if (summaryText) {
     entry += '- **Summary**:\n  > ' + summaryText.trim() + '\n'
+  }
+  if (attachments && attachments.length > 0) {
+    entry += '- **Attachments**:\n'
+    for (let a = 0; a < attachments.length; a++) {
+      const att = attachments[a]
+      if (att && att.name) {
+        if (att.url) {
+          entry += '  - [' + att.name + '](' + att.url + ')\n'
+        } else {
+          entry += '  - ' + att.name + '\n'
+        }
+      }
+    }
   }
   return entry
 }
@@ -879,6 +906,505 @@ function formatAuditDigest(report) {
   return text
 }
 
+// ---------------------------------------------------------------------------
+// Attachment Persistence to Google Drive along Taxonomy Path
+// ---------------------------------------------------------------------------
+
+const CANONICAL_TAXONOMY_SUBFOLDERS = {
+  '01_Household': [
+    'Primary_House',
+    'Shop_Build',
+    'Rental_Property',
+    'Archive_Property',
+    'Bills',
+    'Maintenance',
+  ],
+  '02_Finance_Legal': [
+    'Taxes',
+    'Insurance',
+    'Banking',
+    'Legal_Court',
+    'Estate_Planning',
+    'Bills',
+    'Purchases',
+  ],
+  '03_Vehicles': ['Car_Hunt', 'Vehicle_Fleet', 'Maintenance'],
+  '04_Family_Health': [
+    'Family_General',
+    'Students',
+    'Adults',
+    'Medical_Records',
+    'Activities_Camps',
+  ],
+  '05_Tech_Infrastructure': ['NAS_Backups', 'Tasker', 'Hardware_Licenses'],
+  '06_Work_Career': ['Career_Interviews', 'Expenses_Admin'],
+  '07_Community_NonProfit': ['Community_BOD', 'Projects_Telemetry'],
+}
+
+const SUBLABEL_TO_FOLDER_MAP = {
+  // 01_Household
+  'household/primary-property': 'Primary_House',
+  'household/primary_house': 'Primary_House',
+  'household/primary': 'Primary_House',
+  'household/home-maintenance': 'Maintenance',
+  'household/maintenance': 'Maintenance',
+  'household/utilities': 'Bills',
+  'household/bills': 'Bills',
+  'household/shop': 'Shop_Build',
+  'household/shop-build': 'Shop_Build',
+  'household/travel': 'Primary_House',
+
+  // 02_Finance_Legal
+  'finance/banking': 'Banking',
+  'finance/bills': 'Bills',
+  'finance/taxes': 'Taxes',
+  'finance/insurance': 'Insurance',
+  'finance/purchases': 'Purchases',
+  'finance/legal': 'Legal_Court',
+  'finance/legal_court': 'Legal_Court',
+  'finance/charitable-donations': 'Taxes',
+  'finance/estate-planning': 'Estate_Planning',
+  'finance/estate_planning': 'Estate_Planning',
+
+  // 03_Vehicles
+  'vehicles/maintenance': 'Maintenance',
+  'vehicles/parts-orders': 'Maintenance',
+  'vehicles/insurance': 'Insurance',
+  'vehicles/registration': 'Maintenance',
+  'vehicles/rental-cars': 'Maintenance',
+  'vehicles/car-hunt': 'Car_Hunt',
+  'vehicles/car_hunt': 'Car_Hunt',
+
+  // 04_Family_Health
+  'family/medical': 'Medical_Records',
+  'family/medical-records': 'Medical_Records',
+  'family/medical-student': 'Medical_Records',
+  'family/health-general': 'Medical_Records',
+  'family/school-student': 'Students',
+  'family/personal-correspondence': 'Family_General',
+
+  // 05_Tech_Infrastructure
+  'tech/alerts-monitoring': 'NAS_Backups',
+  'tech/backups': 'NAS_Backups',
+  'tech/hardware': 'Hardware_Licenses',
+  'tech/hardware-licenses': 'Hardware_Licenses',
+  'tech/cloud-gcp': 'NAS_Backups',
+
+  // 06_Work_Career
+  'work/career': 'Career_Interviews',
+  'work/notes': 'Career_Interviews',
+  'work/expenses': 'Expenses_Admin',
+  'work/expenses-admin': 'Expenses_Admin',
+  'work/architecture': 'Career_Interviews',
+
+  // 07_Community_NonProfit
+  'projects/charity': 'Community_BOD',
+  'community/bod': 'Community_BOD',
+  'projects/telemetry': 'Projects_Telemetry',
+  'community/nonprofit-bod': 'Community_BOD',
+  'community/charity': 'Community_BOD',
+}
+
+const TRACKING_OR_SIG_PATTERN =
+  /^(image\d{3}|signature|logo|icon|spacer|pixel|tracking|banner|facebook|twitter|instagram|linkedin|youtube)\.(png|jpe?g|gif|webp|bmp|ico)$/i
+
+/**
+ * Validates whether an email classification represents a canonical domain.
+ * Non-canonical emails (promotions, newsletters, spam) return null/empty for canonicalDomain.
+ *
+ * @param {Object} classification - Gemini classification object
+ * @param {Object} [config] - Classifier configuration
+ * @returns {boolean} True if canonical domain, false if non-canonical or null
+ */
+function isCanonicalClassification(classification, config) {
+  if (!classification || typeof classification !== 'object') return false
+  const domain =
+    classification.canonicalDomain || classification.canonical_label
+  if (!domain || typeof domain !== 'string') return false
+  const trimmed = domain.trim()
+  if (trimmed === '' || trimmed === 'null' || trimmed === 'undefined')
+    return false
+
+  const allowedDomains = (config && config.canonicalDomains) || [
+    '01_Household',
+    '02_Finance_Legal',
+    '03_Vehicles',
+    '04_Family_Health',
+    '05_Tech_Infrastructure',
+    '06_Work_Career',
+    '07_Community_NonProfit',
+  ]
+
+  return allowedDomains.some(
+    (d) => trimmed === d || trimmed.startsWith(d + '/')
+  )
+}
+
+/**
+ * Resolves the 2nd-level Google Drive taxonomy subfolder name given a canonical domain and sub-label.
+ *
+ * @param {string} canonicalDomain - e.g. "02_Finance_Legal"
+ * @param {string} [subLabel] - e.g. "Finance/Banking" or "Bills"
+ * @returns {string} Subfolder name
+ */
+function resolveTaxonomySubfolderName(canonicalDomain, subLabel) {
+  if (subLabel && typeof subLabel === 'string') {
+    const normalized = subLabel.trim().toLowerCase()
+    if (SUBLABEL_TO_FOLDER_MAP[normalized]) {
+      return SUBLABEL_TO_FOLDER_MAP[normalized]
+    }
+
+    const parts = subLabel.split('/')
+    const subPart = (parts.length > 1 ? parts[1] : parts[0]).trim()
+    const sanitized = subPart.replace(/[-\s]+/g, '_')
+
+    const knownSubfolders = CANONICAL_TAXONOMY_SUBFOLDERS[canonicalDomain] || []
+    const match = knownSubfolders.find(
+      (sf) => sf.toLowerCase() === sanitized.toLowerCase()
+    )
+    if (match) return match
+
+    if (sanitized.length > 0) return sanitized
+  }
+
+  const defaults = {
+    '01_Household': 'Primary_House',
+    '02_Finance_Legal': 'Banking',
+    '03_Vehicles': 'Maintenance',
+    '04_Family_Health': 'Medical_Records',
+    '05_Tech_Infrastructure': 'NAS_Backups',
+    '06_Work_Career': 'Career_Interviews',
+    '07_Community_NonProfit': 'Community_BOD',
+  }
+  return defaults[canonicalDomain] || 'General'
+}
+
+/**
+ * Evaluates whether an email attachment is an eligible document/payload
+ * and filters out inline images, email signatures, and tracking pixels (< 15KB).
+ *
+ * @param {Object} att - Attachment blob or mock object
+ * @returns {boolean} True if eligible, false if signature/pixel/empty
+ */
+function isEligibleAttachment(att) {
+  if (!att) return false
+  const name =
+    typeof att.getName === 'function' ? att.getName() : att.name || ''
+  if (!name || typeof name !== 'string' || name.trim().length === 0)
+    return false
+
+  let size = 0
+  if (typeof att.getSize === 'function') {
+    size = att.getSize()
+  } else if (typeof att.getBytes === 'function') {
+    const bytes = att.getBytes()
+    size = bytes ? bytes.length : 0
+  } else if (att.bytes) {
+    size = att.bytes.length
+  } else if (att.size !== undefined) {
+    size = att.size
+  }
+
+  // 1. Skip empty files
+  if (size <= 0) return false
+
+  const cleanName = name.trim()
+  const mimeType = (
+    typeof att.getContentType === 'function'
+      ? att.getContentType()
+      : att.contentType || ''
+  ).toLowerCase()
+
+  // 2. Filter out known tracking / signature image names (< 25KB)
+  if (TRACKING_OR_SIG_PATTERN.test(cleanName) && size < 25 * 1024) {
+    return false
+  }
+
+  // 3. Filter out small image files (< 15KB) as signature icons / tracking pixels
+  const isImage =
+    mimeType.startsWith('image/') ||
+    /\.(png|jpe?g|gif|webp|bmp|ico)$/i.test(cleanName)
+  if (isImage && size < 15 * 1024) {
+    return false
+  }
+
+  return true
+}
+
+function getOrCreateChildFolder_(parentFolder, folderName) {
+  const folders = parentFolder.getFoldersByName(folderName)
+  if (folders && typeof folders.hasNext === 'function' && folders.hasNext()) {
+    return folders.next()
+  }
+  return parentFolder.createFolder(folderName)
+}
+
+/**
+ * Idempotently traverses or creates the 2-level Drive taxonomy path (Domain / Subfolder).
+ *
+ * @param {string} canonicalDomain - e.g. "02_Finance_Legal"
+ * @param {string} subfolderName - e.g. "Banking"
+ * @param {Object} driveApp - GAS DriveApp service (injected)
+ * @returns {Object} Target folder object
+ */
+function ensureDriveTaxonomyFolder(canonicalDomain, subfolderName, driveApp) {
+  const drive =
+    driveApp !== undefined
+      ? driveApp
+      : typeof DriveApp !== 'undefined'
+        ? DriveApp
+        : null
+  if (!drive) {
+    throw new Error('DriveApp service unavailable')
+  }
+
+  const root =
+    typeof drive.getRootFolder === 'function' ? drive.getRootFolder() : drive
+
+  if (!root || typeof root.getFoldersByName !== 'function') {
+    throw new Error('DriveApp service unavailable or invalid root folder')
+  }
+
+  const domainFolder = getOrCreateChildFolder_(root, canonicalDomain)
+  if (!subfolderName) return domainFolder
+
+  return getOrCreateChildFolder_(domainFolder, subfolderName)
+}
+
+/**
+ * Checks if an exact duplicate file already exists in target folder (size match + MD5 hash).
+ *
+ * @param {Object} existingFiles - Iterator from folder.getFilesByName
+ * @param {Object} newFileBlob - Blob of incoming file
+ * @param {Object} [helperFns] - Optional helper functions ({ getFileHash })
+ * @returns {boolean}
+ */
+function isDuplicateAttachment(existingFiles, newFileBlob, helperFns) {
+  const hashFn = (helperFns && helperFns.getFileHash) || getFileHash
+  let newFileBytes
+  if (newFileBlob && typeof newFileBlob.getBytes === 'function') {
+    newFileBytes = newFileBlob.getBytes()
+  } else if (newFileBlob && newFileBlob.bytes) {
+    newFileBytes = newFileBlob.bytes
+  } else if (Buffer.isBuffer(newFileBlob)) {
+    newFileBytes = newFileBlob
+  } else {
+    newFileBytes = Buffer.from('')
+  }
+  const newFileLength = newFileBytes.length
+  const newFileHash = hashFn(newFileBlob)
+
+  while (
+    existingFiles &&
+    typeof existingFiles.hasNext === 'function' &&
+    existingFiles.hasNext()
+  ) {
+    const existingFile = existingFiles.next()
+
+    // Compare sizes first (fast fail)
+    const existingSize =
+      typeof existingFile.getSize === 'function'
+        ? existingFile.getSize()
+        : existingFile.size !== undefined
+          ? existingFile.size
+          : 0
+    if (existingSize !== newFileLength) {
+      continue
+    }
+
+    // Deep check: MD5 hash fingerprint
+    const existingBlob =
+      typeof existingFile.getBlob === 'function'
+        ? existingFile.getBlob()
+        : existingFile
+    if (hashFn(existingBlob) === newFileHash) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * Resolves naming conflicts for attachments. If a file of the same name exists
+ * with different content, appends a timestamp before the extension.
+ *
+ * @param {Object} folder - Target Drive folder
+ * @param {string} fileName - Attachment filename
+ * @param {Object} newFileBlob - Blob being saved
+ * @param {Object} [options] - Injected GAS services ({ Utilities, Session })
+ * @returns {string} Safe filename
+ */
+function resolveAttachmentName(folder, fileName, newFileBlob, options) {
+  if (
+    folder &&
+    typeof folder.getFilesByName === 'function' &&
+    !folder.getFilesByName(fileName).hasNext()
+  ) {
+    return fileName
+  }
+
+  const utils =
+    options?.Utilities || (typeof Utilities !== 'undefined' ? Utilities : null)
+  const session =
+    options?.Session || (typeof Session !== 'undefined' ? Session : null)
+
+  let timeTag =
+    utils &&
+    session &&
+    typeof utils.formatDate === 'function' &&
+    typeof session.getScriptTimeZone === 'function'
+      ? utils.formatDate(new Date(), session.getScriptTimeZone(), '_HHmmssSSS')
+      : '_' + Date.now()
+
+  if (typeof timeTag === 'string' && !timeTag.startsWith('_')) {
+    timeTag = '_' + timeTag.replace(/[^a-zA-Z0-9]/g, '')
+  }
+
+  const renamed = fileName.replace(/(\.[\w-]+)$/i, timeTag + '$1')
+  const finalName = renamed === fileName ? fileName + timeTag : renamed
+
+  if (newFileBlob && typeof newFileBlob.setName === 'function') {
+    newFileBlob.setName(finalName)
+  }
+  return finalName
+}
+
+/**
+ * Persists attached documents from a canonical email thread to Google Drive along
+ * the label's taxonomy path, skipping duplicates and strictly ignoring non-canonical emails.
+ *
+ * @param {Object} thread - Gmail thread object
+ * @param {Object} classification - AI classification result
+ * @param {Object} config - Classifier config
+ * @param {Object} services - Injected GAS services ({ DriveApp, Utilities, Session })
+ * @returns {Object[]} Array of saved file metadata ({ name, url, id, domain, subfolder })
+ */
+function persistCanonicalAttachmentsToDrive(
+  thread,
+  classification,
+  config,
+  services
+) {
+  // STRICT NON-CANONICAL GATE: If email has no canonical domain, ignore attachments completely!
+  if (!isCanonicalClassification(classification, config)) {
+    console.log(
+      '[persistCanonicalAttachmentsToDrive] Non-canonical or null domain; skipping attachment persistence.'
+    )
+    return []
+  }
+
+  const driveApp =
+    services?.DriveApp || (typeof DriveApp !== 'undefined' ? DriveApp : null)
+  if (!driveApp) {
+    console.error(
+      '[persistCanonicalAttachmentsToDrive] DriveApp is unavailable; cannot persist attachments.'
+    )
+    return []
+  }
+
+  const canonicalDomain =
+    classification.canonicalDomain || classification.canonical_label
+  const subLabel = classification.subLabel || ''
+  const subfolderName = resolveTaxonomySubfolderName(canonicalDomain, subLabel)
+
+  let targetFolder
+  try {
+    targetFolder = ensureDriveTaxonomyFolder(
+      canonicalDomain,
+      subfolderName,
+      driveApp
+    )
+  } catch (err) {
+    console.error(
+      '[persistCanonicalAttachmentsToDrive] Failed to ensure taxonomy folder ' +
+        canonicalDomain +
+        '/' +
+        subfolderName +
+        ': ' +
+        err.message
+    )
+    return []
+  }
+
+  const messages =
+    typeof thread.getMessages === 'function' ? thread.getMessages() : []
+  const savedFiles = []
+  const helperFns = {
+    getFileHash: services?.getFileHash || getFileHash,
+  }
+
+  messages.forEach((msg) => {
+    const attachments =
+      typeof msg.getAttachments === 'function' ? msg.getAttachments() : []
+    attachments.forEach((att) => {
+      if (!isEligibleAttachment(att)) {
+        console.log(
+          '[persistCanonicalAttachmentsToDrive] Skipped ineligible attachment (signature/tracking pixel or empty): ' +
+            (typeof att.getName === 'function' ? att.getName() : 'unnamed')
+        )
+        return
+      }
+
+      const fileName =
+        typeof att.getName === 'function' ? att.getName() : att.name
+      const newFileBlob =
+        typeof att.copyBlob === 'function' ? att.copyBlob() : att
+      const existingFiles =
+        typeof targetFolder.getFilesByName === 'function'
+          ? targetFolder.getFilesByName(fileName)
+          : null
+
+      if (isDuplicateAttachment(existingFiles, newFileBlob, helperFns)) {
+        console.log(
+          '[persistCanonicalAttachmentsToDrive] Skipped exact duplicate attachment: ' +
+            fileName
+        )
+        return
+      }
+
+      const finalName = resolveAttachmentName(
+        targetFolder,
+        fileName,
+        newFileBlob,
+        services
+      )
+      console.log(
+        '[persistCanonicalAttachmentsToDrive] Saving attachment to ' +
+          canonicalDomain +
+          '/' +
+          subfolderName +
+          ': ' +
+          finalName
+      )
+
+      try {
+        const file = targetFolder.createFile(newFileBlob)
+        const fileId = typeof file.getId === 'function' ? file.getId() : ''
+        const fileUrl =
+          typeof file.getUrl === 'function'
+            ? file.getUrl()
+            : 'https://drive.google.com/file/d/' + fileId
+        savedFiles.push({
+          name: typeof file.getName === 'function' ? file.getName() : finalName,
+          url: fileUrl,
+          id: fileId,
+          domain: canonicalDomain,
+          subfolder: subfolderName,
+        })
+      } catch (saveErr) {
+        console.error(
+          '[persistCanonicalAttachmentsToDrive] Error saving file ' +
+            finalName +
+            ': ' +
+            saveErr.message
+        )
+      }
+    })
+  })
+
+  return savedFiles
+}
+
 module.exports = {
   validateClassification,
   classifyEmailWithGemini,
@@ -897,4 +1423,13 @@ module.exports = {
   getSearchDateRange_,
   auditClassifications,
   formatAuditDigest,
+  isCanonicalClassification,
+  resolveTaxonomySubfolderName,
+  isEligibleAttachment,
+  ensureDriveTaxonomyFolder,
+  isDuplicateAttachment,
+  resolveAttachmentName,
+  persistCanonicalAttachmentsToDrive,
+  CANONICAL_TAXONOMY_SUBFOLDERS,
+  SUBLABEL_TO_FOLDER_MAP,
 }
