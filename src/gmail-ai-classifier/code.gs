@@ -57,71 +57,86 @@ function processEmailsWithAiClassifier() {
     )
 
     var classification = classifyWithGemini(sender, subject, snippet, config)
+    var githubSyncSucceeded = true
+    var isValidDomain = false
     if (classification) {
-      // Clean up any pre-existing conflicting core domain labels, sub-labels, flat labels, and Retention/Permanent
-      cleanConflictingLabels(
-        thread,
-        classification.canonicalDomain,
-        classification.subLabel,
-        config
-      )
+      var canonicalDomains = config.canonicalDomains || []
+      isValidDomain = canonicalDomains.includes(classification.canonicalDomain)
 
-      // 1. Single Primary Label Tagging (Sub-label preferred; canonicalDomain if no sub-label)
-      var primaryTag = classification.subLabel || classification.canonicalDomain
-      if (primaryTag) {
-        var targetLabel = ensureUserLabel(primaryTag)
-        thread.addLabel(targetLabel)
-        console.log(
-          '[processEmailsWithAiClassifier] Tagged thread with single primary label: ' +
-            primaryTag
+      if (!isValidDomain) {
+        console.warn(
+          '[processEmailsWithAiClassifier] Rejected hallucinated domain "' +
+            classification.canonicalDomain +
+            '" not in config.canonicalDomains; skipping labeling.'
         )
-
-        // Note: Permanent Gmail filter auto-creation is deactivated to prevent
-        // filter duplication, cumulative rule firing, and multi-label collisions.
-
-        // Persist Canonical Attachments to Google Drive along Taxonomy Path
-        var savedAttachments = persistCanonicalAttachmentsToDrive(
+      } else {
+        // Clean up any pre-existing conflicting core domain labels, sub-labels, flat labels, and Retention/Permanent
+        cleanConflictingLabels(
           thread,
-          classification,
-          config,
-          {
-            Utilities: Utilities,
-            Session: Session,
-            DriveApp: typeof DriveApp !== 'undefined' ? DriveApp : null,
-          }
+          classification.canonicalDomain,
+          classification.subLabel,
+          config
         )
 
-        // Sync Progressive Disclosure Summary to GitHub
-        if (config.githubToken) {
-          var notePath = getNotePathForDomain(
-            classification.canonicalDomain,
-            classification.subLabel
+        // 1. Single Primary Label Tagging (Sub-label preferred; canonicalDomain if no sub-label)
+        var primaryTag =
+          classification.subLabel || classification.canonicalDomain
+        if (primaryTag) {
+          var targetLabel = ensureUserLabel(primaryTag)
+          thread.addLabel(targetLabel)
+          console.log(
+            '[processEmailsWithAiClassifier] Tagged thread with single primary label: ' +
+              primaryTag
           )
-          if (notePath) {
-            var dateStr = Utilities.formatDate(
-              firstMessage.getDate(),
-              'GMT',
-              'yyyy-MM-dd'
+
+          // Note: Permanent Gmail filter auto-creation is deactivated to prevent
+          // filter duplication, cumulative rule firing, and multi-label collisions.
+
+          // Persist Canonical Attachments to Google Drive along Taxonomy Path
+          var savedAttachments = persistCanonicalAttachmentsToDrive(
+            thread,
+            classification,
+            config,
+            {
+              Utilities: Utilities,
+              Session: Session,
+              DriveApp: typeof DriveApp !== 'undefined' ? DriveApp : null,
+            }
+          )
+
+          // Sync Progressive Disclosure Summary to GitHub
+          githubSyncSucceeded = true
+          if (config.githubToken) {
+            var notePath = getNotePathForDomain(
+              classification.canonicalDomain,
+              classification.subLabel
             )
-            var entryMd = formatProgressiveDisclosureEntry(
-              dateStr,
-              classification.title || subject,
-              sender,
-              subject,
-              classification.summary,
-              config.userAccountEmail,
-              savedAttachments
-            )
-            assertNoAsciiReplacement_(
-              (subject || '') + (classification.summary || ''),
-              entryMd
-            )
-            assertClean_(entryMd, 'new entry for ' + notePath)
-            appendMarkdownEntryToGitHubRepo(
-              notePath,
-              entryMd,
-              'feat(ingestion): ' + subject
-            )
+            if (notePath) {
+              var dateStr = Utilities.formatDate(
+                firstMessage.getDate(),
+                'GMT',
+                'yyyy-MM-dd'
+              )
+              var entryMd = formatProgressiveDisclosureEntry(
+                dateStr,
+                classification.title || subject,
+                sender,
+                subject,
+                classification.summary,
+                config.userAccountEmail,
+                savedAttachments
+              )
+              assertNoAsciiReplacement_(
+                (subject || '') + (classification.summary || ''),
+                entryMd
+              )
+              assertClean_(entryMd, 'new entry for ' + notePath)
+              githubSyncSucceeded = appendMarkdownEntryToGitHubRepo(
+                notePath,
+                entryMd,
+                'feat(ingestion): ' + subject
+              )
+            }
           }
         }
       }
@@ -182,8 +197,10 @@ function processEmailsWithAiClassifier() {
         setGmailCategoryTab(thread, classification.category)
       }
 
-      // Apply Single Global Processed Label (preserves INBOX visibility unless trashed/archived)
-      thread.addLabel(processedLabel)
+      // Apply Single Global Processed Label only after successful domain validation and GitHub sync
+      if (isValidDomain && githubSyncSucceeded) {
+        thread.addLabel(processedLabel)
+      }
     } else {
       console.warn(
         '[processEmailsWithAiClassifier] Classification failed or returned null; preserving thread unprocessed for retry.'
