@@ -5,63 +5,11 @@
 
 var GMAIL_AI_CLASSIFIER_VERSION = 'v1.8.0-drive-taxonomy-attachments'
 
-function remediateUnlabeledUtilityThreads() {
-  try {
-    var query =
-      'water OR "water works" OR bwwb OR "caw-al.gov" OR "Central Alabama Water" OR "Funding Account Details"'
-    var threads = GmailApp.search(query, 0, 15)
-    console.log(
-      '[remediateUnlabeledUtilityThreads] Found ' +
-        threads.length +
-        ' candidate thread(s).'
-    )
-
-    var targetSubLabel = 'Finance/Banking'
-    var targetDomain = '02_Finance_Legal'
-    var remediatedCount = 0
-
-    for (var i = 0; i < threads.length; i++) {
-      var t = threads[i]
-      var labels = t.getLabels().map(function (l) {
-        return l.getName()
-      })
-
-      var hasDomain = labels.indexOf(targetDomain) !== -1
-      var hasSubLabel =
-        labels.indexOf('Finance/Banking') !== -1 ||
-        labels.indexOf('Finance/Bills') !== -1
-
-      // If thread already carries the core domain or appropriate sub-label, skip
-      if (hasDomain || hasSubLabel) {
-        continue
-      }
-
-      console.log(
-        '[remediateUnlabeledUtilityThreads] Remediating utility thread missing domain label: ' +
-          t.getFirstMessageSubject()
-      )
-      var labelObj = ensureUserLabel(targetSubLabel)
-      t.addLabel(labelObj)
-      setGmailCategoryTab(t, 'Updates')
-      remediatedCount++
-    }
-
-    console.log(
-      '[remediateUnlabeledUtilityThreads] Successfully remediated ' +
-        remediatedCount +
-        ' thread(s).'
-    )
-  } catch (e) {
-    console.error('[remediateUnlabeledUtilityThreads] Error: ' + e.message)
-  }
-}
-
 function processEmailsWithAiClassifier() {
   console.log(
     '[processEmailsWithAiClassifier] Engine Version: ' +
       GMAIL_AI_CLASSIFIER_VERSION
   )
-  remediateUnlabeledUtilityThreads()
   console.log(
     '[processEmailsWithAiClassifier] Starting AI semantic email processing...'
   )
@@ -861,7 +809,8 @@ function classifyWithGemini(sender, subject, snippet, config) {
     "15. SMALL BUSINESS, ARTISANAL CRAFT & HOBBY SALES: Classify inventory orders, wholesale invoices, artisanal sales, market vendor receipts, and business compliance forms under '01_Household' (sub-label 'Projects/Business') or '02_Finance_Legal' (sub-label 'Finance/Purchases' if pure purchase receipt/invoice). Set category to 'Updates', action to 'keep'. Under NO circumstances classify business sales under '07_Community_NonProfit'!\n" +
     "16. TAX FORMS, CHARITABLE DONATIONS & COURT ORDERS (1095-C, 1098, W2, tax returns, tax agency notices, donation receipts, court orders, legal closing orders): Classify under '02_Finance_Legal' (sub-labels 'Finance/Taxes', 'Finance/Charitable-Donations', or 'Finance/Legal'). CRITICAL TRIAGE: If action-required tax notice or audit/response deadline, set category to 'Primary', action to 'keep'. For routine tax forms, annual reports, or charitable receipts, set category to 'Updates', action to 'keep'.\n" +
     "17. JOB POSTINGS, RESUMES & CAREER INTERVIEWS (Job announcements, interview schedules, recruiter messages, resume feedback): Classify under '06_Work_Career' (sub-label 'Work/Career'). Set category to 'Primary' or 'Updates', action to 'keep'.\n" +
-    "18. CAR RENTALS & TRAVEL RESERVATION CONFIRMATIONS (Car rentals, airline flights, hotel reservations, travel check-ins): Classify under '01_Household' (sub-label 'Household/Travel') or '03_Vehicles' (sub-label 'Vehicles/Rental-Cars'). Set category to 'Updates', action to 'keep'.\n\n"
+    "18. CAR RENTALS & TRAVEL RESERVATION CONFIRMATIONS (Car rentals, airline flights, hotel reservations, travel check-ins): Classify under '01_Household' (sub-label 'Household/Travel') or '03_Vehicles' (sub-label 'Vehicles/Rental-Cars'). Set category to 'Updates', action to 'keep'.\n" +
+    "19. AUTOMATED SEARCH & MONITORING ALERTS (Google Alerts, Talkwalker, CourtListener alerts, public record monitors, web mention digests): If monitoring a specific person, family matter, elder care, or genealogy, classify under '04_Family_Health' (sub-label 'Family/Legal' or 'Family/Correspondence') or '02_Finance_Legal' (sub-label 'Finance/Legal'). If monitoring municipal, neighborhood, zoning, or property issues, classify under '01_Household' (sub-label 'Household/Property'). If monitoring business, corporate, or career topics, classify under '06_Work_Career' (sub-label 'Work/Career'). If general media or unassigned news topic, treat as Newsletter (canonicalDomain: null, category: 'Updates', action: 'archive'). CRITICAL: Under NO circumstances classify automated search/mention alerts under school/student sub-labels (e.g. 'Family/School-Student' or specific student labels) unless the alert query explicitly names a student school or academic program! Set category to 'Updates', action to 'keep'.\n\n"
 
   if (config.customPromptRules) {
     prompt += 'USER CUSTOM DOMAIN RULES:\n' + config.customPromptRules + '\n\n'
@@ -1047,6 +996,20 @@ function getNotePathForDomain(domain, subLabel) {
     '05_Tech_Infrastructure': 'household/technology/index.md',
     '06_Work_Career': 'work/notes/index.md',
     '07_Community_NonProfit': 'community/organization/index.md',
+  }
+  if (typeof PropertiesService !== 'undefined') {
+    try {
+      var customMapJson =
+        PropertiesService.getScriptProperties().getProperty('CUSTOM_NOTE_PATHS')
+      if (customMapJson) {
+        var customMap = JSON.parse(customMapJson)
+        if (customMap && customMap[domain]) {
+          return customMap[domain]
+        }
+      }
+    } catch (e) {
+      // Fall through to default map
+    }
   }
   return map[domain] || null
 }
@@ -2005,5 +1968,6 @@ if (typeof module !== 'undefined' && module.exports) {
     getFileHash: getFileHash,
     CANONICAL_TAXONOMY_SUBFOLDERS: CANONICAL_TAXONOMY_SUBFOLDERS,
     SUBLABEL_TO_FOLDER_MAP: SUBLABEL_TO_FOLDER_MAP,
+    getNotePathForDomain: getNotePathForDomain,
   }
 }

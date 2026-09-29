@@ -834,3 +834,79 @@ describe('processThreadBatch', () => {
     expect(Array.isArray(results[0].savedAttachments)).toBe(true)
   })
 })
+
+describe('Rule 19 and Custom Note Paths in code.gs', () => {
+  const codeGs = require('../code.gs')
+
+  test('classifyWithGemini includes Rule 19 with Google Alerts and student guardrail', () => {
+    let capturedPrompt = ''
+    global.UrlFetchApp = {
+      fetch: jest.fn((url, opts) => {
+        const payload = JSON.parse(opts.payload)
+        capturedPrompt = payload.contents[0].parts[0].text
+        return {
+          getResponseCode: () => 200,
+          getContentText: () =>
+            JSON.stringify({
+              candidates: [
+                {
+                  content: {
+                    parts: [
+                      {
+                        text: JSON.stringify({
+                          canonicalDomain: '04_Family_Health',
+                          subLabel: 'Family/Legal',
+                        }),
+                      },
+                    ],
+                  },
+                },
+              ],
+            }),
+        }
+      }),
+    }
+
+    const testConfig = {
+      canonicalDomains: ['01_Household', '04_Family_Health'],
+      geminiApiKey: 'test-key',
+    }
+
+    codeGs.classifyWithGemini(
+      'googlealerts-noreply@google.com',
+      'Google Alert - Person Name',
+      'news summary snippet',
+      testConfig
+    )
+
+    expect(capturedPrompt).toContain('19. AUTOMATED SEARCH & MONITORING ALERTS')
+    expect(capturedPrompt).toContain('Google Alerts')
+    expect(capturedPrompt).toContain(
+      'Under NO circumstances classify automated search/mention alerts under school/student sub-labels'
+    )
+  })
+
+  test('getNotePathForDomain supports CUSTOM_NOTE_PATHS from PropertiesService', () => {
+    expect(codeGs.getNotePathForDomain('04_Family_Health')).toBe(
+      'household/kids/index.md'
+    )
+
+    global.PropertiesService = {
+      getScriptProperties: () => ({
+        getProperty: (key) => {
+          if (key === 'CUSTOM_NOTE_PATHS') {
+            return JSON.stringify({
+              '04_Family_Health': 'custom-domain/kids/index.md',
+            })
+          }
+          return null
+        },
+      }),
+    }
+
+    expect(codeGs.getNotePathForDomain('04_Family_Health')).toBe(
+      'custom-domain/kids/index.md'
+    )
+    delete global.PropertiesService
+  })
+})
