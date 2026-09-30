@@ -241,24 +241,22 @@ describe('GitHub Sync & Rule 6 Mojibake Guards', () => {
 
   describe('getNotePathForDomain', () => {
     test('routes all 7 canonical domains to their correct markdown notes', () => {
-      expect(getNotePathForDomain('01_Household')).toBe(
-        'household/primary/index.md'
-      )
+      expect(getNotePathForDomain('01_Household')).toBe('01_Household/index.md')
       expect(getNotePathForDomain('02_Finance_Legal')).toBe(
-        'household/finances/index.md'
+        '02_Finance_Legal/index.md'
       )
-      expect(getNotePathForDomain('03_Vehicles')).toBe(
-        'household/vehicles/index.md'
-      )
+      expect(getNotePathForDomain('03_Vehicles')).toBe('03_Vehicles/index.md')
       expect(getNotePathForDomain('04_Family_Health')).toBe(
-        'household/kids/index.md'
+        '04_Family_Health/index.md'
       )
       expect(getNotePathForDomain('05_Tech_Infrastructure')).toBe(
-        'household/technology/index.md'
+        '05_Tech_Infrastructure/index.md'
       )
-      expect(getNotePathForDomain('06_Work_Career')).toBe('work/notes/index.md')
+      expect(getNotePathForDomain('06_Work_Career')).toBe(
+        '06_Work_Career/index.md'
+      )
       expect(getNotePathForDomain('07_Community_NonProfit')).toBe(
-        'community/organization/index.md'
+        '07_Community_NonProfit/index.md'
       )
       expect(getNotePathForDomain('Unknown_Domain')).toBeNull()
     })

@@ -12,13 +12,13 @@ All email classifications, Google Drive folders, and Markdown note indices follo
 
 | Domain Key                   | Generic Folder / Index Path       | Scope & Description                                                              |
 | :--------------------------- | :-------------------------------- | :------------------------------------------------------------------------------- |
-| **`01_Household`**           | `household/primary/index.md`      | Primary residence, property maintenance, home automation, utility receipts.      |
-| **`02_Finance_Legal`**       | `household/finances/index.md`     | Bank statements, credit cards, mortgage notes, tax documents, purchase receipts. |
-| **`03_Vehicles`**            | `household/vehicles/index.md`     | Vehicle registrations, auto insurance, parts orders, service records.            |
-| **`04_Family_Health`**       | `household/kids/index.md`         | Personal medical records, doctor visits, school portals, student planning.       |
-| **`05_Tech_Infrastructure`** | `household/technology/index.md`   | Cloud spend alerts, security warnings, home server health, digital backups.      |
-| **`06_Work_Career`**         | `work/notes/index.md`             | Work notes, architecture blueprints, professional expenses.                      |
-| **`07_Community_NonProfit`** | `community/organization/index.md` | Non-profit board records, telemetry projects, charity updates.                   |
+| **`01_Household`**           | `01_Household/index.md`           | Primary residence, property maintenance, home automation, utility receipts.      |
+| **`02_Finance_Legal`**       | `02_Finance_Legal/index.md`       | Bank statements, credit cards, mortgage notes, tax documents, purchase receipts. |
+| **`03_Vehicles`**            | `03_Vehicles/index.md`            | Vehicle registrations, auto insurance, parts orders, service records.            |
+| **`04_Family_Health`**       | `04_Family_Health/index.md`       | Personal medical records, doctor visits, school portals, student planning.       |
+| **`05_Tech_Infrastructure`** | `05_Tech_Infrastructure/index.md` | Cloud spend alerts, security warnings, home server health, digital backups.      |
+| **`06_Work_Career`**         | `06_Work_Career/index.md`         | Work notes, architecture blueprints, professional expenses.                      |
+| **`07_Community_NonProfit`** | `07_Community_NonProfit/index.md` | Non-profit board records, telemetry projects, charity updates.                   |
 
 ---
 

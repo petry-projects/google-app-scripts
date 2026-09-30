@@ -557,13 +557,27 @@ function formatProgressiveDisclosureEntry(
 
 function getNotePathForDomain(domain, _subLabel) {
   const map = {
-    '01_Household': 'household/primary/index.md',
-    '02_Finance_Legal': 'household/finances/index.md',
-    '03_Vehicles': 'household/vehicles/index.md',
-    '04_Family_Health': 'household/kids/index.md',
-    '05_Tech_Infrastructure': 'household/technology/index.md',
-    '06_Work_Career': 'work/notes/index.md',
-    '07_Community_NonProfit': 'community/organization/index.md',
+    '01_Household': '01_Household/index.md',
+    '02_Finance_Legal': '02_Finance_Legal/index.md',
+    '03_Vehicles': '03_Vehicles/index.md',
+    '04_Family_Health': '04_Family_Health/index.md',
+    '05_Tech_Infrastructure': '05_Tech_Infrastructure/index.md',
+    '06_Work_Career': '06_Work_Career/index.md',
+    '07_Community_NonProfit': '07_Community_NonProfit/index.md',
+  }
+  if (typeof PropertiesService !== 'undefined') {
+    try {
+      const customMapJson =
+        PropertiesService.getScriptProperties().getProperty('CUSTOM_NOTE_PATHS')
+      if (customMapJson) {
+        const customMap = JSON.parse(customMapJson)
+        if (customMap && customMap[domain]) {
+          return customMap[domain]
+        }
+      }
+    } catch {
+      // Fall through to default map
+    }
   }
   return map[domain] || null
 }
