@@ -974,7 +974,7 @@ describe('Ontological Knowledge Graph and Triage Matrix Prompt Architecture', ()
 
   test('getNotePathForDomain supports CUSTOM_NOTE_PATHS from PropertiesService', () => {
     expect(codeGs.getNotePathForDomain('04_Family_Health')).toBe(
-      'household/kids/index.md'
+      '04_Family_Health/index.md'
     )
 
     global.PropertiesService = {
