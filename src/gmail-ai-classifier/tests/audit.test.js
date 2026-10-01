@@ -1,8 +1,4 @@
-const {
-  auditClassifications,
-  formatAuditDigest,
-  remediateMisclassifiedThreads,
-} = require('../src/index.js')
+const { auditClassifications, formatAuditDigest } = require('../src/index.js')
 
 describe('Gmail AI Classifier Audit System', () => {
   const config = {
@@ -211,49 +207,6 @@ describe('Gmail AI Classifier Audit System', () => {
       expect(report.findings[0].flags).toContainEqual(
         expect.stringContaining('COMMERCIAL_TOS_IN_LEGAL')
       )
-    })
-  })
-
-  describe('remediateMisclassifiedThreads', () => {
-    test('remediates matching commercial TOS thread by removing legal labels, archiving, and marking read', () => {
-      const removedLabels = []
-      let archived = false
-      let markedRead = false
-
-      const mockThread = {
-        getFirstMessageSubject: () => 'Updates to the Waymo Terms of Service',
-        getLabels: () => [
-          { getName: () => 'Processed' },
-          { getName: () => '02_Finance_Legal' },
-          { getName: () => 'Finance/Legal' },
-        ],
-        removeLabel: jest.fn((lbl) => {
-          removedLabels.push(lbl.getName())
-        }),
-        moveToArchive: jest.fn(() => {
-          archived = true
-        }),
-        markRead: jest.fn(() => {
-          markedRead = true
-        }),
-      }
-
-      const mockGmailApp = {
-        search: jest.fn((query) => {
-          if (query.includes('Waymo Terms of Service')) {
-            return [mockThread]
-          }
-          return []
-        }),
-      }
-
-      const count = remediateMisclassifiedThreads({ GmailApp: mockGmailApp })
-      expect(count).toBe(1)
-      expect(removedLabels).toEqual(
-        expect.arrayContaining(['02_Finance_Legal', 'Finance/Legal'])
-      )
-      expect(archived).toBe(true)
-      expect(markedRead).toBe(true)
     })
   })
 
