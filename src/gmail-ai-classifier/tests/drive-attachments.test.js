@@ -7,6 +7,8 @@ const {
   resolveAttachmentName,
   persistCanonicalAttachmentsToDrive,
   formatProgressiveDisclosureEntry,
+  auditClassifications,
+  auditAndBackfillCanonicalAttachments,
 } = require('../src/index.js')
 
 // Helper mock makers
@@ -45,6 +47,7 @@ const createMockFolder = (name = 'folder', id = 'f-' + name) => {
       const fileName = blob.getName ? blob.getName() : blob.name || 'file'
       const fileId =
         'file-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6)
+      let fileDescription = ''
       const mockFile = {
         getName: () => fileName,
         getId: () => fileId,
@@ -56,6 +59,10 @@ const createMockFolder = (name = 'folder', id = 'f-' + name) => {
               ? blob.bytes.length
               : 0,
         getBlob: () => blob,
+        setDescription: jest.fn((desc) => {
+          fileDescription = desc
+        }),
+        getDescription: jest.fn(() => fileDescription),
       }
       if (!files.has(fileName)) {
         files.set(fileName, [])
@@ -698,6 +705,290 @@ describe('Drive Attachment Persistence along Taxonomy Path', () => {
 
       expect(entry).toContain('- **Attachments**:\n')
       expect(entry).toContain('  - document_without_link.pdf\n')
+    })
+  })
+
+  describe('Immediate Metadata Description Tagging in persistCanonicalAttachmentsToDrive', () => {
+    test('tags created file with [AI_INDEXED], domain, and thread ID', () => {
+      const mockDriveApp = createMockDriveApp()
+      const att = createMockAttachment({
+        name: 'Tuition_Invoice.pdf',
+        content: 'Invoice payload for school',
+      })
+      const thread = {
+        getId: () => 'th-tuition-101',
+        getMessages: () => [{ getAttachments: () => [att] }],
+      }
+      const classification = {
+        canonicalDomain: '04_Family_Health',
+        subLabel: 'Family/School-Student',
+      }
+      const services = {
+        DriveApp: mockDriveApp,
+        Utilities: {
+          formatDate: () => '2026-09-30T12:00:00Z',
+        },
+      }
+
+      const saved = persistCanonicalAttachmentsToDrive(
+        thread,
+        classification,
+        {},
+        services
+      )
+      expect(saved).toHaveLength(1)
+
+      const folder = mockDriveApp
+        .getRootFolder()
+        .getFoldersByName('04_Family_Health')
+        .next()
+        .getFoldersByName('Students')
+        .next()
+      const file = folder.getFilesByName('Tuition_Invoice.pdf').next()
+      expect(file.setDescription).toHaveBeenCalled()
+      const desc = file.getDescription()
+      expect(desc).toContain('[AI_INDEXED]')
+      expect(desc).toContain('Domain: 04_Family_Health')
+      expect(desc).toContain('Sub-label: Family/School-Student')
+      expect(desc).toContain('Thread-ID: th-tuition-101')
+    })
+  })
+
+  describe('Attachment Verification in auditClassifications', () => {
+    test('flags MISSING_DRIVE_ATTACHMENT when attachment is not in Drive', () => {
+      const mockDriveApp = createMockDriveApp()
+      const att = createMockAttachment({
+        name: 'Missing_Receipt.pdf',
+        content: 'Receipt content',
+      })
+      const thread = {
+        getId: () => 'th-receipt-1',
+        getFirstMessageSubject: () => 'Order Receipt',
+        sender: 'orders@vendor.com',
+        labels: ['02_Finance_Legal', 'Finance/Purchases'],
+        getMessages: () => [{ getAttachments: () => [att] }],
+      }
+
+      const report = auditClassifications([thread], {
+        driveApp: mockDriveApp,
+      })
+
+      expect(report.flaggedCount).toBe(1)
+      expect(report.findings[0].flags).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('MISSING_DRIVE_ATTACHMENT'),
+        ])
+      )
+    })
+
+    test('flags UNTAGGED_DRIVE_ATTACHMENT when file exists but lacks [AI_INDEXED]', () => {
+      const mockDriveApp = createMockDriveApp()
+      const targetFolder = ensureDriveTaxonomyFolder(
+        '02_Finance_Legal',
+        'Purchases',
+        mockDriveApp
+      )
+      // Create untagged file in folder
+      targetFolder.createFile({
+        getName: () => 'Untagged_Doc.pdf',
+        getBytes: () => Buffer.from('Doc content', 'utf-8'),
+      })
+
+      const att = createMockAttachment({
+        name: 'Untagged_Doc.pdf',
+        content: 'Doc content',
+      })
+      const thread = {
+        getId: () => 'th-untagged-1',
+        getFirstMessageSubject: () => 'Purchased Item',
+        sender: 'orders@vendor.com',
+        labels: ['02_Finance_Legal', 'Finance/Purchases'],
+        getMessages: () => [{ getAttachments: () => [att] }],
+      }
+
+      const report = auditClassifications([thread], {
+        driveApp: mockDriveApp,
+      })
+
+      expect(report.flaggedCount).toBe(1)
+      expect(report.findings[0].flags).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('UNTAGGED_DRIVE_ATTACHMENT'),
+        ])
+      )
+    })
+
+    test('passes without flags when file is stored and properly tagged', () => {
+      const mockDriveApp = createMockDriveApp()
+      const targetFolder = ensureDriveTaxonomyFolder(
+        '02_Finance_Legal',
+        'Purchases',
+        mockDriveApp
+      )
+      const file = targetFolder.createFile({
+        getName: () => 'Tagged_Doc.pdf',
+        getBytes: () => Buffer.from('Doc content', 'utf-8'),
+      })
+      file.setDescription('[AI_INDEXED]\nDomain: 02_Finance_Legal')
+
+      const att = createMockAttachment({
+        name: 'Tagged_Doc.pdf',
+        content: 'Doc content',
+      })
+      const thread = {
+        getId: () => 'th-tagged-1',
+        getFirstMessageSubject: () => 'Order Confirmation',
+        sender: 'orders@vendor.com',
+        labels: ['02_Finance_Legal', 'Finance/Purchases'],
+        getMessages: () => [{ getAttachments: () => [att] }],
+      }
+
+      const report = auditClassifications([thread], {
+        driveApp: mockDriveApp,
+      })
+
+      expect(report.flaggedCount).toBe(0)
+    })
+  })
+
+  describe('auditAndBackfillCanonicalAttachments', () => {
+    test('dryRun mode reports missing, untagged, and stored attachments without mutating Drive', () => {
+      const mockDriveApp = createMockDriveApp()
+      const folder = ensureDriveTaxonomyFolder(
+        '01_Household',
+        'Primary_House',
+        mockDriveApp
+      )
+      // File 1: Already stored and tagged
+      const file1 = folder.createFile({
+        getName: () => 'Plan_Approved.pdf',
+        getBytes: () => Buffer.from('Plan bytes', 'utf-8'),
+      })
+      file1.setDescription('[AI_INDEXED]\nDomain: 01_Household')
+
+      // File 2: Already stored but untagged
+      folder.createFile({
+        getName: () => 'Untagged_Spec.pdf',
+        getBytes: () => Buffer.from('Spec bytes', 'utf-8'),
+      })
+
+      const att1 = createMockAttachment({
+        name: 'Plan_Approved.pdf',
+        content: 'Plan bytes',
+      })
+      const att2 = createMockAttachment({
+        name: 'Untagged_Spec.pdf',
+        content: 'Spec bytes',
+      })
+      const att3 = createMockAttachment({
+        name: 'Missing_Estimate.pdf',
+        content: 'Estimate bytes',
+      })
+
+      const thread = {
+        getId: () => 'th-household-100',
+        getFirstMessageSubject: () => 'Porch Construction Plans',
+        labels: ['01_Household', 'Household/Property'],
+        getMessages: () => [
+          { getAttachments: () => [att1, att2] },
+          { getAttachments: () => [att3] },
+        ],
+      }
+
+      const mockGmailApp = {
+        search: jest.fn(() => [thread]),
+      }
+
+      const report = auditAndBackfillCanonicalAttachments(
+        { dryRun: true },
+        {},
+        {
+          GmailApp: mockGmailApp,
+          DriveApp: mockDriveApp,
+        }
+      )
+
+      expect(report.scannedThreads).toBe(1)
+      expect(report.threadsWithEligibleAttachments).toBe(1)
+      expect(report.totalEligibleAttachments).toBe(3)
+      expect(report.alreadyStoredAndTagged).toBe(1)
+      expect(report.alreadyStoredUntagged).toBe(1)
+      expect(report.missingFromDrive).toBe(1)
+      expect(report.backfilledCount).toBe(0)
+      expect(report.taggedCount).toBe(0)
+      expect(report.dryRun).toBe(true)
+
+      // Ensure missing file was NOT created in dryRun mode
+      expect(folder.getFilesByName('Missing_Estimate.pdf').hasNext()).toBe(
+        false
+      )
+    })
+
+    test('backfill mode creates missing files, tags them, and updates untagged files', () => {
+      const mockDriveApp = createMockDriveApp()
+      const folder = ensureDriveTaxonomyFolder(
+        '02_Finance_Legal',
+        'Banking',
+        mockDriveApp
+      )
+
+      // File 1: Stored but untagged
+      const file1 = folder.createFile({
+        getName: () => 'Old_Statement.pdf',
+        getBytes: () => Buffer.from('Statement 1 bytes', 'utf-8'),
+      })
+
+      const att1 = createMockAttachment({
+        name: 'Old_Statement.pdf',
+        content: 'Statement 1 bytes',
+      })
+      const att2 = createMockAttachment({
+        name: 'New_Statement.pdf',
+        content: 'Statement 2 bytes',
+      })
+
+      const thread = {
+        getId: () => 'th-bank-200',
+        getFirstMessageSubject: () => 'Monthly Statement',
+        labels: ['02_Finance_Legal', 'Finance/Banking'],
+        getMessages: () => [{ getAttachments: () => [att1, att2] }],
+      }
+
+      const mockGmailApp = {
+        search: jest.fn(() => [thread]),
+      }
+
+      const services = {
+        GmailApp: mockGmailApp,
+        DriveApp: mockDriveApp,
+        Utilities: {
+          formatDate: () => '2026-09-30T18:00:00Z',
+        },
+      }
+
+      const report = auditAndBackfillCanonicalAttachments(
+        { dryRun: false },
+        {},
+        services
+      )
+
+      expect(report.scannedThreads).toBe(1)
+      expect(report.totalEligibleAttachments).toBe(2)
+      expect(report.alreadyStoredUntagged).toBe(1)
+      expect(report.missingFromDrive).toBe(1)
+      expect(report.backfilledCount).toBe(1)
+      expect(report.taggedCount).toBe(1)
+      expect(report.dryRun).toBe(false)
+
+      // Verify missing file was created
+      const newFile = folder.getFilesByName('New_Statement.pdf').next()
+      expect(newFile).toBeDefined()
+      expect(newFile.getDescription()).toContain('[AI_INDEXED]')
+      expect(newFile.getDescription()).toContain('Domain: 02_Finance_Legal')
+
+      // Verify untagged file was updated
+      expect(file1.getDescription()).toContain('[AI_INDEXED]')
+      expect(file1.getDescription()).toContain('Domain: 02_Finance_Legal')
     })
   })
 })
