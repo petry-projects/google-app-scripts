@@ -1,7 +1,9 @@
 const {
   isCanonicalClassification,
   resolveTaxonomySubfolderName,
+  evaluateAttachmentEligibility,
   isEligibleAttachment,
+  getMessageAttachments_,
   ensureDriveTaxonomyFolder,
   isDuplicateAttachment,
   resolveAttachmentName,
@@ -319,7 +321,7 @@ describe('Drive Attachment Persistence along Taxonomy Path', () => {
       })
     })
 
-    test('accepts substantive image attachments (>= 15KB)', () => {
+    test('accepts substantive image attachments (>= 35KB) without signature names', () => {
       const photoAtt = createMockAttachment({
         name: 'receipt_scan.jpg',
         contentType: 'image/jpeg',
@@ -327,6 +329,66 @@ describe('Drive Attachment Persistence along Taxonomy Path', () => {
         size: 45000, // 45KB
       })
       expect(isEligibleAttachment(photoAtt)).toBe(true)
+    })
+
+    test('strictly rejects non-document extensions (.ics, .vcf, .html, .dat, .p7s)', () => {
+      const nonDocs = [
+        'meeting.ics',
+        'invite.ical',
+        'contact.vcf',
+        'newsletter.html',
+        'email.htm',
+        'winmail.dat',
+        'smime.p7s',
+        'app.exe',
+      ]
+      nonDocs.forEach((f) => {
+        const att = createMockAttachment({ name: f, size: 50000 })
+        const res = evaluateAttachmentEligibility(att)
+        expect(res.eligible).toBe(false)
+        expect(res.reason).toMatch(/BLOCKED/)
+      })
+    })
+
+    test('strictly rejects signature, logo, and banner image names even if >= 35KB', () => {
+      const sigs = [
+        'company_logo.png',
+        'my_signature.jpg',
+        'email_header.png',
+        'footer_banner.jpg',
+        'social_facebook.png',
+        'outlook-1a2b3c.png',
+        'unnamed.png',
+      ]
+      sigs.forEach((f) => {
+        const att = createMockAttachment({
+          name: f,
+          contentType: 'image/png',
+          size: 60000, // 60KB
+        })
+        const res = evaluateAttachmentEligibility(att)
+        expect(res.eligible).toBe(false)
+        expect(res.reason).toContain('SIGNATURE_OR_LOGO_PATTERN')
+      })
+    })
+
+    test('getMessageAttachments_ requests non-inline attachments', () => {
+      const mockMsg = {
+        getAttachments: jest.fn((options) => {
+          if (options && options.includeInlineImages === false) {
+            return [{ name: 'real_doc.pdf' }]
+          }
+          return [{ name: 'real_doc.pdf' }, { name: 'inline_logo.png' }]
+        }),
+      }
+
+      const atts = getMessageAttachments_(mockMsg)
+      expect(mockMsg.getAttachments).toHaveBeenCalledWith({
+        includeInlineImages: false,
+        includeAttachments: true,
+      })
+      expect(atts).toHaveLength(1)
+      expect(atts[0].name).toBe('real_doc.pdf')
     })
   })
 

@@ -691,8 +691,7 @@ function auditClassifications(threads, config) {
       var subfolderName = resolveTaxonomySubfolderName(domain, subLabel)
       var msgs = thread.getMessages() || []
       msgs.forEach(function (msg) {
-        var atts =
-          typeof msg.getAttachments === 'function' ? msg.getAttachments() : []
+        var atts = getMessageAttachments_(msg)
         atts.forEach(function (att) {
           if (isEligibleAttachment(att)) {
             var attName =
@@ -1640,41 +1639,6 @@ var SUBLABEL_TO_FOLDER_MAP = {
   'community/charity': 'Community_BOD',
 }
 
-var TRACKING_IMAGE_EXTS = {
-  png: true,
-  jpg: true,
-  jpeg: true,
-  gif: true,
-  webp: true,
-  bmp: true,
-  ico: true,
-}
-var TRACKING_STEM_NAMES = {
-  signature: true,
-  logo: true,
-  icon: true,
-  spacer: true,
-  pixel: true,
-  tracking: true,
-  banner: true,
-  facebook: true,
-  twitter: true,
-  instagram: true,
-  linkedin: true,
-  youtube: true,
-}
-
-function isTrackingOrSigImageName_(fileName) {
-  if (!fileName || typeof fileName !== 'string') return false
-  var dotIndex = fileName.lastIndexOf('.')
-  if (dotIndex <= 0) return false
-  var ext = fileName.slice(dotIndex + 1).toLowerCase()
-  if (!TRACKING_IMAGE_EXTS[ext]) return false
-  var stem = fileName.slice(0, dotIndex).toLowerCase()
-  if (TRACKING_STEM_NAMES[stem]) return true
-  return /^image\d{3}$/.test(stem)
-}
-
 /**
  * Computes MD5 hex digest for a GAS blob.
  */
@@ -1754,14 +1718,18 @@ function resolveTaxonomySubfolderName(canonicalDomain, subLabel) {
 }
 
 /**
- * Evaluates whether an email attachment is an eligible document/payload
- * and filters out inline images, email signatures, and tracking pixels (< 15KB).
+ * Evaluates whether an email attachment is an eligible canonical document
+ * and filters out inline images, email signatures, tracking pixels, and non-document artifacts.
+ *
+ * @param {Object} att - Attachment blob or mock object
+ * @returns {{ eligible: boolean, reason: string }}
  */
-function isEligibleAttachment(att) {
-  if (!att) return false
+function evaluateAttachmentEligibility(att) {
+  if (!att) return { eligible: false, reason: 'NULL_OR_EMPTY' }
   var name = typeof att.getName === 'function' ? att.getName() : att.name || ''
-  if (!name || typeof name !== 'string' || name.trim().length === 0)
-    return false
+  if (!name || typeof name !== 'string' || name.trim().length === 0) {
+    return { eligible: false, reason: 'MISSING_NAME' }
+  }
 
   var size = 0
   if (typeof att.getSize === 'function') {
@@ -1776,29 +1744,218 @@ function isEligibleAttachment(att) {
   }
 
   // 1. Skip empty files
-  if (size <= 0) return false
+  if (size <= 0) {
+    return { eligible: false, reason: 'ZERO_BYTE' }
+  }
 
   var cleanName = name.trim()
+  var dotIndex = cleanName.lastIndexOf('.')
+  var ext = dotIndex > 0 ? cleanName.slice(dotIndex + 1).toLowerCase() : ''
+  var stem = (
+    dotIndex > 0 ? cleanName.slice(0, dotIndex) : cleanName
+  ).toLowerCase()
   var mimeType = (
     typeof att.getContentType === 'function'
       ? att.getContentType()
       : att.contentType || ''
   ).toLowerCase()
 
-  // 2. Filter out known tracking / signature image names (< 25KB)
-  if (isTrackingOrSigImageName_(cleanName) && size < 25 * 1024) {
-    return false
+  // 2. Unconditionally blocked non-document extensions
+  var BLOCKED_EXTENSIONS = {
+    ics: true,
+    ical: true,
+    ifb: true,
+    vcf: true,
+    vcard: true,
+    html: true,
+    htm: true,
+    css: true,
+    js: true,
+    mjs: true,
+    json: true,
+    xml: true,
+    rss: true,
+    p7s: true,
+    p7m: true,
+    p7c: true,
+    asc: true,
+    sig: true,
+    dat: true,
+    eml: true,
+    msg: true,
+    exe: true,
+    dmg: true,
+    pkg: true,
+    bin: true,
+    apk: true,
+    app: true,
+    sh: true,
+    bat: true,
+    cmd: true,
+    msi: true,
+    ttf: true,
+    woff: true,
+    woff2: true,
+    eot: true,
+    otf: true,
+    ico: true,
+    gif: true,
   }
 
-  // 3. Filter out small image files (< 15KB) as signature icons / tracking pixels
-  var isImage =
-    mimeType.indexOf('image/') === 0 ||
-    /\.(png|jpe?g|gif|webp|bmp|ico)$/i.test(cleanName)
-  if (isImage && size < 15 * 1024) {
-    return false
+  if (BLOCKED_EXTENSIONS[ext]) {
+    return { eligible: false, reason: 'BLOCKED_EXTENSION:.' + ext }
   }
 
-  return true
+  // 3. Block winmail.dat or mail artifacts without extension
+  if (
+    cleanName.toLowerCase() === 'winmail.dat' ||
+    cleanName.toLowerCase() === 'smime.p7s'
+  ) {
+    return { eligible: false, reason: 'BLOCKED_MAIL_ARTIFACT' }
+  }
+
+  // 4. Canonical document types (Whitelisted)
+  var DOCUMENT_EXTENSIONS = {
+    pdf: true,
+    docx: true,
+    doc: true,
+    rtf: true,
+    odt: true,
+    pages: true,
+    xlsx: true,
+    xls: true,
+    csv: true,
+    tsv: true,
+    ods: true,
+    numbers: true,
+    pptx: true,
+    ppt: true,
+    key: true,
+  }
+
+  if (DOCUMENT_EXTENSIONS[ext]) {
+    return { eligible: true, reason: 'CANONICAL_DOCUMENT' }
+  }
+
+  // 5. Plain text files (.txt) - must be substantial and not boilerplate disclaimer
+  if (ext === 'txt') {
+    if (/^(disclaimer|signature|notice|footer|legal|terms)$/i.test(stem)) {
+      return { eligible: false, reason: 'TEXT_BOILERPLATE_DISCLAIMER' }
+    }
+    return { eligible: true, reason: 'CANONICAL_TEXT_DOCUMENT' }
+  }
+
+  // 6. Archives (.zip)
+  if (ext === 'zip') {
+    return { eligible: true, reason: 'CANONICAL_ARCHIVE' }
+  }
+
+  // 7. Image files (.jpg, .jpeg, .png, .heic, .tiff, .tif, .webp)
+  var IMAGE_EXTENSIONS = {
+    jpg: true,
+    jpeg: true,
+    png: true,
+    heic: true,
+    tiff: true,
+    tif: true,
+    webp: true,
+  }
+
+  var isImage = IMAGE_EXTENSIONS[ext] || mimeType.indexOf('image/') === 0
+
+  if (isImage) {
+    // 7a. Stricter size threshold: genuine receipt/document photos are virtually always >= 35KB
+    if (size < 35 * 1024) {
+      return { eligible: false, reason: 'IMAGE_BELOW_SIZE_THRESHOLD (<35KB)' }
+    }
+
+    // 7b. Tracking, logo, signature stem blacklist
+    var SIGNATURE_STEM_PATTERNS = [
+      /logo/i,
+      /sig(nature)?/i,
+      /banner/i,
+      /header/i,
+      /footer/i,
+      /avatar/i,
+      /badge/i,
+      /icon/i,
+      /button/i,
+      /social/i,
+      /facebook/i,
+      /twitter/i,
+      /instagram/i,
+      /linkedin/i,
+      /youtube/i,
+      /tiktok/i,
+      /pinterest/i,
+      /whatsapp/i,
+      /spacer/i,
+      /pixel/i,
+      /tracking/i,
+      /divider/i,
+      /border/i,
+      /bullet/i,
+      /rating/i,
+      /star/i,
+      /thumbnail/i,
+      /thumb/i,
+      /outlook-[a-z0-9]+/i,
+      /^image\d*$/i,
+      /^unnamed/i,
+      /^pasted/i,
+      /^photo$/i,
+      /^img$/i,
+      /^attachment$/i,
+    ]
+
+    for (var i = 0; i < SIGNATURE_STEM_PATTERNS.length; i++) {
+      if (SIGNATURE_STEM_PATTERNS[i].test(stem)) {
+        return {
+          eligible: false,
+          reason:
+            'SIGNATURE_OR_LOGO_PATTERN:' + SIGNATURE_STEM_PATTERNS[i].source,
+        }
+      }
+    }
+
+    return { eligible: true, reason: 'CANONICAL_IMAGE_SCAN' }
+  }
+
+  // Unknown or unsupported extension
+  return { eligible: false, reason: 'UNKNOWN_OR_UNSUPPORTED_EXTENSION:.' + ext }
+}
+
+/**
+ * Backward-compatible boolean evaluator.
+ *
+ * @param {Object} att - Attachment blob or mock object
+ * @returns {boolean} True if eligible canonical document
+ */
+function isEligibleAttachment(att) {
+  return evaluateAttachmentEligibility(att).eligible
+}
+
+/**
+ * Retrieves attachments from a Gmail message, excluding inline images by default.
+ *
+ * @param {Object} msg - GmailMessage or mock
+ * @returns {Array} Array of attachments
+ */
+function getMessageAttachments_(msg) {
+  if (!msg) return []
+  if (typeof msg.getAttachments === 'function') {
+    try {
+      return (
+        msg.getAttachments({
+          includeInlineImages: false,
+          includeAttachments: true,
+        }) || []
+      )
+    } catch (e) {
+      return msg.getAttachments() || []
+    }
+  }
+  return msg.attachments || []
 }
 
 function getOrCreateChildFolder_(parentFolder, folderName) {
@@ -1991,8 +2148,7 @@ function persistCanonicalAttachmentsToDrive(
   }
 
   messages.forEach(function (msg) {
-    var attachments =
-      typeof msg.getAttachments === 'function' ? msg.getAttachments() : []
+    var attachments = getMessageAttachments_(msg)
     attachments.forEach(function (att) {
       if (!isEligibleAttachment(att)) {
         console.log(
@@ -2158,7 +2314,11 @@ function auditAndBackfillCanonicalAttachments(options, config, services) {
   var report = {
     scannedThreads: threads.length,
     threadsWithEligibleAttachments: 0,
+    totalAttachmentsInspected: 0,
     totalEligibleAttachments: 0,
+    filteredGarbageCount: 0,
+    eligibleByType: {},
+    filteredByReason: {},
     alreadyStoredAndTagged: 0,
     alreadyStoredUntagged: 0,
     missingFromDrive: 0,
@@ -2242,12 +2402,17 @@ function auditAndBackfillCanonicalAttachments(options, config, services) {
     var threadHasEligible = false
 
     msgs.forEach(function (msg) {
-      var atts =
-        typeof msg.getAttachments === 'function'
-          ? msg.getAttachments()
-          : msg.attachments || []
+      var atts = getMessageAttachments_(msg)
       atts.forEach(function (att) {
-        if (!isEligibleAttachment(att)) return
+        report.totalAttachmentsInspected++
+        var evalResult = evaluateAttachmentEligibility(att)
+        if (!evalResult.eligible) {
+          report.filteredGarbageCount++
+          var reasonKey = evalResult.reason.split(':')[0]
+          report.filteredByReason[reasonKey] =
+            (report.filteredByReason[reasonKey] || 0) + 1
+          return
+        }
 
         threadHasEligible = true
         report.totalEligibleAttachments++
@@ -2255,6 +2420,23 @@ function auditAndBackfillCanonicalAttachments(options, config, services) {
           typeof att.getName === 'function'
             ? att.getName()
             : att.name || 'unnamed'
+        var cleanName = fileName.trim()
+        var dotIndex = cleanName.lastIndexOf('.')
+        var ext =
+          dotIndex > 0 ? cleanName.slice(dotIndex + 1).toLowerCase() : 'other'
+        report.eligibleByType[ext] = (report.eligibleByType[ext] || 0) + 1
+
+        var fileSize = extractFileSize_(att)
+        if (!fileSize && typeof att.getBytes === 'function') {
+          var b = att.getBytes()
+          fileSize = b ? b.length : 0
+        }
+        var fileSizeKb = Math.round((fileSize / 1024) * 10) / 10
+        var mimeType =
+          typeof att.getContentType === 'function'
+            ? att.getContentType()
+            : att.contentType || ''
+
         var newFileBlob =
           typeof att.copyBlob === 'function' ? att.copyBlob() : att
 
@@ -2302,6 +2484,9 @@ function auditAndBackfillCanonicalAttachments(options, config, services) {
               threadId: threadId,
               subject: subject,
               fileName: fileName,
+              fileSizeKb: fileSizeKb,
+              mimeType: mimeType,
+              extension: ext,
               domain: canonicalDomain,
               subfolder: subfolderName,
               status: 'ALREADY_STORED_AND_TAGGED',
@@ -2324,6 +2509,9 @@ function auditAndBackfillCanonicalAttachments(options, config, services) {
               threadId: threadId,
               subject: subject,
               fileName: fileName,
+              fileSizeKb: fileSizeKb,
+              mimeType: mimeType,
+              extension: ext,
               domain: canonicalDomain,
               subfolder: subfolderName,
               status: isDryRun ? 'STORED_BUT_UNTAGGED' : 'TAGGED_EXISTING',
@@ -2351,6 +2539,9 @@ function auditAndBackfillCanonicalAttachments(options, config, services) {
                 threadId: threadId,
                 subject: subject,
                 fileName: finalName,
+                fileSizeKb: fileSizeKb,
+                mimeType: mimeType,
+                extension: ext,
                 domain: canonicalDomain,
                 subfolder: subfolderName,
                 status: 'BACKFILLED_TO_DRIVE',
@@ -2360,6 +2551,9 @@ function auditAndBackfillCanonicalAttachments(options, config, services) {
                 threadId: threadId,
                 subject: subject,
                 fileName: fileName,
+                fileSizeKb: fileSizeKb,
+                mimeType: mimeType,
+                extension: ext,
                 domain: canonicalDomain,
                 subfolder: subfolderName,
                 status: 'BACKFILL_ERROR',
@@ -2371,6 +2565,9 @@ function auditAndBackfillCanonicalAttachments(options, config, services) {
               threadId: threadId,
               subject: subject,
               fileName: fileName,
+              fileSizeKb: fileSizeKb,
+              mimeType: mimeType,
+              extension: ext,
               domain: canonicalDomain,
               subfolder: subfolderName,
               status: 'MISSING_FROM_DRIVE',
@@ -2395,18 +2592,54 @@ function auditAndBackfillCanonicalAttachments(options, config, services) {
 function runDryRunAttachmentAudit(options) {
   var opts = Object.assign({ dryRun: true, maxThreads: 50 }, options || {})
   var report = auditAndBackfillCanonicalAttachments(opts)
+
+  console.log('===============================================================')
+  console.log(' CANONICAL ATTACHMENT AUDIT MANIFEST (DRY RUN)')
+  console.log('===============================================================')
   console.log(
-    '[runDryRunAttachmentAudit] Scanned ' +
+    'Scanned Threads: ' +
       report.scannedThreads +
-      ' threads. Eligible attachments: ' +
+      ' | Total Attachments Inspected: ' +
+      report.totalAttachmentsInspected +
+      ' | Eligible: ' +
       report.totalEligibleAttachments +
-      '. Already stored & tagged: ' +
-      report.alreadyStoredAndTagged +
-      ', Untagged in Drive: ' +
-      report.alreadyStoredUntagged +
-      ', Missing from Drive: ' +
-      report.missingFromDrive
+      ' | Filtered Garbage: ' +
+      report.filteredGarbageCount
   )
+  console.log('---------------------------------------------------------------')
+  console.log('ELIGIBLE ATTACHMENTS BY TYPE:')
+  Object.keys(report.eligibleByType || {}).forEach(function (type) {
+    console.log('  .' + type + ': ' + report.eligibleByType[type])
+  })
+  console.log('FILTERED GARBAGE BY REASON:')
+  Object.keys(report.filteredByReason || {}).forEach(function (reason) {
+    console.log('  ' + reason + ': ' + report.filteredByReason[reason])
+  })
+  console.log('---------------------------------------------------------------')
+  console.log('CURATED FILES SCHEDULED FOR DRIVE STORAGE:')
+  if (!report.items || report.items.length === 0) {
+    console.log('  (None - zero files qualify for Drive storage)')
+  } else {
+    report.items.forEach(function (item, idx) {
+      console.log(
+        '  [' +
+          (idx + 1) +
+          '] [' +
+          item.domain +
+          '/' +
+          item.subfolder +
+          '] ' +
+          item.fileName +
+          ' (' +
+          item.fileSizeKb +
+          ' KB) - Subject: "' +
+          item.subject +
+          '"'
+      )
+    })
+  }
+  console.log('===============================================================')
+
   return report
 }
 
@@ -2445,7 +2678,9 @@ if (typeof module !== 'undefined' && module.exports) {
     setGmailCategoryTab: setGmailCategoryTab,
     isCanonicalClassification: isCanonicalClassification,
     resolveTaxonomySubfolderName: resolveTaxonomySubfolderName,
+    evaluateAttachmentEligibility: evaluateAttachmentEligibility,
     isEligibleAttachment: isEligibleAttachment,
+    getMessageAttachments_: getMessageAttachments_,
     ensureDriveTaxonomyFolder: ensureDriveTaxonomyFolder,
     isDuplicateAttachment: isDuplicateAttachment,
     resolveAttachmentName: resolveAttachmentName,
