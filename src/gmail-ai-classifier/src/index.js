@@ -1930,6 +1930,22 @@ function auditAndBackfillCanonicalAttachments(options, config, services) {
   return report
 }
 
+/**
+ * Convenience runner for dry-run historical attachment audit.
+ */
+function runDryRunAttachmentAudit(options, config, services) {
+  var opts = Object.assign({ dryRun: true, maxThreads: 50 }, options || {})
+  return auditAndBackfillCanonicalAttachments(opts, config, services)
+}
+
+/**
+ * Convenience runner for live historical attachment backfill.
+ */
+function runLiveAttachmentBackfill(options, config, services) {
+  var opts = Object.assign({ dryRun: false, maxThreads: 50 }, options || {})
+  return auditAndBackfillCanonicalAttachments(opts, config, services)
+}
+
 module.exports = {
   validateClassification,
   classifyEmailWithGemini,
@@ -1957,6 +1973,8 @@ module.exports = {
   resolveAttachmentName,
   persistCanonicalAttachmentsToDrive,
   auditAndBackfillCanonicalAttachments,
+  runDryRunAttachmentAudit,
+  runLiveAttachmentBackfill,
   CANONICAL_TAXONOMY_SUBFOLDERS,
   SUBLABEL_TO_FOLDER_MAP,
 }
