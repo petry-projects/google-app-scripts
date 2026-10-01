@@ -2357,6 +2357,45 @@ function auditAndBackfillCanonicalAttachments(options, config, services) {
   return report
 }
 
+/**
+ * Zero-argument convenience runner for dry-run historical attachment audit.
+ * Safe to execute directly from Apps Script IDE or scheduled triggers.
+ */
+function runDryRunAttachmentAudit(options) {
+  var opts = Object.assign({ dryRun: true, maxThreads: 50 }, options || {})
+  var report = auditAndBackfillCanonicalAttachments(opts)
+  console.log(
+    '[runDryRunAttachmentAudit] Scanned ' +
+      report.scannedThreads +
+      ' threads. Eligible attachments: ' +
+      report.totalEligibleAttachments +
+      '. Already stored & tagged: ' +
+      report.alreadyStoredAndTagged +
+      ', Untagged in Drive: ' +
+      report.alreadyStoredUntagged +
+      ', Missing from Drive: ' +
+      report.missingFromDrive
+  )
+  return report
+}
+
+/**
+ * Zero-argument convenience runner for live historical attachment backfill.
+ * Backfills missing files to Drive taxonomy folders and sets [AI_INDEXED] description.
+ */
+function runLiveAttachmentBackfill(options) {
+  var opts = Object.assign({ dryRun: false, maxThreads: 50 }, options || {})
+  var report = auditAndBackfillCanonicalAttachments(opts)
+  console.log(
+    '[runLiveAttachmentBackfill] Completed backfill: ' +
+      report.backfilledCount +
+      ' uploaded, ' +
+      report.taggedCount +
+      ' tagged.'
+  )
+  return report
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     processEmailsWithAiClassifier: processEmailsWithAiClassifier,
@@ -2381,6 +2420,8 @@ if (typeof module !== 'undefined' && module.exports) {
     resolveAttachmentName: resolveAttachmentName,
     persistCanonicalAttachmentsToDrive: persistCanonicalAttachmentsToDrive,
     auditAndBackfillCanonicalAttachments: auditAndBackfillCanonicalAttachments,
+    runDryRunAttachmentAudit: runDryRunAttachmentAudit,
+    runLiveAttachmentBackfill: runLiveAttachmentBackfill,
     getFileHash: getFileHash,
     CANONICAL_TAXONOMY_SUBFOLDERS: CANONICAL_TAXONOMY_SUBFOLDERS,
     SUBLABEL_TO_FOLDER_MAP: SUBLABEL_TO_FOLDER_MAP,

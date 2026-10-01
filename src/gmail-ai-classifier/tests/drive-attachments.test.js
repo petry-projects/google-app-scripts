@@ -9,6 +9,8 @@ const {
   formatProgressiveDisclosureEntry,
   auditClassifications,
   auditAndBackfillCanonicalAttachments,
+  runDryRunAttachmentAudit,
+  runLiveAttachmentBackfill,
 } = require('../src/index.js')
 
 // Helper mock makers
@@ -989,6 +991,30 @@ describe('Drive Attachment Persistence along Taxonomy Path', () => {
       // Verify untagged file was updated
       expect(file1.getDescription()).toContain('[AI_INDEXED]')
       expect(file1.getDescription()).toContain('Domain: 02_Finance_Legal')
+    })
+
+    test('runDryRunAttachmentAudit defaults to dryRun: true', () => {
+      const mockDriveApp = createMockDriveApp()
+      const mockGmailApp = { search: jest.fn(() => []) }
+      const report = runDryRunAttachmentAudit(
+        {},
+        {},
+        { GmailApp: mockGmailApp, DriveApp: mockDriveApp }
+      )
+      expect(report.dryRun).toBe(true)
+      expect(report.scannedThreads).toBe(0)
+    })
+
+    test('runLiveAttachmentBackfill defaults to dryRun: false', () => {
+      const mockDriveApp = createMockDriveApp()
+      const mockGmailApp = { search: jest.fn(() => []) }
+      const report = runLiveAttachmentBackfill(
+        {},
+        {},
+        { GmailApp: mockGmailApp, DriveApp: mockDriveApp }
+      )
+      expect(report.dryRun).toBe(false)
+      expect(report.scannedThreads).toBe(0)
     })
   })
 })
