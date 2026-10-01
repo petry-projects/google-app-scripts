@@ -4,6 +4,8 @@
  * with Jest without a live Google Apps Script environment.
  */
 
+const { getFileHash } = require('../../gas-utils')
+
 /**
  * Validates a Gemini classification response object.
  *
@@ -39,6 +41,83 @@ function validateClassification(classification, canonicalDomains) {
 
 function _sleep(ms) {
   if (typeof Utilities !== 'undefined') Utilities.sleep(ms)
+}
+
+/**
+ * Constructs an Ontological Knowledge Graph & Triage Matrix prompt for Gemini classification.
+ * Uses positive invariant domain scopes, an orthogonal lifecycle triage matrix,
+ * and user entity graph injection, eliminating negative exclusion rules.
+ *
+ * @param {Object} config - Classifier configuration (canonicalDomains, customPromptRules)
+ * @param {string} sender - Email sender header
+ * @param {string} subject - Email subject line
+ * @param {string} snippet - Email body snippet
+ * @returns {string} Prompt text for Gemini API
+ */
+function buildOntologicalPrompt(config, sender, subject, snippet) {
+  const domains = (config && config.canonicalDomains) || []
+  let prompt =
+    'You are an executive email classifier. Perform semantic classification into ONE canonical domain key from: ' +
+    JSON.stringify(domains) +
+    ' (or null if non-canonical).\n\n' +
+    '=== TIER 1: DOMAIN TAXONOMY ONTOLOGY (POSITIVE INVARIANTS) ===\n' +
+    'Classify emails based on what each domain positively governs:\n' +
+    "• '01_Household': Physical residence, real estate property, maintenance, home repairs, contractor invoices, home utilities, household inventory, travel/lodging reservations, and artisanal home craft/business sales. Valid sub-labels: 'Household/Property', 'Household/Maintenance', 'Household/Travel', 'Projects/Business'.\n" +
+    "• '02_Finance_Legal': Personal banking, checking/savings, credit cards, investments, mortgages, personal tax filings (W-2, 1098, 1099, returns), utility payment accounts/funding, purchase invoices/receipts, insurance policies, legal filings, court orders, and formal contracts. Valid sub-labels: 'Finance/Banking', 'Finance/Bills', 'Finance/Purchases', 'Finance/Taxes', 'Finance/Charitable-Donations', 'Finance/Legal'.\n" +
+    "• '03_Vehicles': Personal automobile titles, registrations, vehicle insurance, automotive maintenance, repairs, parts, and car rental reservations. Valid sub-labels: 'Vehicles/Maintenance', 'Vehicles/Purchases', 'Vehicles/Rental-Cars'.\n" +
+    "• '04_Family_Health': Family correspondence, healthcare records, doctor appointments, patient portals, prescriptions, elder care, and student education/coursework/school portals. Valid sub-labels: 'Family/Medical', 'Family/Personal-Correspondence', 'Family/School-Student', 'Family/Legal', 'Family/Correspondence'.\n" +
+    "• '05_Tech_Infrastructure': Cloud hosting, server infrastructure, domains/DNS, network hardware, security alerts, system telemetry, and developer platform quota/outage alerts. Valid sub-labels: 'Tech/Cloud', 'Tech/Security', 'Tech/Alerts'.\n" +
+    "• '06_Work_Career': Professional employment, career advancement, job applications, recruiter correspondence, interview schedules, employer benefits, and consulting. Valid sub-labels: 'Work/Career', 'Work/Employer'.\n" +
+    "• '07_Community_NonProfit': Official 501(c)(3) charities, non-profit boards of directors, volunteer shift schedules, civic records, and community telemetry. Valid sub-labels: 'Projects/Charity', 'Community/BOD', 'Projects/Telemetry'.\n\n" +
+    'NON-CANONICAL EMAILS (canonicalDomain: null):\n' +
+    '• Media & platform newsletters (Substack, Medium, LinkedIn digests, news recaps, blogs, trade publications).\n' +
+    '• Retail marketing, store discounts, commercial coupons, e-commerce promotional blasts.\n' +
+    '• Commercial webinars, product demos, vendor marketing broadcasts.\n' +
+    '• Unsolicited real estate cold calls, off-market wholesaler pitches, bulk solicitation.\n\n' +
+    'AUTOMATED SEARCH & MONITORING ALERTS (Google Alerts, Talkwalker, CourtListener, web mentions):\n' +
+    'Route monitoring alerts strictly according to the subject entity being monitored:\n' +
+    "• Person, family member, elder care, or genealogy monitoring -> '04_Family_Health' ('Family/Legal' or 'Family/Correspondence') or '02_Finance_Legal' ('Finance/Legal').\n" +
+    "• Municipal, neighborhood, zoning, or real property monitoring -> '01_Household' ('Household/Property').\n" +
+    "• Corporate, business, industry, or career monitoring -> '06_Work_Career' ('Work/Career').\n" +
+    "• General news or unassigned media mention -> canonicalDomain: null (category: 'Updates', action: 'archive').\n" +
+    '• Student or school sub-labels apply only when the monitored alert query specifically targets an academic program or school.\n\n' +
+    '=== TIER 2: ORTHOGONAL TRIAGE MATRIX (LIFECYCLE STATE) ===\n' +
+    'Determine category and action based on the lifecycle state of the email:\n' +
+    '1. Action_Required (Manual bills due without auto-pay, direct personal/teacher messages needing reply, audit/response deadlines, suspicious login alerts, ready prescriptions):\n' +
+    "   -> category: 'Primary', action: 'keep'\n" +
+    '2. Informational_Feed (Automated search/monitoring alerts, active orders in transit, routine tax forms/receipts, volunteer reminders, upcoming travel itineraries):\n' +
+    "   -> category: 'Updates', action: 'keep'\n" +
+    '3. Completed_Transaction (Confirmed scheduled auto-payments, delivered packages, successful SSO/sign-ins, routine lunch menu digests, bank transfers):\n' +
+    "   -> category: 'Updates', action: 'archive'\n" +
+    '4. Broadcast_Marketing (Commercial promos, retail discounts, vendor newsletters):\n' +
+    "   -> category: 'Promotions', action: 'archive'\n" +
+    '5. Spam_Solicitation (Phishing, scam attempts, cold wholesaler pitches):\n' +
+    "   -> category: 'Promotions', action: 'trash'\n\n" +
+    '=== CONSTRAINTS ===\n' +
+    '• Single Sub-Label Invariant: Return AT MOST ONE sub-label string (e.g. "Finance/Banking" or "Family/School-Student"). Do not stack or combine multiple sub-labels.\n\n'
+
+  if (config && config.customPromptRules) {
+    prompt +=
+      '=== TIER 3: USER ENTITY KNOWLEDGE GRAPH & CUSTOM RULES ===\n' +
+      config.customPromptRules +
+      '\n\n'
+  }
+
+  prompt +=
+    'Sender: ' +
+    sender +
+    '\n' +
+    'Subject: ' +
+    subject +
+    '\n' +
+    'Body Snippet: ' +
+    snippet +
+    '\n\n' +
+    'Return JSON ONLY: {"canonicalDomain": "01_Household", "subLabel": "Household/Property", "category": "Updates", "action": "keep", "confidence": 0.98, "title": "Short Title", "summary": "2 sentence executive summary"}\n' +
+    "Valid categories: 'Primary', 'Updates', 'Promotions', 'Social', 'Forums'.\n" +
+    "Valid actions: 'keep', 'archive', 'trash', 'mark_read'."
+
+  return prompt
 }
 
 /**
@@ -146,7 +225,6 @@ function classifyEmailWithGemini(
       return null
     }
   }
-  return null
 }
 
 /**
@@ -334,22 +412,1177 @@ function processThreadBatch(threads, config, services) {
       )
     }
 
+    let savedAttachments = []
+    if (services?.DriveApp) {
+      savedAttachments = persistCanonicalAttachmentsToDrive(
+        thread,
+        classification,
+        config,
+        services
+      )
+    }
+
     results.push({
       threadId: thread.getId(),
       status: 'classified',
       label: classification.canonical_label,
       confidence: classification.confidence,
       filterCreated: filterCreated,
+      savedAttachments: savedAttachments,
     })
   })
 
   return results
 }
 
+const GITHUB_REPO_OWNER = 'don-petry'
+const GITHUB_REPO_NAME = 'self-private'
+
+const RULE6_PATTERNS = [
+  [/\S \? \S/, "' ? ' between words (was an em dash or a · separator)"],
+  [/\?\?/, "'??' (was a multi-codepoint emoji)"],
+  [/[A-Za-z]\?[A-Za-z]/, "'?' inside a word (was a curly apostrophe)"],
+  [/\uFFFD/, 'U+FFFD replacement character'],
+]
+
+/** Refuse to write an entry that already shows mojibake. */
+function assertClean_(text, what) {
+  if (!text) return
+  for (let i = 0; i < RULE6_PATTERNS.length; i++) {
+    if (RULE6_PATTERNS[i][0].test(text)) {
+      throw new Error(
+        'Rule 6: refusing to write ' + what + ' — ' + RULE6_PATTERNS[i][1]
+      )
+    }
+  }
+}
+
+/** Refuse to write when a non-ASCII char in the source text became '?' on the way out. */
+function assertNoAsciiReplacement_(source, rendered) {
+  if (!source || !rendered) return
+  if (rendered.indexOf('?') === -1) return
+  const lost = []
+  for (let i = 0; i < source.length; i++) {
+    const c = source.charAt(i)
+    if (
+      c.charCodeAt(0) > 127 &&
+      rendered.indexOf(c) === -1 &&
+      lost.indexOf(c) === -1
+    ) {
+      lost.push(c)
+    }
+  }
+  if (lost.length) {
+    throw new Error(
+      'Rule 6: refusing to write text that flattened non-ASCII to "?": ' +
+        lost.join(' ') +
+        ' — encode as UTF-8, not ASCII.'
+    )
+  }
+}
+
+function extractTopicTitleFromPath(filePath) {
+  const parts = filePath.split('/')
+  const topic = parts.length > 1 ? parts[parts.length - 2] : parts[0]
+  // Strip any trailing file extension (e.g. ".md") before title-casing so a
+  // single-segment path like "digital-backups.md" becomes "Digital Backups".
+  return topic
+    .replace(/\.[^.]+$/, '')
+    .replace(/-/g, ' ')
+    .replace(/\b\w/g, function (l) {
+      return l.toUpperCase()
+    })
+}
+
+function insertEntryIntoLogSection(fullContent, newEntry) {
+  const detailsMarker = '</details>'
+  const detailsIndex = fullContent.indexOf(detailsMarker)
+
+  if (detailsIndex !== -1) {
+    return (
+      fullContent.substring(0, detailsIndex) +
+      newEntry +
+      '\n' +
+      fullContent.substring(detailsIndex)
+    )
+  }
+
+  const section3Marker = '## 3. Ingested Activity'
+  const section3Index = fullContent.indexOf(section3Marker)
+
+  if (section3Index !== -1) {
+    const lineBreakIndex = fullContent.indexOf('\n', section3Index)
+    return (
+      fullContent.substring(0, lineBreakIndex + 1) +
+      newEntry +
+      '\n' +
+      fullContent.substring(lineBreakIndex + 1)
+    )
+  }
+
+  return fullContent + '\n' + newEntry
+}
+
+function formatProgressiveDisclosureEntry(
+  dateStr,
+  title,
+  sender,
+  subject,
+  summaryText,
+  accountEmail,
+  attachments
+) {
+  let entry = '\n### ' + dateStr + ' — ' + title + '\n'
+  entry += '- **Account**: ' + accountEmail + '\n'
+  entry += '- **From**: ' + sender + '\n'
+  entry += '- **Subject**: ' + subject + '\n'
+  if (summaryText) {
+    entry += '- **Summary**:\n  > ' + summaryText.trim() + '\n'
+  }
+  if (attachments && attachments.length > 0) {
+    entry += '- **Attachments**:\n'
+    for (let a = 0; a < attachments.length; a++) {
+      const att = attachments[a]
+      if (att?.name) {
+        if (att.url) {
+          entry += '  - [' + att.name + '](' + att.url + ')\n'
+        } else {
+          entry += '  - ' + att.name + '\n'
+        }
+      }
+    }
+  }
+  return entry
+}
+
+function getNotePathForDomain(domain, _subLabel) {
+  const map = {
+    '01_Household': '01_Household/index.md',
+    '02_Finance_Legal': '02_Finance_Legal/index.md',
+    '03_Vehicles': '03_Vehicles/index.md',
+    '04_Family_Health': '04_Family_Health/index.md',
+    '05_Tech_Infrastructure': '05_Tech_Infrastructure/index.md',
+    '06_Work_Career': '06_Work_Career/index.md',
+    '07_Community_NonProfit': '07_Community_NonProfit/index.md',
+  }
+  if (typeof PropertiesService !== 'undefined') {
+    try {
+      const customMapJson =
+        PropertiesService.getScriptProperties().getProperty('CUSTOM_NOTE_PATHS')
+      if (customMapJson) {
+        const customMap = JSON.parse(customMapJson)
+        if (customMap && customMap[domain]) {
+          return customMap[domain]
+        }
+      }
+    } catch {
+      // Fall through to default map
+    }
+  }
+  return map[domain] || null
+}
+
+function appendMarkdownEntryToGitHubRepo(
+  filePath,
+  entryMd,
+  commitMessage,
+  services
+) {
+  const props =
+    services?.PropertiesService ||
+    (typeof PropertiesService !== 'undefined' ? PropertiesService : null)
+  const githubToken = props?.getScriptProperties()?.getProperty('GITHUB_PAT')
+  if (!githubToken) {
+    console.log(
+      '[gitHubSync] GITHUB_PAT ScriptProperty not set. Skipping GitHub commit.'
+    )
+    return false
+  }
+
+  const sleep = services?.sleepFn || _sleep
+  const maxRetries = 3
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const result = executeGitHubCommit(
+      filePath,
+      entryMd,
+      commitMessage,
+      githubToken,
+      services
+    )
+    if (result === true || result === 'IDEMPOTENT_SKIP') {
+      return true
+    }
+    console.log(
+      '[gitHubSync] Retry attempt',
+      attempt,
+      'of',
+      maxRetries,
+      'for',
+      filePath
+    )
+    sleep(1000 * attempt)
+  }
+
+  console.error(
+    '[gitHubSync] Failed to commit entry to GitHub after',
+    maxRetries,
+    'attempts:',
+    filePath
+  )
+  return false
+}
+
+function executeGitHubCommit(
+  filePath,
+  entryMd,
+  commitMessage,
+  githubToken,
+  services
+) {
+  const urlFetchApp =
+    services?.UrlFetchApp ||
+    (typeof UrlFetchApp !== 'undefined' ? UrlFetchApp : null)
+  const utils =
+    services?.Utilities || (typeof Utilities !== 'undefined' ? Utilities : null)
+
+  const repoOwner =
+    services?.githubRepoOwner ||
+    process.env.GITHUB_REPO_OWNER ||
+    GITHUB_REPO_OWNER
+  const repoName =
+    services?.githubRepoName || process.env.GITHUB_REPO_NAME || GITHUB_REPO_NAME
+
+  const url =
+    'https://api.github.com/repos/' +
+    repoOwner +
+    '/' +
+    repoName +
+    '/contents/' +
+    filePath
+  const headers = {
+    Authorization: 'token ' + githubToken,
+    Accept: 'application/vnd.github.v3+json',
+    'User-Agent': 'Google-Apps-Script',
+  }
+
+  try {
+    const getOptions = {
+      method: 'get',
+      headers: headers,
+      muteHttpExceptions: true,
+    }
+    const res = urlFetchApp.fetch(url, getOptions)
+    const statusCode = res.getResponseCode()
+
+    let sha = null
+    let rawContent = ''
+
+    if (statusCode === 404) {
+      console.log(
+        '[gitHubSync] File not found on GitHub (HTTP 404). Initializing new note:',
+        filePath
+      )
+      const topicTitle = extractTopicTitleFromPath(filePath)
+      const dateStr = utils?.formatDate
+        ? utils.formatDate(new Date(), 'GMT', 'yyyy-MM-dd')
+        : new Date().toISOString().slice(0, 10)
+      rawContent =
+        '---\ntitle: ' +
+        topicTitle +
+        '\ncreated: ' +
+        dateStr +
+        '\nnotebook: household\nsection: general\n---\n\n' +
+        '# ' +
+        topicTitle +
+        '\n\n' +
+        '## 1. Executive Summary & Active Status\n- Ingested records log.\n\n' +
+        '## 2. Key References & Quick Links\n| Topic | Asset |\n| :--- | :--- |\n\n' +
+        '## 3. Ingested Activity Logs\n<details open><summary><b>Activity Logs</b></summary>\n</details>\n'
+    } else if (statusCode === 200) {
+      const fileData = JSON.parse(res.getContentText())
+      sha = fileData.sha
+      // GitHub Contents API wraps Base64 in newlines every 60 chars; strip them
+      // before decoding since some decoders reject embedded whitespace.
+      rawContent = utils
+        .newBlob(
+          utils.base64Decode((fileData.content || '').replace(/[\r\n]/g, ''))
+        )
+        .getDataAsString()
+
+      if (
+        rawContent.indexOf(entryMd.trim()) !== -1 ||
+        (commitMessage && rawContent.indexOf(commitMessage) !== -1)
+      ) {
+        console.log(
+          '[gitHubSync] Idempotent Skip: Entry already exists in',
+          filePath
+        )
+        return 'IDEMPOTENT_SKIP'
+      }
+    } else {
+      console.error(
+        '[gitHubSync] Error fetching file from GitHub (HTTP ' +
+          statusCode +
+          '):',
+        res.getContentText()
+      )
+      return false
+    }
+
+    const updatedContent = insertEntryIntoLogSection(rawContent, entryMd)
+
+    assertClean_(entryMd, 'new entry for ' + filePath)
+
+    const base64Updated = utils.base64Encode(
+      utils.newBlob(updatedContent).getBytes()
+    )
+
+    // Validate the ACTUAL Base64 round trip at the payload boundary: decode what
+    // we are about to PUT and confirm no non-ASCII character was flattened to
+    // '?'. Comparing updatedContent to entryMd/rawContent directly is inert
+    // because updatedContent contains both source strings unchanged.
+    const renderedContent = utils
+      .newBlob(utils.base64Decode(base64Updated))
+      .getDataAsString()
+    assertNoAsciiReplacement_(updatedContent, renderedContent)
+
+    const putPayload = {
+      message:
+        commitMessage ||
+        'feat(ingestion): append ingested document entry via Google Apps Script',
+      content: base64Updated,
+      branch: 'main',
+    }
+    if (sha) {
+      putPayload.sha = sha
+    }
+
+    const putOptions = {
+      method: 'put',
+      headers: headers,
+      contentType: 'application/json',
+      payload: JSON.stringify(putPayload),
+      muteHttpExceptions: true,
+    }
+
+    const putRes = urlFetchApp.fetch(url, putOptions)
+    const putStatus = putRes.getResponseCode()
+
+    if (putStatus === 200 || putStatus === 201) {
+      console.log(
+        '[gitHubSync] Successfully committed markdown entry to GitHub:',
+        filePath
+      )
+      return true
+    } else if (putStatus === 409) {
+      console.warn('[gitHubSync] SHA collision (HTTP 409) on file:', filePath)
+      return false
+    } else {
+      console.error(
+        '[gitHubSync] Error committing to GitHub (HTTP ' + putStatus + '):',
+        putRes.getContentText()
+      )
+      return false
+    }
+  } catch (e) {
+    console.error('[gitHubSync] Exception calling GitHub API:', e.message)
+    return false
+  }
+}
+
+function formatAuditDate_(d) {
+  const y = d.getFullYear()
+  const m = ('0' + (d.getMonth() + 1)).slice(-2)
+  const da = ('0' + d.getDate()).slice(-2)
+  return y + '/' + m + '/' + da
+}
+
+function getSearchDateRange_(dateStr, days) {
+  const parts = dateStr.split('-')
+  const year = Number.parseInt(parts[0], 10)
+  const month = Number.parseInt(parts[1], 10) - 1
+  const day = Number.parseInt(parts[2], 10)
+  const dt = new Date(year, month, day)
+
+  const beforeDt = new Date(dt.getTime() + (days + 1) * 86400000)
+  const afterDt = new Date(dt.getTime() - days * 86400000)
+
+  return {
+    after: formatAuditDate_(afterDt),
+    before: formatAuditDate_(beforeDt),
+  }
+}
+
+/**
+ * Audits a collection of processed Gmail threads for classification anomalies.
+ *
+ * @param {Array} threads - Array of GmailThread-like objects
+ * @param {Object} config - Classifier config
+ * @returns {Object} report - { scannedCount, flaggedCount, findings, summary }
+ */
+function auditClassifications(threads, config) {
+  const canonicalDomains = config?.canonicalDomains || [
+    '01_Household',
+    '02_Finance_Legal',
+    '03_Vehicles',
+    '04_Family_Health',
+    '05_Tech_Infrastructure',
+    '06_Work_Career',
+    '07_Community_NonProfit',
+  ]
+
+  const PROMO_KEYWORDS =
+    /\b(sale|\d+% off|deal of the day|clearance|limited time offer|coupon|shop now)\b/i
+  const NEWSLETTER_KEYWORDS =
+    /\b(weekly digest|daily digest|newsletter|roundup|top stories)\b/i
+  const ORDER_KEYWORDS =
+    /\b(order confirmation|your order|receipt|payment received|invoice|shipped)\b/i
+
+  const findings = []
+
+  if (!Array.isArray(threads)) {
+    return {
+      scannedCount: 0,
+      flaggedCount: 0,
+      findings: [],
+      summary: 'No threads to audit.',
+    }
+  }
+
+  threads.forEach((thread) => {
+    if (!thread) return
+    const id =
+      typeof thread.getId === 'function' ? thread.getId() : thread.id || ''
+    const subject =
+      typeof thread.getFirstMessageSubject === 'function'
+        ? thread.getFirstMessageSubject()
+        : thread.subject || ''
+
+    let sender = ''
+    if (typeof thread.getMessages === 'function') {
+      const msgs = thread.getMessages()
+      if (msgs && msgs.length > 0 && typeof msgs[0].getFrom === 'function') {
+        sender = msgs[0].getFrom()
+      }
+    } else if (thread.sender) {
+      sender = thread.sender
+    }
+
+    let rawLabels = []
+    if (typeof thread.getLabels === 'function') {
+      const labelObjs = thread.getLabels() || []
+      rawLabels = labelObjs.map((l) =>
+        typeof l.getName === 'function' ? l.getName() : String(l)
+      )
+    } else if (Array.isArray(thread.labels)) {
+      rawLabels = thread.labels
+    }
+
+    const assignedCanonical = rawLabels.filter(
+      (l) => canonicalDomains.includes(l) || /^0[1-7]_/.test(l)
+    )
+    const flags = []
+
+    // 1. Missing Domain
+    if (assignedCanonical.length === 0) {
+      flags.push(
+        'MISSING_CANONICAL_DOMAIN: Thread marked as processed has no canonical domain label.'
+      )
+    }
+
+    // 2. Conflicting Domains
+    if (assignedCanonical.length > 1) {
+      flags.push(
+        'CONFLICTING_DOMAINS: Multiple canonical domain labels assigned: ' +
+          assignedCanonical.join(', ')
+      )
+    }
+
+    // 3. Heuristic Checks
+    const fullText = (subject + ' ' + sender).toLowerCase()
+    if (ORDER_KEYWORDS.test(fullText)) {
+      const hasFinanceOrHousehold = assignedCanonical.some(
+        (l) =>
+          l.includes('02_Finance_Legal') ||
+          l.includes('01_Household') ||
+          l.includes('03_Vehicles')
+      )
+      if (assignedCanonical.length > 0 && !hasFinanceOrHousehold) {
+        flags.push(
+          'SUSPICIOUS_ROUTING: Purchase/receipt keywords detected but domain is ' +
+            assignedCanonical.join(', ') +
+            ' instead of 02_Finance_Legal.'
+        )
+      }
+    }
+
+    if (PROMO_KEYWORDS.test(subject) && assignedCanonical.length > 0) {
+      const hasMarketingSublabel = rawLabels.some((l) =>
+        /promo|marketing|deal|coupon/i.test(l)
+      )
+      if (!hasMarketingSublabel) {
+        flags.push(
+          'PROMOTIONAL_CONTENT: Promotional sale keywords in subject tagged under core domain ' +
+            assignedCanonical.join(', ') +
+            ' without marketing sub-label.'
+        )
+      }
+    }
+
+    if (NEWSLETTER_KEYWORDS.test(subject) && assignedCanonical.length > 0) {
+      const hasNewsletterSublabel = rawLabels.some((l) =>
+        /newsletter|digest|news/i.test(l)
+      )
+      if (!hasNewsletterSublabel) {
+        flags.push(
+          'UNLABELED_NEWSLETTER: Generic newsletter/digest subject tagged under core domain ' +
+            assignedCanonical.join(', ') +
+            ' without newsletter sub-label.'
+        )
+      }
+    }
+
+    if (flags.length > 0) {
+      findings.push({
+        threadId: id,
+        subject: subject,
+        sender: sender,
+        canonicalLabels: assignedCanonical,
+        allLabels: rawLabels,
+        flags: flags,
+      })
+    }
+  })
+
+  return {
+    scannedCount: threads.length,
+    flaggedCount: findings.length,
+    findings: findings,
+    summary:
+      'Audited ' +
+      threads.length +
+      ' thread(s); ' +
+      findings.length +
+      ' anomaly flag(s) identified.',
+  }
+}
+
+/**
+ * Formats an audit report into a human-readable email digest or log message.
+ *
+ * @param {Object} report - Result from auditClassifications
+ * @returns {string} Formatted digest text
+ */
+function formatAuditDigest(report) {
+  if (!report || report.flaggedCount === 0) {
+    return (
+      'Gmail AI Classifier Audit: All ' +
+      (report ? report.scannedCount : 0) +
+      ' analyzed threads are compliant. No anomalies detected.'
+    )
+  }
+
+  let text = '===================================================\n'
+  text += '   GMAIL AI CLASSIFICATION AUDIT REPORT\n'
+  text += '===================================================\n'
+  text += report.summary + '\n\n'
+
+  report.findings.forEach((finding, idx) => {
+    text +=
+      idx + 1 + '. Subject: "' + (finding.subject || '(no subject)') + '"\n'
+    text += '   Sender:  ' + (finding.sender || '(unknown)') + '\n'
+    text +=
+      '   Labels:  ' + (finding.canonicalLabels.join(', ') || '(none)') + '\n'
+    text += '   Flags:\n'
+    finding.flags.forEach((f) => {
+      text += '     • ' + f + '\n'
+    })
+    text += '\n'
+  })
+
+  text += '---------------------------------------------------\n'
+  text +=
+    'Tuning Action: Update ScriptProperty CUSTOM_PROMPT_RULES to add calibrated sender rules.\n'
+  text += '===================================================\n'
+  return text
+}
+
+// ---------------------------------------------------------------------------
+// Attachment Persistence to Google Drive along Taxonomy Path
+// ---------------------------------------------------------------------------
+
+const CANONICAL_TAXONOMY_SUBFOLDERS = {
+  '01_Household': [
+    'Primary_House',
+    'Shop_Build',
+    'Rental_Property',
+    'Archive_Property',
+    'Bills',
+    'Maintenance',
+  ],
+  '02_Finance_Legal': [
+    'Taxes',
+    'Insurance',
+    'Banking',
+    'Legal_Court',
+    'Estate_Planning',
+    'Bills',
+    'Purchases',
+  ],
+  '03_Vehicles': ['Car_Hunt', 'Vehicle_Fleet', 'Maintenance'],
+  '04_Family_Health': [
+    'Family_General',
+    'Students',
+    'Adults',
+    'Medical_Records',
+    'Activities_Camps',
+  ],
+  '05_Tech_Infrastructure': ['NAS_Backups', 'Tasker', 'Hardware_Licenses'],
+  '06_Work_Career': ['Career_Interviews', 'Expenses_Admin'],
+  '07_Community_NonProfit': ['Community_BOD', 'Projects_Telemetry'],
+}
+
+const SUBLABEL_TO_FOLDER_MAP = {
+  // 01_Household
+  'household/primary-property': 'Primary_House',
+  'household/primary_house': 'Primary_House',
+  'household/primary': 'Primary_House',
+  'household/home-maintenance': 'Maintenance',
+  'household/maintenance': 'Maintenance',
+  'household/utilities': 'Bills',
+  'household/bills': 'Bills',
+  'household/shop': 'Shop_Build',
+  'household/shop-build': 'Shop_Build',
+  'household/travel': 'Primary_House',
+
+  // 02_Finance_Legal
+  'finance/banking': 'Banking',
+  'finance/bills': 'Bills',
+  'finance/taxes': 'Taxes',
+  'finance/insurance': 'Insurance',
+  'finance/purchases': 'Purchases',
+  'finance/legal': 'Legal_Court',
+  'finance/legal_court': 'Legal_Court',
+  'finance/charitable-donations': 'Taxes',
+  'finance/estate-planning': 'Estate_Planning',
+  'finance/estate_planning': 'Estate_Planning',
+
+  // 03_Vehicles
+  'vehicles/maintenance': 'Maintenance',
+  'vehicles/parts-orders': 'Maintenance',
+  'vehicles/insurance': 'Insurance',
+  'vehicles/registration': 'Maintenance',
+  'vehicles/rental-cars': 'Maintenance',
+  'vehicles/car-hunt': 'Car_Hunt',
+  'vehicles/car_hunt': 'Car_Hunt',
+
+  // 04_Family_Health
+  'family/medical': 'Medical_Records',
+  'family/medical-records': 'Medical_Records',
+  'family/medical-student': 'Medical_Records',
+  'family/health-general': 'Medical_Records',
+  'family/school-student': 'Students',
+  'family/personal-correspondence': 'Family_General',
+
+  // 05_Tech_Infrastructure
+  'tech/alerts-monitoring': 'NAS_Backups',
+  'tech/backups': 'NAS_Backups',
+  'tech/hardware': 'Hardware_Licenses',
+  'tech/hardware-licenses': 'Hardware_Licenses',
+  'tech/cloud-gcp': 'NAS_Backups',
+
+  // 06_Work_Career
+  'work/career': 'Career_Interviews',
+  'work/notes': 'Career_Interviews',
+  'work/expenses': 'Expenses_Admin',
+  'work/expenses-admin': 'Expenses_Admin',
+  'work/architecture': 'Career_Interviews',
+
+  // 07_Community_NonProfit
+  'projects/charity': 'Community_BOD',
+  'community/bod': 'Community_BOD',
+  'projects/telemetry': 'Projects_Telemetry',
+  'community/nonprofit-bod': 'Community_BOD',
+  'community/charity': 'Community_BOD',
+}
+
+const TRACKING_IMAGE_EXTENSIONS = new Set([
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'bmp',
+  'ico',
+])
+
+const TRACKING_STEM_NAMES = new Set([
+  'signature',
+  'logo',
+  'icon',
+  'spacer',
+  'pixel',
+  'tracking',
+  'banner',
+  'facebook',
+  'twitter',
+  'instagram',
+  'linkedin',
+  'youtube',
+])
+
+function isTrackingOrSigImageName(fileName) {
+  if (!fileName || typeof fileName !== 'string') return false
+  const dotIndex = fileName.lastIndexOf('.')
+  if (dotIndex <= 0) return false
+  const ext = fileName.slice(dotIndex + 1).toLowerCase()
+  if (!TRACKING_IMAGE_EXTENSIONS.has(ext)) return false
+  const stem = fileName.slice(0, dotIndex).toLowerCase()
+  if (TRACKING_STEM_NAMES.has(stem)) return true
+  return /^image\d{3}$/.test(stem)
+}
+
+/**
+ * Validates whether an email classification represents a canonical domain.
+ * Non-canonical emails (promotions, newsletters, spam) return null/empty for canonicalDomain.
+ *
+ * @param {Object} classification - Gemini classification object
+ * @param {Object} [config] - Classifier configuration
+ * @returns {boolean} True if canonical domain, false if non-canonical or null
+ */
+function isCanonicalClassification(classification, config) {
+  if (!classification || typeof classification !== 'object') return false
+  const domain =
+    classification.canonicalDomain || classification.canonical_label
+  if (!domain || typeof domain !== 'string') return false
+  const trimmed = domain.trim()
+  if (trimmed === '' || trimmed === 'null' || trimmed === 'undefined')
+    return false
+
+  const allowedDomains = config?.canonicalDomains || [
+    '01_Household',
+    '02_Finance_Legal',
+    '03_Vehicles',
+    '04_Family_Health',
+    '05_Tech_Infrastructure',
+    '06_Work_Career',
+    '07_Community_NonProfit',
+  ]
+
+  return allowedDomains.some(
+    (d) => trimmed === d || trimmed.startsWith(d + '/')
+  )
+}
+
+/**
+ * Resolves the 2nd-level Google Drive taxonomy subfolder name given a canonical domain and sub-label.
+ *
+ * @param {string} canonicalDomain - e.g. "02_Finance_Legal"
+ * @param {string} [subLabel] - e.g. "Finance/Banking" or "Bills"
+ * @returns {string} Subfolder name
+ */
+function resolveTaxonomySubfolderName(canonicalDomain, subLabel) {
+  if (subLabel && typeof subLabel === 'string') {
+    const normalized = subLabel.trim().toLowerCase()
+    if (SUBLABEL_TO_FOLDER_MAP[normalized]) {
+      return SUBLABEL_TO_FOLDER_MAP[normalized]
+    }
+
+    const parts = subLabel.split('/')
+    const subPart = (parts.length > 1 ? parts[1] : parts[0]).trim()
+    const sanitized = subPart.replace(/[-\s]+/g, '_')
+
+    const knownSubfolders = CANONICAL_TAXONOMY_SUBFOLDERS[canonicalDomain] || []
+    const match = knownSubfolders.find(
+      (sf) => sf.toLowerCase() === sanitized.toLowerCase()
+    )
+    if (match) return match
+
+    if (sanitized.length > 0) return sanitized
+  }
+
+  const defaults = {
+    '01_Household': 'Primary_House',
+    '02_Finance_Legal': 'Banking',
+    '03_Vehicles': 'Maintenance',
+    '04_Family_Health': 'Medical_Records',
+    '05_Tech_Infrastructure': 'NAS_Backups',
+    '06_Work_Career': 'Career_Interviews',
+    '07_Community_NonProfit': 'Community_BOD',
+  }
+  return defaults[canonicalDomain] || 'General'
+}
+
+/**
+ * Evaluates whether an email attachment is an eligible document/payload
+ * and filters out inline images, email signatures, and tracking pixels (< 15KB).
+ *
+ * @param {Object} att - Attachment blob or mock object
+ * @returns {boolean} True if eligible, false if signature/pixel/empty
+ */
+function isEligibleAttachment(att) {
+  if (!att) return false
+  const name =
+    typeof att.getName === 'function' ? att.getName() : att.name || ''
+  if (!name || typeof name !== 'string' || name.trim().length === 0)
+    return false
+
+  let size = 0
+  if (typeof att.getSize === 'function') {
+    size = att.getSize()
+  } else if (typeof att.getBytes === 'function') {
+    const bytes = att.getBytes()
+    size = bytes ? bytes.length : 0
+  } else if (att.bytes) {
+    size = att.bytes.length
+  } else if (att.size !== undefined) {
+    size = att.size
+  }
+
+  // 1. Skip empty files
+  if (size <= 0) return false
+
+  const cleanName = name.trim()
+  const mimeType = (
+    typeof att.getContentType === 'function'
+      ? att.getContentType()
+      : att.contentType || ''
+  ).toLowerCase()
+
+  // 2. Filter out known tracking / signature image names (< 25KB)
+  if (isTrackingOrSigImageName(cleanName) && size < 25 * 1024) {
+    return false
+  }
+
+  // 3. Filter out small image files (< 15KB) as signature icons / tracking pixels
+  const isImage =
+    mimeType.startsWith('image/') ||
+    /\.(png|jpe?g|gif|webp|bmp|ico)$/i.test(cleanName)
+  if (isImage && size < 15 * 1024) {
+    return false
+  }
+
+  return true
+}
+
+function getOrCreateChildFolder_(parentFolder, folderName) {
+  const folders = parentFolder.getFoldersByName(folderName)
+  if (folders && typeof folders.hasNext === 'function' && folders.hasNext()) {
+    return folders.next()
+  }
+  return parentFolder.createFolder(folderName)
+}
+
+/**
+ * Idempotently traverses or creates the 2-level Drive taxonomy path (Domain / Subfolder).
+ *
+ * @param {string} canonicalDomain - e.g. "02_Finance_Legal"
+ * @param {string} subfolderName - e.g. "Banking"
+ * @param {Object} driveApp - GAS DriveApp service (injected)
+ * @returns {Object} Target folder object
+ */
+function ensureDriveTaxonomyFolder(canonicalDomain, subfolderName, driveApp) {
+  let drive = driveApp
+  if (typeof drive === 'undefined') {
+    drive = typeof DriveApp !== 'undefined' ? DriveApp : null
+  }
+  if (!drive) {
+    throw new Error('DriveApp service unavailable')
+  }
+
+  const root =
+    typeof drive.getRootFolder === 'function' ? drive.getRootFolder() : drive
+
+  if (!root || typeof root.getFoldersByName !== 'function') {
+    throw new Error('DriveApp service unavailable or invalid root folder')
+  }
+
+  const domainFolder = getOrCreateChildFolder_(root, canonicalDomain)
+  if (!subfolderName) return domainFolder
+
+  return getOrCreateChildFolder_(domainFolder, subfolderName)
+}
+
+function extractBlobBytes_(blob) {
+  try {
+    if (typeof blob?.getBytes === 'function') {
+      return blob.getBytes() || Buffer.from('')
+    }
+    if (blob?.bytes) {
+      return blob.bytes
+    }
+    if (Buffer.isBuffer(blob)) {
+      return blob
+    }
+  } catch {
+    return Buffer.from('')
+  }
+  return Buffer.from('')
+}
+
+function extractFileSize_(file) {
+  if (!file) return 0
+  if (typeof file.getSize === 'function') {
+    return file.getSize()
+  }
+  if (file.size !== undefined) {
+    return file.size
+  }
+  return 0
+}
+
+/**
+ * Checks if an exact duplicate file already exists in target folder (size match + MD5 hash).
+ *
+ * @param {Object} existingFiles - Iterator from folder.getFilesByName
+ * @param {Object} newFileBlob - Blob of incoming file
+ * @param {Object} [helperFns] - Optional helper functions ({ getFileHash })
+ * @returns {boolean}
+ */
+function isDuplicateAttachment(existingFiles, newFileBlob, helperFns) {
+  if (
+    !existingFiles ||
+    typeof existingFiles.hasNext !== 'function' ||
+    !newFileBlob
+  ) {
+    return false
+  }
+  const hashFn = helperFns?.getFileHash || getFileHash
+  const newFileBytes = extractBlobBytes_(newFileBlob)
+  const newFileLength = newFileBytes.length
+  let newFileHash = ''
+  try {
+    newFileHash = hashFn(newFileBlob)
+  } catch {
+    return false
+  }
+
+  while (existingFiles.hasNext()) {
+    const existingFile = existingFiles.next()
+    if (extractFileSize_(existingFile) !== newFileLength) {
+      continue
+    }
+
+    const existingBlob =
+      typeof existingFile.getBlob === 'function'
+        ? existingFile.getBlob()
+        : existingFile
+    if (hashFn(existingBlob) === newFileHash) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * Resolves naming conflicts for attachments. If a file of the same name exists
+ * with different content, appends a timestamp before the extension.
+ *
+ * @param {Object} folder - Target Drive folder
+ * @param {string} fileName - Attachment filename
+ * @param {Object} newFileBlob - Blob being saved
+ * @param {Object} [options] - Injected GAS services ({ Utilities, Session })
+ * @returns {string} Safe filename
+ */
+function resolveAttachmentName(folder, fileName, newFileBlob, options) {
+  if (
+    folder &&
+    typeof folder.getFilesByName === 'function' &&
+    !folder.getFilesByName(fileName).hasNext()
+  ) {
+    return fileName
+  }
+
+  const utils =
+    options?.Utilities || (typeof Utilities !== 'undefined' ? Utilities : null)
+  const session =
+    options?.Session || (typeof Session !== 'undefined' ? Session : null)
+
+  let timeTag =
+    utils &&
+    session &&
+    typeof utils.formatDate === 'function' &&
+    typeof session.getScriptTimeZone === 'function'
+      ? utils.formatDate(new Date(), session.getScriptTimeZone(), '_HHmmssSSS')
+      : '_' + Date.now()
+
+  if (typeof timeTag === 'string' && !timeTag.startsWith('_')) {
+    timeTag = '_' + timeTag.replace(/[^a-zA-Z0-9]/g, '')
+  }
+
+  const renamed = fileName.replace(/(\.[\w-]+)$/i, timeTag + '$1')
+  const finalName = renamed === fileName ? fileName + timeTag : renamed
+
+  if (newFileBlob && typeof newFileBlob.setName === 'function') {
+    newFileBlob.setName(finalName)
+  }
+  return finalName
+}
+
+/**
+ * Persists attached documents from a canonical email thread to Google Drive along
+ * the label's taxonomy path, skipping duplicates and strictly ignoring non-canonical emails.
+ *
+ * @param {Object} thread - Gmail thread object
+ * @param {Object} classification - AI classification result
+ * @param {Object} config - Classifier config
+ * @param {Object} services - Injected GAS services ({ DriveApp, Utilities, Session })
+ * @returns {Object[]} Array of saved file metadata ({ name, url, id, domain, subfolder })
+ */
+function persistCanonicalAttachmentsToDrive(
+  thread,
+  classification,
+  config,
+  services
+) {
+  // STRICT NON-CANONICAL GATE: If email has no canonical domain, ignore attachments completely!
+  if (!isCanonicalClassification(classification, config)) {
+    console.log(
+      '[persistCanonicalAttachmentsToDrive] Non-canonical or null domain; skipping attachment persistence.'
+    )
+    return []
+  }
+
+  let driveApp = services?.DriveApp
+  if (typeof driveApp === 'undefined') {
+    driveApp = typeof DriveApp !== 'undefined' ? DriveApp : null
+  }
+  if (!driveApp) {
+    console.error(
+      '[persistCanonicalAttachmentsToDrive] DriveApp is unavailable; cannot persist attachments.'
+    )
+    return []
+  }
+
+  const canonicalDomain =
+    classification.canonicalDomain || classification.canonical_label
+  const subLabel = classification.subLabel || ''
+  const subfolderName = resolveTaxonomySubfolderName(canonicalDomain, subLabel)
+
+  let targetFolder
+  try {
+    targetFolder = ensureDriveTaxonomyFolder(
+      canonicalDomain,
+      subfolderName,
+      driveApp
+    )
+  } catch (err) {
+    console.error(
+      '[persistCanonicalAttachmentsToDrive] Failed to ensure taxonomy folder ' +
+        canonicalDomain +
+        '/' +
+        subfolderName +
+        ': ' +
+        err.message
+    )
+    return []
+  }
+
+  const messages =
+    typeof thread.getMessages === 'function' ? thread.getMessages() : []
+  const savedFiles = []
+  const helperFns = {
+    getFileHash: services?.getFileHash || getFileHash,
+  }
+
+  messages.forEach((msg) => {
+    const attachments =
+      typeof msg.getAttachments === 'function' ? msg.getAttachments() : []
+    attachments.forEach((att) => {
+      if (!isEligibleAttachment(att)) {
+        console.log(
+          '[persistCanonicalAttachmentsToDrive] Skipped ineligible attachment (signature/tracking pixel or empty): ' +
+            (typeof att.getName === 'function' ? att.getName() : 'unnamed')
+        )
+        return
+      }
+
+      const fileName =
+        typeof att.getName === 'function' ? att.getName() : att.name
+      const newFileBlob =
+        typeof att.copyBlob === 'function' ? att.copyBlob() : att
+      const existingFiles =
+        typeof targetFolder.getFilesByName === 'function'
+          ? targetFolder.getFilesByName(fileName)
+          : null
+
+      if (isDuplicateAttachment(existingFiles, newFileBlob, helperFns)) {
+        console.log(
+          '[persistCanonicalAttachmentsToDrive] Skipped exact duplicate attachment: ' +
+            fileName
+        )
+        return
+      }
+
+      const finalName = resolveAttachmentName(
+        targetFolder,
+        fileName,
+        newFileBlob,
+        services
+      )
+      console.log(
+        '[persistCanonicalAttachmentsToDrive] Saving attachment to ' +
+          canonicalDomain +
+          '/' +
+          subfolderName +
+          ': ' +
+          finalName
+      )
+
+      try {
+        const file = targetFolder.createFile(newFileBlob)
+        const fileId = typeof file.getId === 'function' ? file.getId() : ''
+        const fileUrl =
+          typeof file.getUrl === 'function'
+            ? file.getUrl()
+            : 'https://drive.google.com/file/d/' + fileId
+        savedFiles.push({
+          name: typeof file.getName === 'function' ? file.getName() : finalName,
+          url: fileUrl,
+          id: fileId,
+          domain: canonicalDomain,
+          subfolder: subfolderName,
+        })
+      } catch (saveErr) {
+        console.error(
+          '[persistCanonicalAttachmentsToDrive] Error saving file ' +
+            finalName +
+            ': ' +
+            saveErr.message
+        )
+      }
+    })
+  })
+
+  return savedFiles
+}
+
 module.exports = {
   validateClassification,
   classifyEmailWithGemini,
+  buildOntologicalPrompt,
   ensureGmailLabel,
   createPermanentGmailFilter,
   processThreadBatch,
+  RULE6_PATTERNS,
+  assertClean_,
+  assertNoAsciiReplacement_,
+  extractTopicTitleFromPath,
+  insertEntryIntoLogSection,
+  formatProgressiveDisclosureEntry,
+  getNotePathForDomain,
+  appendMarkdownEntryToGitHubRepo,
+  executeGitHubCommit,
+  getSearchDateRange_,
+  auditClassifications,
+  formatAuditDigest,
+  isCanonicalClassification,
+  resolveTaxonomySubfolderName,
+  isEligibleAttachment,
+  ensureDriveTaxonomyFolder,
+  isDuplicateAttachment,
+  resolveAttachmentName,
+  persistCanonicalAttachmentsToDrive,
+  CANONICAL_TAXONOMY_SUBFOLDERS,
+  SUBLABEL_TO_FOLDER_MAP,
 }

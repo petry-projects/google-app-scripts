@@ -8,7 +8,8 @@
     "lint": "eslint src",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
-    "check": "prettier --check . && npm run lint",
+    "check:pii": "node scripts/check-no-pii.js",
+    "check": "prettier --check . && npm run lint && npm run check:pii",
     "prepare": "husky"
   },
   "lint-staged": {
