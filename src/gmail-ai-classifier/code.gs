@@ -1113,10 +1113,12 @@ function parseRetryDelayMs(response) {
   return 5000
 }
 
-function ensureUserLabel(labelName) {
-  var label = GmailApp.getUserLabelByName(labelName)
+function ensureUserLabel(labelName, gmailApp) {
+  var app = gmailApp || (typeof GmailApp !== 'undefined' ? GmailApp : null)
+  if (!app) return null
+  var label = app.getUserLabelByName(labelName)
   if (!label) {
-    label = GmailApp.createLabel(labelName)
+    label = app.createLabel(labelName)
     console.log('[ensureUserLabel] Created new label: ' + labelName)
   }
   return label
@@ -2718,6 +2720,142 @@ function runLiveAttachmentBackfill(options) {
   return report
 }
 
+/**
+ * Reclassifies historical threads matching a custom Gmail search query.
+ * Useful for retroactive alignment of misclassified or misattributed threads.
+ *
+ * @param {string} searchQuery - Gmail search query
+ * @param {Object} [options] - Options: { maxThreads: 20, dryRun: false }
+ * @param {Object} [config] - Classifier config
+ * @param {Object} [services] - Dependency injection for testing { GmailApp, Utilities, classifyFn }
+ * @returns {Object} Report of reclassified threads
+ */
+function reclassifyThreadsByQuery(searchQuery, options, config, services) {
+  var opts = Object.assign({ maxThreads: 20, dryRun: false }, options || {})
+  var cfg =
+    config ||
+    (typeof getAiClassifierConfig === 'function' ? getAiClassifierConfig() : {})
+  var gmail =
+    (services && services.GmailApp) ||
+    (typeof GmailApp !== 'undefined' ? GmailApp : null)
+  var classifyFn =
+    (services && services.classifyFn) ||
+    (typeof classifyWithGemini === 'function' ? classifyWithGemini : null)
+
+  if (!gmail) {
+    throw new Error('GmailApp service is required for reclassifying threads.')
+  }
+
+  console.log(
+    '[reclassifyThreadsByQuery] Query: ' +
+      searchQuery +
+      ' (dryRun: ' +
+      opts.dryRun +
+      ', maxThreads: ' +
+      opts.maxThreads +
+      ')'
+  )
+
+  var threads = gmail.search(searchQuery, 0, opts.maxThreads)
+  console.log(
+    '[reclassifyThreadsByQuery] Found ' +
+      threads.length +
+      ' thread(s) matching query.'
+  )
+
+  var results = []
+  for (var i = 0; i < threads.length; i++) {
+    var thread = threads[i]
+    var msgs =
+      typeof thread.getMessages === 'function' ? thread.getMessages() : []
+    if (!msgs || msgs.length === 0) continue
+    var firstMessage = msgs[0]
+    var sender =
+      typeof firstMessage.getFrom === 'function' ? firstMessage.getFrom() : ''
+    var subject =
+      typeof firstMessage.getSubject === 'function'
+        ? firstMessage.getSubject()
+        : ''
+    var snippet =
+      typeof firstMessage.getPlainBody === 'function'
+        ? firstMessage.getPlainBody().substring(0, 500)
+        : ''
+
+    var classification = classifyFn
+      ? classifyFn(sender, subject, snippet, cfg)
+      : null
+    if (!classification) continue
+
+    var summary = {
+      threadId: typeof thread.getId === 'function' ? thread.getId() : String(i),
+      subject: subject,
+      sender: sender,
+      newDomain: classification.canonicalDomain,
+      newSubLabel: classification.subLabel,
+      action: classification.action,
+      category: classification.category,
+    }
+
+    if (!opts.dryRun) {
+      if (typeof cleanConflictingLabels === 'function') {
+        cleanConflictingLabels(
+          thread,
+          classification.canonicalDomain,
+          classification.subLabel,
+          cfg
+        )
+      }
+      var primaryTag = classification.subLabel || classification.canonicalDomain
+      if (
+        primaryTag &&
+        typeof ensureUserLabel === 'function' &&
+        typeof thread.addLabel === 'function'
+      ) {
+        var targetLabel = ensureUserLabel(primaryTag, gmail)
+        thread.addLabel(targetLabel)
+      }
+      if (
+        classification.category &&
+        classification.action !== 'trash' &&
+        typeof setGmailCategoryTab === 'function'
+      ) {
+        setGmailCategoryTab(thread, classification.category)
+      }
+      if (
+        cfg.processedLabel &&
+        typeof ensureUserLabel === 'function' &&
+        typeof thread.addLabel === 'function'
+      ) {
+        var processedLabel = ensureUserLabel(cfg.processedLabel, gmail)
+        thread.addLabel(processedLabel)
+      }
+    }
+
+    results.push(summary)
+  }
+
+  return {
+    query: searchQuery,
+    scanned: threads.length,
+    reclassified: results.length,
+    dryRun: opts.dryRun,
+    items: results,
+  }
+}
+
+/**
+ * Convenience runner to audit historical threads matching a query in dry-run mode.
+ */
+function runRealignmentAudit(query, options, config, services) {
+  var defaultQuery = 'label:"Family/Sisters" -label:"Family/Kids"'
+  return reclassifyThreadsByQuery(
+    query || defaultQuery,
+    Object.assign({ maxThreads: 25, dryRun: true }, options || {}),
+    config,
+    services
+  )
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     processEmailsWithAiClassifier: processEmailsWithAiClassifier,
@@ -2746,6 +2884,8 @@ if (typeof module !== 'undefined' && module.exports) {
     auditAndBackfillCanonicalAttachments: auditAndBackfillCanonicalAttachments,
     runDryRunAttachmentAudit: runDryRunAttachmentAudit,
     runLiveAttachmentBackfill: runLiveAttachmentBackfill,
+    reclassifyThreadsByQuery: reclassifyThreadsByQuery,
+    runRealignmentAudit: runRealignmentAudit,
     getFileHash: getFileHash,
     CANONICAL_TAXONOMY_SUBFOLDERS: CANONICAL_TAXONOMY_SUBFOLDERS,
     SUBLABEL_TO_FOLDER_MAP: SUBLABEL_TO_FOLDER_MAP,
