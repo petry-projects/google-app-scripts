@@ -188,12 +188,8 @@ function processEmailsWithAiClassifier() {
         )
       }
 
-      // 3. Category Tab Shifting (Path B: Push to Updates/Promotions/Social/Primary)
-      if (
-        classification.category &&
-        classification.action !== 'archive' &&
-        classification.action !== 'trash'
-      ) {
+      // 3. Category Tab Shifting (Push to Updates/Promotions/Social/Primary)
+      if (classification.category && classification.action !== 'trash') {
         setGmailCategoryTab(thread, classification.category)
       }
 
@@ -922,13 +918,20 @@ function buildOntologicalPrompt(config, sender, subject, snippet) {
     "• Corporate, business, industry, or career monitoring -> '06_Work_Career' ('Work/Career').\n" +
     "• General news or unassigned media mention -> canonicalDomain: null (category: 'Updates', action: 'archive').\n" +
     '• Student or school sub-labels apply only when the monitored alert query specifically targets an academic program or school.\n\n' +
+    'AUTOMATED MACHINE & SENSOR TELEMETRY (BroodMinder, HoneyBeeham, weather stations, IoT sensors, server metrics, device status pings, cron logs, uptime monitors):\n' +
+    '• Community/beehive telemetry (BroodMinder, HoneyBeeham monitors) -> "07_Community_NonProfit", sub-label "Projects/Telemetry".\n' +
+    '• Tech infrastructure/server telemetry (device pings, server metrics, cron logs) -> "05_Tech_Infrastructure", sub-label "Tech/Alerts".\n' +
+    '• MANDATORY ROUTING: Always route machine telemetry to category "Updates" with action "archive". Keep telemetry completely archived out of the Inbox.\n\n' +
+    'SCHOOL & STUDENT ANNOUNCEMENTS VS DIRECT CORRESPONDENCE (MCAA, Briarwood, ParentSquare, Canvas, Google Classroom):\n' +
+    '• Routine school announcements, school district/ParentSquare broadcasts, headmaster/principal letters, athletics/arts/club notices, lunch menus, school calendars, and weekly school newsletters -> "04_Family_Health", sub-label "Family/School-Student", category: "Updates", action: "keep" (or action: "archive" for lunch menus and routine digests). These belong in the Updates tab, not the Primary inbox tab.\n' +
+    '• Direct 1:1 personal emails from an individual teacher, principal, or guidance counselor addressed personally to the parent regarding an individual student\'s urgent academic/disciplinary matter or conference request -> category: "Primary", action: "keep".\n\n' +
     '=== TIER 2: ORTHOGONAL TRIAGE MATRIX (LIFECYCLE STATE) ===\n' +
     'Determine category and action based on the lifecycle state of the email:\n' +
-    '1. Action_Required (Manual bills due without auto-pay, direct personal/teacher messages needing reply, audit/response deadlines, suspicious login alerts, ready prescriptions):\n' +
+    '1. Action_Required (Manual bills due without auto-pay, direct 1:1 personal/teacher messages needing individual human reply, audit/response deadlines, suspicious login alerts, ready prescriptions):\n' +
     "   -> category: 'Primary', action: 'keep'\n" +
-    '2. Informational_Feed (Automated search/monitoring alerts, active orders in transit, routine tax forms/receipts, volunteer reminders, upcoming travel itineraries):\n' +
+    '2. Informational_Feed (Routine school bulletins/newsletters/ParentSquare updates, automated search/monitoring alerts, active orders in transit, routine tax forms/receipts, volunteer reminders, upcoming travel itineraries):\n' +
     "   -> category: 'Updates', action: 'keep'\n" +
-    '3. Completed_Transaction (Confirmed scheduled auto-payments, delivered packages, successful SSO/sign-ins, routine lunch menu digests, bank transfers):\n' +
+    '3. Completed_Transaction (Confirmed scheduled auto-payments, delivered packages, successful SSO/sign-ins, routine lunch menu digests, bank transfers, automated machine/sensor telemetry [BroodMinder, HoneyBeeham], device/server pings):\n' +
     "   -> category: 'Updates', action: 'archive'\n" +
     '4. Broadcast_Marketing (Commercial promos, retail discounts, vendor newsletters, terms of service and privacy policy updates):\n' +
     "   -> category: 'Promotions', action: 'archive'\n" +
@@ -1500,13 +1503,18 @@ function backfillOriginalEmailHeaders() {
 /**
  * Sets the Gmail system category tab (Primary, Updates, Promotions, Social, Forums)
  * via the Advanced Gmail API.
+ *
+ * @param {Object} thread - GmailThread object
+ * @param {string} targetCategory - One of 'Primary', 'Updates', 'Promotions', 'Social', 'Forums'
+ * @param {Object} [gmailService] - Optional injected Advanced Gmail service (defaults to global Gmail)
  */
-function setGmailCategoryTab(thread, targetCategory) {
+function setGmailCategoryTab(thread, targetCategory, gmailService) {
+  var gmail = gmailService || (typeof Gmail !== 'undefined' ? Gmail : null)
   if (
-    typeof Gmail === 'undefined' ||
-    !Gmail.Users ||
-    !Gmail.Users.Threads ||
-    !Gmail.Users.Threads.modify
+    !gmail ||
+    !gmail.Users ||
+    !gmail.Users.Threads ||
+    !gmail.Users.Threads.modify
   ) {
     return
   }
@@ -1535,7 +1543,7 @@ function setGmailCategoryTab(thread, targetCategory) {
   })
 
   try {
-    Gmail.Users.Threads.modify(
+    gmail.Users.Threads.modify(
       {
         addLabelIds: [targetId],
         removeLabelIds: removeIds,
@@ -1543,11 +1551,15 @@ function setGmailCategoryTab(thread, targetCategory) {
       'me',
       thread.getId()
     )
+    var threadSubject =
+      typeof thread.getFirstMessageSubject === 'function'
+        ? thread.getFirstMessageSubject()
+        : thread.getId()
     console.log(
       '[setGmailCategoryTab] Assigned category ' +
         targetId +
         ' to thread: ' +
-        thread.getFirstMessageSubject()
+        threadSubject
     )
   } catch (e) {
     console.warn(

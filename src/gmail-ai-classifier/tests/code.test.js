@@ -995,4 +995,147 @@ describe('Ontological Knowledge Graph and Triage Matrix Prompt Architecture', ()
     )
     delete global.PropertiesService
   })
+
+  test('buildOntologicalPrompt includes telemetry and school/student positive invariants', () => {
+    const config = {
+      canonicalDomains: [
+        '04_Family_Health',
+        '05_Tech_Infrastructure',
+        '07_Community_NonProfit',
+      ],
+    }
+    const prompt = buildOntologicalPrompt(
+      config,
+      'noreply@parentsquad.com',
+      'Weekly Newsletter',
+      'School news and lunch menu'
+    )
+    expect(prompt).toContain('AUTOMATED MACHINE & SENSOR TELEMETRY')
+    expect(prompt).toContain('BroodMinder')
+    expect(prompt).toContain('Projects/Telemetry')
+    expect(prompt).toContain('Tech/Alerts')
+    expect(prompt).toContain(
+      'Always route machine telemetry to category "Updates" with action "archive"'
+    )
+    expect(prompt).toContain(
+      'SCHOOL & STUDENT ANNOUNCEMENTS VS DIRECT CORRESPONDENCE'
+    )
+    expect(prompt).toContain('MCAA')
+    expect(prompt).toContain('Briarwood')
+    expect(prompt).toContain('ParentSquare')
+    expect(prompt).toContain('Family/School-Student')
+    expect(prompt).not.toContain('Under NO circumstances')
+    expect(prompt).not.toContain('Do NOT classify')
+    expect(prompt).not.toContain('Reserve strictly for')
+  })
+})
+
+describe('setGmailCategoryTab Category Shifting', () => {
+  const { setGmailCategoryTab: setCatIndex } = require('../src/index')
+  const { setGmailCategoryTab: setCatCodeGs } = require('../code.gs')
+
+  ;[
+    { name: 'src/index.js implementation', fn: setCatIndex },
+    { name: 'code.gs implementation', fn: setCatCodeGs },
+  ].forEach(({ name, fn }) => {
+    describe(name, () => {
+      let mockModify
+      let mockGmailService
+      let mockThread
+
+      beforeEach(() => {
+        mockModify = jest.fn()
+        mockGmailService = {
+          Users: {
+            Threads: {
+              modify: mockModify,
+            },
+          },
+        }
+        mockThread = {
+          getId: () => 'thread_123',
+          getFirstMessageSubject: () => 'Test Subject',
+        }
+      })
+
+      test('assigns Updates category and strips other categories', () => {
+        fn(mockThread, 'Updates', mockGmailService)
+        expect(mockModify).toHaveBeenCalledWith(
+          {
+            addLabelIds: ['CATEGORY_UPDATES'],
+            removeLabelIds: [
+              'CATEGORY_PERSONAL',
+              'CATEGORY_PROMOTIONS',
+              'CATEGORY_SOCIAL',
+              'CATEGORY_FORUMS',
+            ],
+          },
+          'me',
+          'thread_123'
+        )
+      })
+
+      test('assigns Primary category and strips other categories', () => {
+        fn(mockThread, 'Primary', mockGmailService)
+        expect(mockModify).toHaveBeenCalledWith(
+          {
+            addLabelIds: ['CATEGORY_PERSONAL'],
+            removeLabelIds: [
+              'CATEGORY_UPDATES',
+              'CATEGORY_PROMOTIONS',
+              'CATEGORY_SOCIAL',
+              'CATEGORY_FORUMS',
+            ],
+          },
+          'me',
+          'thread_123'
+        )
+      })
+
+      test('assigns Social category and strips other categories', () => {
+        fn(mockThread, 'Social', mockGmailService)
+        expect(mockModify).toHaveBeenCalledWith(
+          {
+            addLabelIds: ['CATEGORY_SOCIAL'],
+            removeLabelIds: [
+              'CATEGORY_PERSONAL',
+              'CATEGORY_UPDATES',
+              'CATEGORY_PROMOTIONS',
+              'CATEGORY_FORUMS',
+            ],
+          },
+          'me',
+          'thread_123'
+        )
+      })
+
+      test('handles unknown category gracefully as no-op', () => {
+        fn(mockThread, 'UnknownCategory', mockGmailService)
+        expect(mockModify).not.toHaveBeenCalled()
+      })
+
+      test('handles missing or disabled Advanced Gmail API gracefully', () => {
+        expect(() => {
+          fn(mockThread, 'Updates', null)
+        }).not.toThrow()
+        expect(mockModify).not.toHaveBeenCalled()
+      })
+
+      test('handles thread without getFirstMessageSubject safely', () => {
+        const bareThread = {
+          getId: () => 'bare_thread_456',
+        }
+        expect(() => {
+          fn(bareThread, 'Updates', mockGmailService)
+        }).not.toThrow()
+        expect(mockModify).toHaveBeenCalledWith(
+          expect.objectContaining({
+            addLabelIds: ['CATEGORY_UPDATES'],
+          }),
+          'me',
+          'bare_thread_456'
+        )
+      })
+    })
+  })
 })
