@@ -100,6 +100,7 @@ jobs:
         # the gate step then finds no script, emits no decision, and the dispatch
         # step's `!= 'defer'` guard falls through to dispatching (fail-open).
         continue-on-error: true
+        timeout-minutes: 1
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: petry-projects/.github
@@ -116,6 +117,7 @@ jobs:
         # decision=allow|defer to $GITHUB_OUTPUT; a defer is honoured by the `if:`
         # on the dispatch step below. Fail-safe: the step can never fail the job.
         continue-on-error: true
+        timeout-minutes: 1
         id: arl_gate
         env:
           GH_TOKEN: ${{ secrets.GH_PAT_DON_PETRY || secrets.GH_PAT_WORKFLOWS }}
@@ -135,6 +137,12 @@ jobs:
             --actor "$ARL_ACTOR" \
             --tracking-repo "$ARL_TRACKING_REPO" \
             --tracking-issue "$ARL_TRACKING_ISSUE" || true
+
+      - name: Warn — rate-limit gate produced no decision
+        # Keep fail-open but observable: surface a missing decision so a prolonged
+        # gate outage (PAT scope, ref drift, script contract change) is visible.
+        if: steps.arl_gate.outputs.decision == ''
+        run: echo "::warning::Agent rate-limit gate produced no decision (tooling checkout or gate script failed); dispatching fail-open without enforcement."
 
       - name: Dispatch central initiative-driver
         # Skipped (clean no-op) ONLY on an explicit `defer` — never a cancel, never
