@@ -901,7 +901,7 @@ function buildOntologicalPrompt(config, sender, subject, snippet) {
     "• '01_Household': Physical residence, real estate property, maintenance, home repairs, contractor invoices, home utilities, household inventory, travel/lodging reservations, and artisanal home craft/business sales. Valid sub-labels: 'Household/Property', 'Household/Maintenance', 'Household/Travel', 'Projects/Business'.\n" +
     "• '02_Finance_Legal': Personal banking, checking/savings, credit cards, investments, mortgages, personal tax filings (W-2, 1098, 1099, returns), utility payment accounts/funding, purchase invoices/receipts, insurance policies, actual personal legal proceedings, court orders, attorney correspondence, dispute filings, and executed personal contracts (leases, deeds, wills, trusts, powers of attorney). (Excludes commercial terms of service updates, which are non-canonical broadcast notices). Valid sub-labels: 'Finance/Banking', 'Finance/Bills', 'Finance/Purchases', 'Finance/Taxes', 'Finance/Charitable-Donations', 'Finance/Legal'.\n" +
     "• '03_Vehicles': Personal automobile titles, registrations, vehicle insurance, automotive maintenance, repairs, parts, and car rental reservations. Valid sub-labels: 'Vehicles/Maintenance', 'Vehicles/Purchases', 'Vehicles/Rental-Cars'.\n" +
-    "• '04_Family_Health': Family correspondence, healthcare records, doctor appointments, patient portals, prescriptions, elder care, and student education/coursework/school portals. Valid sub-labels: 'Family/Medical', 'Family/Personal-Correspondence', 'Family/School-Student', 'Family/Legal', 'Family/Correspondence'.\n" +
+    "• '04_Family_Health': Family correspondence, healthcare records, doctor appointments, patient portals, prescriptions, elder care, and student education/coursework/school portals. Valid sub-labels: 'Family/Kids/Tide', 'Family/Kids/Toby', 'Family/Kids/David', 'Family/School-Student', 'Family/Medical', 'Family/Personal-Correspondence', 'Family/Legal', 'Family/Correspondence'.\n" +
     "• '05_Tech_Infrastructure': Cloud hosting, server infrastructure, domains/DNS, network hardware, security alerts, system telemetry, and developer platform quota/outage alerts. Valid sub-labels: 'Tech/Cloud', 'Tech/Security', 'Tech/Alerts'.\n" +
     "• '06_Work_Career': Professional employment, career advancement, job applications, recruiter correspondence, interview schedules, employer benefits, and consulting. Valid sub-labels: 'Work/Career', 'Work/Employer'.\n" +
     "• '07_Community_NonProfit': Official 501(c)(3) charities, non-profit boards of directors, volunteer shift schedules, civic records, and community telemetry. Valid sub-labels: 'Projects/Charity', 'Community/BOD', 'Projects/Telemetry'.\n\n" +
@@ -925,6 +925,12 @@ function buildOntologicalPrompt(config, sender, subject, snippet) {
     'SCHOOL & STUDENT ANNOUNCEMENTS VS DIRECT CORRESPONDENCE (MCAA, Briarwood, ParentSquare, Canvas, Google Classroom):\n' +
     '• Routine school announcements, school district/ParentSquare broadcasts, headmaster/principal letters, athletics/arts/club notices, lunch menus, school calendars, and weekly school newsletters -> "04_Family_Health", sub-label "Family/School-Student", category: "Updates", action: "keep" (or action: "archive" for lunch menus and routine digests). These belong in the Updates tab, not the Primary inbox tab.\n' +
     '• Direct 1:1 personal emails from an individual teacher, principal, or guidance counselor addressed personally to the parent regarding an individual student\'s urgent academic/disciplinary matter or conference request -> category: "Primary", action: "keep".\n\n' +
+    'PRIMARY PARTY ATTRIBUTION PRINCIPLE (CHILDREN & PRIMARY BENEFICIARY VS INCIDENTAL ADULTS):\n' +
+    '• When an email, legal document, school notification, or healthcare record pertains to a specific child/individual (e.g. Tide, Toby, David, or any household child), classify the email under that primary party\'s specific label (e.g. "Family/Kids/Tide", "Family/Kids/Toby", "Family/Kids/David", or "Family/School-Student").\n' +
+    '• Attribute the email strictly to the PRIMARY SUBJECT / TARGET BENEFICIARY of the matter, rather than incidental parties:\n' +
+    '  - If an email concerns Tide\'s legal name change, government IDs, FSA ID, schooling, or medical care, the primary party is Tide -> "Family/Kids/Tide" (or "02_Finance_Legal" / "Family/Legal" if a formal court filing).\n' +
+    '  - Route child-related legal, educational, or personal matters to the child\'s sub-label, ensuring that mentioned biological parents, guardians, or relatives do not divert the classification to "Family/Sisters".\n' +
+    '  - Sub-label "Family/Sisters" applies strictly to direct personal correspondence regarding the sister\'s own independent adult personal affairs.\n\n' +
     '=== TIER 2: ORTHOGONAL TRIAGE MATRIX (LIFECYCLE STATE) ===\n' +
     'Determine category and action based on the lifecycle state of the email:\n' +
     '1. Action_Required (Manual bills due without auto-pay, direct 1:1 personal/teacher messages needing individual human reply, audit/response deadlines, suspicious login alerts, ready prescriptions):\n' +
@@ -1645,6 +1651,16 @@ var SUBLABEL_TO_FOLDER_MAP = {
   'family/health-general': 'Medical_Records',
   'family/school-student': 'Students',
   'family/personal-correspondence': 'Family_General',
+  'family/kids/tide': 'Students',
+  'family/kids/toby': 'Students',
+  'family/kids/david': 'Students',
+  'family/kids': 'Students',
+  'family/kids/school-tide': 'Students',
+  'family/kids/school-toby': 'Students',
+  'family/kids/school': 'Students',
+  'family/kids/tide-health': 'Medical_Records',
+  'family/kids/toby-health': 'Medical_Records',
+  'family/sisters': 'Family_General',
 
   // 05_Tech_Infrastructure
   'tech/alerts-monitoring': 'NAS_Backups',
@@ -1718,6 +1734,19 @@ function resolveTaxonomySubfolderName(canonicalDomain, subLabel) {
     var normalized = subLabel.trim().toLowerCase()
     if (SUBLABEL_TO_FOLDER_MAP[normalized]) {
       return SUBLABEL_TO_FOLDER_MAP[normalized]
+    }
+
+    if (normalized.indexOf('family/kids') === 0) {
+      if (
+        normalized.indexOf('health') !== -1 ||
+        normalized.indexOf('medical') !== -1
+      ) {
+        return 'Medical_Records'
+      }
+      return 'Students'
+    }
+    if (normalized.indexOf('family/sisters') === 0) {
+      return 'Family_General'
     }
 
     var parts = subLabel.split('/')
