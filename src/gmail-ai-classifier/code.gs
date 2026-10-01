@@ -2185,8 +2185,21 @@ function auditAndBackfillCanonicalAttachments(options, config, services) {
     items: [],
   }
 
-  threads.forEach(function (thread) {
-    if (!thread) return
+  var startTime = Date.now()
+  var timeBudgetMs = opts.timeBudgetMs || 270000
+  var folderCache = {}
+
+  for (var i = 0; i < threads.length; i++) {
+    if (Date.now() - startTime > timeBudgetMs) {
+      console.warn(
+        '[auditAndBackfillCanonicalAttachments] Execution reached time budget safety ceiling; concluding batch cleanly.'
+      )
+      report.timeBudgetReached = true
+      break
+    }
+
+    var thread = threads[i]
+    if (!thread) continue
     var threadId =
       typeof thread.getId === 'function' ? thread.getId() : thread.id || ''
     var subject =
@@ -2208,7 +2221,7 @@ function auditAndBackfillCanonicalAttachments(options, config, services) {
       return canonicalDomains.indexOf(l) !== -1 || /^0[1-7]_/.test(l)
     })
 
-    if (assignedCanonical.length === 0) return
+    if (assignedCanonical.length === 0) continue
     var canonicalDomain = assignedCanonical[0]
     var subLabel =
       rawLabels.find(function (l) {
@@ -2216,23 +2229,27 @@ function auditAndBackfillCanonicalAttachments(options, config, services) {
       }) || ''
     var subfolderName = resolveTaxonomySubfolderName(canonicalDomain, subLabel)
 
-    var targetFolder = null
-    try {
-      targetFolder = ensureDriveTaxonomyFolder(
-        canonicalDomain,
-        subfolderName,
-        drive
-      )
-    } catch (err) {
-      console.error(
-        '[auditAndBackfillCanonicalAttachments] Error accessing folder ' +
-          canonicalDomain +
-          '/' +
-          subfolderName +
-          ': ' +
-          err.message
-      )
-      return
+    var folderKey = canonicalDomain + '::' + subfolderName
+    var targetFolder = folderCache[folderKey]
+    if (!targetFolder) {
+      try {
+        targetFolder = ensureDriveTaxonomyFolder(
+          canonicalDomain,
+          subfolderName,
+          drive
+        )
+        folderCache[folderKey] = targetFolder
+      } catch (err) {
+        console.error(
+          '[auditAndBackfillCanonicalAttachments] Error accessing folder ' +
+            canonicalDomain +
+            '/' +
+            subfolderName +
+            ': ' +
+            err.message
+        )
+        continue
+      }
     }
 
     var msgs =
@@ -2383,7 +2400,7 @@ function auditAndBackfillCanonicalAttachments(options, config, services) {
     if (threadHasEligible) {
       report.threadsWithEligibleAttachments++
     }
-  })
+  }
 
   return report
 }
