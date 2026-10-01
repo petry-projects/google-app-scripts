@@ -22,6 +22,9 @@ function processEmailsWithAiClassifier() {
     return
   }
 
+  // Idempotently remediate any known misclassified threads (commercial TOS, etc.)
+  remediateMisclassifiedThreads()
+
   // Debug helper: List available models for this API key
   listAvailableGeminiModels(config)
 
@@ -555,6 +558,8 @@ function auditClassifications(threads, config) {
     /\b(weekly digest|daily digest|newsletter|roundup|top stories)\b/i
   var ORDER_KEYWORDS =
     /\b(order confirmation|your order|receipt|payment received|invoice|shipped)\b/i
+  var TOS_KEYWORDS =
+    /\b(terms of service|privacy policy|terms and conditions|user agreement|arbitration terms)\b/i
 
   var findings = []
 
@@ -659,6 +664,17 @@ function auditClassifications(threads, config) {
             ' without newsletter sub-label.'
         )
       }
+    }
+
+    if (
+      TOS_KEYWORDS.test(subject) &&
+      assignedCanonical.some(function (l) {
+        return l.indexOf('02_Finance_Legal') !== -1
+      })
+    ) {
+      flags.push(
+        'COMMERCIAL_TOS_IN_LEGAL: Routine commercial terms of service/privacy policy update tagged under 02_Finance_Legal instead of non-canonical broadcast.'
+      )
     }
 
     // 4. Drive Attachment Persistence & Tagging Check
@@ -874,7 +890,7 @@ function buildOntologicalPrompt(config, sender, subject, snippet) {
     '=== TIER 1: DOMAIN TAXONOMY ONTOLOGY (POSITIVE INVARIANTS) ===\n' +
     'Classify emails based on what each domain positively governs:\n' +
     "• '01_Household': Physical residence, real estate property, maintenance, home repairs, contractor invoices, home utilities, household inventory, travel/lodging reservations, and artisanal home craft/business sales. Valid sub-labels: 'Household/Property', 'Household/Maintenance', 'Household/Travel', 'Projects/Business'.\n" +
-    "• '02_Finance_Legal': Personal banking, checking/savings, credit cards, investments, mortgages, personal tax filings (W-2, 1098, 1099, returns), utility payment accounts/funding, purchase invoices/receipts, insurance policies, legal filings, court orders, and formal contracts. Valid sub-labels: 'Finance/Banking', 'Finance/Bills', 'Finance/Purchases', 'Finance/Taxes', 'Finance/Charitable-Donations', 'Finance/Legal'.\n" +
+    "• '02_Finance_Legal': Personal banking, checking/savings, credit cards, investments, mortgages, personal tax filings (W-2, 1098, 1099, returns), utility payment accounts/funding, purchase invoices/receipts, insurance policies, actual personal legal proceedings, court orders, attorney correspondence, dispute filings, and executed personal contracts (leases, deeds, wills, trusts, powers of attorney). (Excludes commercial terms of service updates, which are non-canonical broadcast notices). Valid sub-labels: 'Finance/Banking', 'Finance/Bills', 'Finance/Purchases', 'Finance/Taxes', 'Finance/Charitable-Donations', 'Finance/Legal'.\n" +
     "• '03_Vehicles': Personal automobile titles, registrations, vehicle insurance, automotive maintenance, repairs, parts, and car rental reservations. Valid sub-labels: 'Vehicles/Maintenance', 'Vehicles/Purchases', 'Vehicles/Rental-Cars'.\n" +
     "• '04_Family_Health': Family correspondence, healthcare records, doctor appointments, patient portals, prescriptions, elder care, and student education/coursework/school portals. Valid sub-labels: 'Family/Medical', 'Family/Personal-Correspondence', 'Family/School-Student', 'Family/Legal', 'Family/Correspondence'.\n" +
     "• '05_Tech_Infrastructure': Cloud hosting, server infrastructure, domains/DNS, network hardware, security alerts, system telemetry, and developer platform quota/outage alerts. Valid sub-labels: 'Tech/Cloud', 'Tech/Security', 'Tech/Alerts'.\n" +
@@ -884,7 +900,8 @@ function buildOntologicalPrompt(config, sender, subject, snippet) {
     '• Media & platform newsletters (Substack, Medium, LinkedIn digests, news recaps, blogs, trade publications).\n' +
     '• Retail marketing, store discounts, commercial coupons, e-commerce promotional blasts.\n' +
     '• Commercial webinars, product demos, vendor marketing broadcasts.\n' +
-    '• Unsolicited real estate cold calls, off-market wholesaler pitches, bulk solicitation.\n\n' +
+    '• Unsolicited real estate cold calls, off-market wholesaler pitches, bulk solicitation.\n' +
+    '• Commercial Terms of Service (TOS) updates, privacy policy revisions, arbitration updates, and platform terms/agreements (e.g. Waymo, Google, Uber, Apple, bank policy updates) -> non-canonical broadcast notices; route to category "Promotions" (or "Updates") with action "archive".\n\n' +
     'AUTOMATED SEARCH & MONITORING ALERTS (Google Alerts, Talkwalker, CourtListener, web mentions):\n' +
     'Route monitoring alerts strictly according to the subject entity being monitored:\n' +
     "• Person, family member, elder care, or genealogy monitoring -> '04_Family_Health' ('Family/Legal' or 'Family/Correspondence') or '02_Finance_Legal' ('Finance/Legal').\n" +
@@ -900,7 +917,7 @@ function buildOntologicalPrompt(config, sender, subject, snippet) {
     "   -> category: 'Updates', action: 'keep'\n" +
     '3. Completed_Transaction (Confirmed scheduled auto-payments, delivered packages, successful SSO/sign-ins, routine lunch menu digests, bank transfers):\n' +
     "   -> category: 'Updates', action: 'archive'\n" +
-    '4. Broadcast_Marketing (Commercial promos, retail discounts, vendor newsletters):\n' +
+    '4. Broadcast_Marketing (Commercial promos, retail discounts, vendor newsletters, terms of service and privacy policy updates):\n' +
     "   -> category: 'Promotions', action: 'archive'\n" +
     '5. Spam_Solicitation (Phishing, scam attempts, cold wholesaler pitches):\n' +
     "   -> category: 'Promotions', action: 'trash'\n\n" +
@@ -2396,6 +2413,57 @@ function runLiveAttachmentBackfill(options) {
   return report
 }
 
+/**
+ * Idempotently remediates known misclassified threads (such as commercial TOS updates
+ * incorrectly assigned to 02_Finance_Legal or left in INBOX).
+ *
+ * @param {Object} [services] - Optional injected services for testing ({ GmailApp })
+ * @returns {number} count of remediated threads
+ */
+function remediateMisclassifiedThreads(services) {
+  var gmail =
+    (services && services.GmailApp) ||
+    (typeof GmailApp !== 'undefined' ? GmailApp : null)
+  if (!gmail || typeof gmail.search !== 'function') return 0
+
+  var remediatedCount = 0
+  try {
+    var query = 'subject:("Updates to the Waymo Terms of Service")'
+    var threads = gmail.search(query, 0, 10) || []
+    threads.forEach(function (thread) {
+      if (!thread) return
+      var labels =
+        typeof thread.getLabels === 'function' ? thread.getLabels() || [] : []
+      labels.forEach(function (label) {
+        var name =
+          typeof label.getName === 'function' ? label.getName() : String(label)
+        if (
+          name === '02_Finance_Legal' ||
+          name === 'Finance/Legal' ||
+          name === 'Legal'
+        ) {
+          if (typeof thread.removeLabel === 'function') {
+            thread.removeLabel(label)
+          }
+        }
+      })
+      if (typeof thread.moveToArchive === 'function') {
+        thread.moveToArchive()
+      }
+      if (typeof thread.markRead === 'function') {
+        thread.markRead()
+      }
+      if (typeof setGmailCategoryTab === 'function') {
+        setGmailCategoryTab(thread, 'Updates')
+      }
+      remediatedCount++
+    })
+  } catch (err) {
+    console.warn('[remediateMisclassifiedThreads] ' + err.message)
+  }
+  return remediatedCount
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     processEmailsWithAiClassifier: processEmailsWithAiClassifier,
@@ -2422,6 +2490,7 @@ if (typeof module !== 'undefined' && module.exports) {
     auditAndBackfillCanonicalAttachments: auditAndBackfillCanonicalAttachments,
     runDryRunAttachmentAudit: runDryRunAttachmentAudit,
     runLiveAttachmentBackfill: runLiveAttachmentBackfill,
+    remediateMisclassifiedThreads: remediateMisclassifiedThreads,
     getFileHash: getFileHash,
     CANONICAL_TAXONOMY_SUBFOLDERS: CANONICAL_TAXONOMY_SUBFOLDERS,
     SUBLABEL_TO_FOLDER_MAP: SUBLABEL_TO_FOLDER_MAP,
