@@ -1024,6 +1024,9 @@ describe('Ontological Knowledge Graph and Triage Matrix Prompt Architecture', ()
     expect(prompt).toContain('Briarwood')
     expect(prompt).toContain('ParentSquare')
     expect(prompt).toContain('Family/School-Student')
+    expect(prompt).toContain('PRIMARY PARTY ATTRIBUTION PRINCIPLE')
+    expect(prompt).toContain('Family/Kids/Tide')
+    expect(prompt).toContain('Family/Kids/Toby')
     expect(prompt).not.toContain('Under NO circumstances')
     expect(prompt).not.toContain('Do NOT classify')
     expect(prompt).not.toContain('Reserve strictly for')
@@ -1135,6 +1138,73 @@ describe('setGmailCategoryTab Category Shifting', () => {
           'me',
           'bare_thread_456'
         )
+      })
+    })
+  })
+})
+
+describe('cleanConflictingLabels Sub-Label Cleansing', () => {
+  const { cleanConflictingLabels: cleanIndex } = require('../src/index')
+  const { cleanConflictingLabels: cleanCodeGs } = require('../code.gs')
+
+  ;[
+    { name: 'src/index.js implementation', fn: cleanIndex },
+    { name: 'code.gs implementation', fn: cleanCodeGs },
+  ].forEach(({ name, fn }) => {
+    describe(name, () => {
+      test('strips conflicting sub-labels such as Family/Sisters/Kristien when primary is Family/Kids/Tide', () => {
+        const removed = []
+        const mockLabels = [
+          { getName: () => 'Family/Sisters/Kristien' },
+          { getName: () => '04_Family_Health' },
+          { getName: () => 'Retention/Permanent' },
+          { getName: () => 'Processed' },
+          { getName: () => 'Retention/30d' },
+          { getName: () => 'Archives/2026' },
+        ]
+        const mockThread = {
+          getLabels: () => mockLabels,
+          removeLabel: jest.fn((lObj) => {
+            removed.push(lObj.getName())
+          }),
+        }
+        const config = {
+          canonicalDomains: ['04_Family_Health'],
+          processedLabel: 'Processed',
+        }
+
+        fn(mockThread, '04_Family_Health', 'Family/Kids/Tide', config)
+
+        // Conflicting sub-label Family/Sisters/Kristien MUST be removed
+        expect(removed).toContain('Family/Sisters/Kristien')
+        // Domain code 04_Family_Health removed when targetSubLabel is set
+        expect(removed).toContain('04_Family_Health')
+        // Redundant Retention/Permanent removed
+        expect(removed).toContain('Retention/Permanent')
+        // Protected labels MUST NOT be removed
+        expect(removed).not.toContain('Processed')
+        expect(removed).not.toContain('Retention/30d')
+        expect(removed).not.toContain('Archives/2026')
+      })
+
+      test('strips legacy flat labels like Family and Household', () => {
+        const removed = []
+        const mockLabels = [
+          { getName: () => 'Family' },
+          { getName: () => 'Household' },
+        ]
+        const mockThread = {
+          getLabels: () => mockLabels,
+          removeLabel: jest.fn((lObj) => {
+            removed.push(lObj.getName())
+          }),
+        }
+        const config = { canonicalDomains: [] }
+
+        fn(mockThread, '04_Family_Health', 'Family/Kids/Tide', config)
+
+        expect(removed).toContain('Family')
+        expect(removed).toContain('Household')
       })
     })
   })
