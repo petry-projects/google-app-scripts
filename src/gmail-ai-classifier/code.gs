@@ -22,9 +22,6 @@ function processEmailsWithAiClassifier() {
     return
   }
 
-  // Idempotently remediate any known misclassified threads (commercial TOS, etc.)
-  remediateMisclassifiedThreads()
-
   // Debug helper: List available models for this API key
   listAvailableGeminiModels(config)
 
@@ -2413,57 +2410,6 @@ function runLiveAttachmentBackfill(options) {
   return report
 }
 
-/**
- * Idempotently remediates known misclassified threads (such as commercial TOS updates
- * incorrectly assigned to 02_Finance_Legal or left in INBOX).
- *
- * @param {Object} [services] - Optional injected services for testing ({ GmailApp })
- * @returns {number} count of remediated threads
- */
-function remediateMisclassifiedThreads(services) {
-  var gmail =
-    (services && services.GmailApp) ||
-    (typeof GmailApp !== 'undefined' ? GmailApp : null)
-  if (!gmail || typeof gmail.search !== 'function') return 0
-
-  var remediatedCount = 0
-  try {
-    var query = 'subject:("Updates to the Waymo Terms of Service")'
-    var threads = gmail.search(query, 0, 10) || []
-    threads.forEach(function (thread) {
-      if (!thread) return
-      var labels =
-        typeof thread.getLabels === 'function' ? thread.getLabels() || [] : []
-      labels.forEach(function (label) {
-        var name =
-          typeof label.getName === 'function' ? label.getName() : String(label)
-        if (
-          name === '02_Finance_Legal' ||
-          name === 'Finance/Legal' ||
-          name === 'Legal'
-        ) {
-          if (typeof thread.removeLabel === 'function') {
-            thread.removeLabel(label)
-          }
-        }
-      })
-      if (typeof thread.moveToArchive === 'function') {
-        thread.moveToArchive()
-      }
-      if (typeof thread.markRead === 'function') {
-        thread.markRead()
-      }
-      if (typeof setGmailCategoryTab === 'function') {
-        setGmailCategoryTab(thread, 'Updates')
-      }
-      remediatedCount++
-    })
-  } catch (err) {
-    console.warn('[remediateMisclassifiedThreads] ' + err.message)
-  }
-  return remediatedCount
-}
-
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     processEmailsWithAiClassifier: processEmailsWithAiClassifier,
@@ -2490,7 +2436,6 @@ if (typeof module !== 'undefined' && module.exports) {
     auditAndBackfillCanonicalAttachments: auditAndBackfillCanonicalAttachments,
     runDryRunAttachmentAudit: runDryRunAttachmentAudit,
     runLiveAttachmentBackfill: runLiveAttachmentBackfill,
-    remediateMisclassifiedThreads: remediateMisclassifiedThreads,
     getFileHash: getFileHash,
     CANONICAL_TAXONOMY_SUBFOLDERS: CANONICAL_TAXONOMY_SUBFOLDERS,
     SUBLABEL_TO_FOLDER_MAP: SUBLABEL_TO_FOLDER_MAP,

@@ -1958,53 +1958,6 @@ function runLiveAttachmentBackfill(options, config, services) {
   return auditAndBackfillCanonicalAttachments(opts, config, services)
 }
 
-/**
- * Idempotently remediates known misclassified threads (such as commercial TOS updates
- * incorrectly assigned to 02_Finance_Legal or left in INBOX).
- *
- * @param {Object} [services] - Optional injected services for testing ({ GmailApp })
- * @returns {number} count of remediated threads
- */
-function remediateMisclassifiedThreads(services) {
-  const gmail =
-    services?.GmailApp || (typeof GmailApp !== 'undefined' ? GmailApp : null)
-  if (!gmail || typeof gmail.search !== 'function') return 0
-
-  let remediatedCount = 0
-  try {
-    const query = 'subject:("Updates to the Waymo Terms of Service")'
-    const threads = gmail.search(query, 0, 10) || []
-    threads.forEach((thread) => {
-      if (!thread) return
-      const labels =
-        typeof thread.getLabels === 'function' ? thread.getLabels() || [] : []
-      labels.forEach((label) => {
-        const name =
-          typeof label.getName === 'function' ? label.getName() : String(label)
-        if (
-          name === '02_Finance_Legal' ||
-          name === 'Finance/Legal' ||
-          name === 'Legal'
-        ) {
-          if (typeof thread.removeLabel === 'function') {
-            thread.removeLabel(label)
-          }
-        }
-      })
-      if (typeof thread.moveToArchive === 'function') {
-        thread.moveToArchive()
-      }
-      if (typeof thread.markRead === 'function') {
-        thread.markRead()
-      }
-      remediatedCount++
-    })
-  } catch (err) {
-    console.warn('[remediateMisclassifiedThreads] ' + err.message)
-  }
-  return remediatedCount
-}
-
 module.exports = {
   validateClassification,
   classifyEmailWithGemini,
@@ -2034,7 +1987,6 @@ module.exports = {
   auditAndBackfillCanonicalAttachments,
   runDryRunAttachmentAudit,
   runLiveAttachmentBackfill,
-  remediateMisclassifiedThreads,
   CANONICAL_TAXONOMY_SUBFOLDERS,
   SUBLABEL_TO_FOLDER_MAP,
 }
