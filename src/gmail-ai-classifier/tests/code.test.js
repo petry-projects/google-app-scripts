@@ -1209,3 +1209,107 @@ describe('cleanConflictingLabels Sub-Label Cleansing', () => {
     })
   })
 })
+
+describe('reclassifyThreadsByQuery Historical Realignment', () => {
+  const { reclassifyThreadsByQuery: reclassifyIndex } = require('../src/index')
+  const { reclassifyThreadsByQuery: reclassifyCodeGs } = require('../code.gs')
+
+  ;[
+    { name: 'src/index.js implementation', fn: reclassifyIndex },
+    { name: 'code.gs implementation', fn: reclassifyCodeGs },
+  ].forEach(({ name, fn }) => {
+    describe(name, () => {
+      test('reclassifies historical threads and strips conflicting labels in live mode', () => {
+        const addedLabels = []
+        const removedLabels = []
+        const mockLabels = [{ getName: () => 'Family/Sisters/Kristien' }]
+        const mockThread = {
+          getId: () => 'thread-xyz',
+          getMessages: () => [
+            {
+              getFrom: () => 'probate@example.com',
+              getSubject: () => 'Name Change Decree',
+              getPlainBody: () => 'Order regarding Tide name change petition.',
+            },
+          ],
+          getLabels: () => mockLabels,
+          addLabel: jest.fn((l) =>
+            addedLabels.push(
+              typeof l.getName === 'function' ? l.getName() : String(l)
+            )
+          ),
+          removeLabel: jest.fn((l) =>
+            removedLabels.push(
+              typeof l.getName === 'function' ? l.getName() : String(l)
+            )
+          ),
+        }
+        const mockGmail = {
+          search: jest.fn(() => [mockThread]),
+          getUserLabelByName: jest.fn((name) => ({ getName: () => name })),
+          createLabel: jest.fn((name) => ({ getName: () => name })),
+        }
+        const mockClassify = jest.fn(() => ({
+          canonicalDomain: '04_Family_Health',
+          subLabel: 'Family/Kids/Tide',
+          action: 'keep',
+          category: 'Primary',
+        }))
+
+        const report = fn(
+          'label:"Family/Sisters" Tide',
+          { maxThreads: 10, dryRun: false },
+          { processedLabel: 'Processed' },
+          { GmailApp: mockGmail, classifyFn: mockClassify }
+        )
+
+        expect(report.scanned).toBe(1)
+        expect(report.reclassified).toBe(1)
+        expect(report.items[0].newSubLabel).toBe('Family/Kids/Tide')
+        expect(removedLabels).toContain('Family/Sisters/Kristien')
+        expect(addedLabels).toContain('Family/Kids/Tide')
+        expect(addedLabels).toContain('Processed')
+      })
+
+      test('does not modify thread labels when dryRun is true', () => {
+        const addedLabels = []
+        const removedLabels = []
+        const mockLabels = [{ getName: () => 'Family/Sisters/Kristien' }]
+        const mockThread = {
+          getId: () => 'thread-dry',
+          getMessages: () => [
+            {
+              getFrom: () => 'probate@example.com',
+              getSubject: () => 'Tide Document',
+              getPlainBody: () => 'Tide paperwork details',
+            },
+          ],
+          getLabels: () => mockLabels,
+          addLabel: jest.fn((l) => addedLabels.push(l)),
+          removeLabel: jest.fn((l) => removedLabels.push(l)),
+        }
+        const mockGmail = {
+          search: jest.fn(() => [mockThread]),
+        }
+        const mockClassify = jest.fn(() => ({
+          canonicalDomain: '04_Family_Health',
+          subLabel: 'Family/Kids/Tide',
+          action: 'keep',
+          category: 'Primary',
+        }))
+
+        const report = fn(
+          'label:"Family/Sisters" Tide',
+          { maxThreads: 10, dryRun: true },
+          { processedLabel: 'Processed' },
+          { GmailApp: mockGmail, classifyFn: mockClassify }
+        )
+
+        expect(report.scanned).toBe(1)
+        expect(report.dryRun).toBe(true)
+        expect(addedLabels).toHaveLength(0)
+        expect(removedLabels).toHaveLength(0)
+      })
+    })
+  })
+})

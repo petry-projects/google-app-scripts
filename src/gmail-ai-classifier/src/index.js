@@ -2410,6 +2410,144 @@ function runLiveAttachmentBackfill(options, config, services) {
   return auditAndBackfillCanonicalAttachments(opts, config, services)
 }
 
+/**
+ * Reclassifies historical threads matching a custom Gmail search query.
+ * Useful for retroactive alignment of misclassified or misattributed threads.
+ *
+ * @param {string} searchQuery - Gmail search query
+ * @param {Object} [options] - Options: { maxThreads: 20, dryRun: false }
+ * @param {Object} [config] - Classifier config
+ * @param {Object} [services] - Dependency injection for testing { GmailApp, Utilities, classifyFn }
+ * @returns {Object} Report of reclassified threads
+ */
+function reclassifyThreadsByQuery(searchQuery, options, config, services) {
+  var opts = Object.assign({ maxThreads: 20, dryRun: false }, options || {})
+  var cfg =
+    config ||
+    (typeof getAiClassifierConfig === 'function' ? getAiClassifierConfig() : {})
+  var gmail =
+    (services && services.GmailApp) ||
+    (typeof GmailApp !== 'undefined' ? GmailApp : null)
+  var classifyFn =
+    (services && services.classifyFn) ||
+    (typeof classifyEmailWithGemini === 'function'
+      ? classifyEmailWithGemini
+      : null)
+
+  if (!gmail) {
+    throw new Error('GmailApp service is required for reclassifying threads.')
+  }
+
+  console.log(
+    '[reclassifyThreadsByQuery] Query: ' +
+      searchQuery +
+      ' (dryRun: ' +
+      opts.dryRun +
+      ', maxThreads: ' +
+      opts.maxThreads +
+      ')'
+  )
+
+  var threads = gmail.search(searchQuery, 0, opts.maxThreads)
+  console.log(
+    '[reclassifyThreadsByQuery] Found ' +
+      threads.length +
+      ' thread(s) matching query.'
+  )
+
+  var results = []
+  for (var i = 0; i < threads.length; i++) {
+    var thread = threads[i]
+    var msgs =
+      typeof thread.getMessages === 'function' ? thread.getMessages() : []
+    if (!msgs || msgs.length === 0) continue
+    var firstMessage = msgs[0]
+    var sender =
+      typeof firstMessage.getFrom === 'function' ? firstMessage.getFrom() : ''
+    var subject =
+      typeof firstMessage.getSubject === 'function'
+        ? firstMessage.getSubject()
+        : ''
+    var snippet =
+      typeof firstMessage.getPlainBody === 'function'
+        ? firstMessage.getPlainBody().substring(0, 500)
+        : ''
+
+    var classification = classifyFn
+      ? classifyFn(sender, subject, snippet, cfg)
+      : null
+    if (!classification) continue
+
+    var summary = {
+      threadId: typeof thread.getId === 'function' ? thread.getId() : String(i),
+      subject: subject,
+      sender: sender,
+      newDomain: classification.canonicalDomain,
+      newSubLabel: classification.subLabel,
+      action: classification.action,
+      category: classification.category,
+    }
+
+    if (!opts.dryRun) {
+      if (typeof cleanConflictingLabels === 'function') {
+        cleanConflictingLabels(
+          thread,
+          classification.canonicalDomain,
+          classification.subLabel,
+          cfg
+        )
+      }
+      var primaryTag = classification.subLabel || classification.canonicalDomain
+      if (
+        primaryTag &&
+        typeof ensureGmailLabel === 'function' &&
+        typeof thread.addLabel === 'function'
+      ) {
+        var targetLabel = ensureGmailLabel(primaryTag, gmail)
+        thread.addLabel(targetLabel)
+      }
+      if (
+        classification.category &&
+        classification.action !== 'trash' &&
+        typeof setGmailCategoryTab === 'function'
+      ) {
+        setGmailCategoryTab(thread, classification.category)
+      }
+      if (
+        cfg.processedLabel &&
+        typeof ensureGmailLabel === 'function' &&
+        typeof thread.addLabel === 'function'
+      ) {
+        var processedLabel = ensureGmailLabel(cfg.processedLabel, gmail)
+        thread.addLabel(processedLabel)
+      }
+    }
+
+    results.push(summary)
+  }
+
+  return {
+    query: searchQuery,
+    scanned: threads.length,
+    reclassified: results.length,
+    dryRun: opts.dryRun,
+    items: results,
+  }
+}
+
+/**
+ * Convenience runner to audit historical threads matching a query in dry-run mode.
+ */
+function runRealignmentAudit(query, options, config, services) {
+  var defaultQuery = 'label:"Family/Sisters" -label:"Family/Kids"'
+  return reclassifyThreadsByQuery(
+    query || defaultQuery,
+    Object.assign({ maxThreads: 25, dryRun: true }, options || {}),
+    config,
+    services
+  )
+}
+
 module.exports = {
   validateClassification,
   classifyEmailWithGemini,
@@ -2443,6 +2581,8 @@ module.exports = {
   runLiveAttachmentBackfill,
   setGmailCategoryTab,
   cleanConflictingLabels,
+  reclassifyThreadsByQuery,
+  runRealignmentAudit,
   CANONICAL_TAXONOMY_SUBFOLDERS,
   SUBLABEL_TO_FOLDER_MAP,
 }
