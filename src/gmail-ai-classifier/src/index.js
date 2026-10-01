@@ -942,6 +942,71 @@ function auditClassifications(threads, config) {
       }
     }
 
+    // 4. Drive Attachment Persistence & Tagging Check
+    const driveApp =
+      config?.driveApp || (typeof DriveApp !== 'undefined' ? DriveApp : null)
+    if (
+      driveApp &&
+      assignedCanonical.length === 1 &&
+      typeof thread.getMessages === 'function'
+    ) {
+      const domain = assignedCanonical[0]
+      const subLabel =
+        rawLabels.find((l) => l.includes('/') && !l.includes(domain)) || ''
+      const subfolderName = resolveTaxonomySubfolderName(domain, subLabel)
+      const msgs = thread.getMessages() || []
+      msgs.forEach((msg) => {
+        const atts =
+          typeof msg.getAttachments === 'function' ? msg.getAttachments() : []
+        atts.forEach((att) => {
+          if (isEligibleAttachment(att)) {
+            const attName =
+              typeof att.getName === 'function'
+                ? att.getName()
+                : att.name || 'unnamed'
+            try {
+              const targetFolder = ensureDriveTaxonomyFolder(
+                domain,
+                subfolderName,
+                driveApp
+              )
+              const existingFiles = targetFolder.getFilesByName(attName)
+              if (
+                !existingFiles ||
+                (typeof existingFiles.hasNext === 'function' &&
+                  !existingFiles.hasNext())
+              ) {
+                flags.push(
+                  'MISSING_DRIVE_ATTACHMENT: Eligible attachment "' +
+                    attName +
+                    '" is missing from Drive folder "' +
+                    domain +
+                    '/' +
+                    subfolderName +
+                    '".'
+                )
+              } else if (typeof existingFiles.next === 'function') {
+                const driveFile = existingFiles.next()
+                const desc =
+                  typeof driveFile.getDescription === 'function'
+                    ? driveFile.getDescription()
+                    : ''
+                if (!desc || !desc.includes('[AI_INDEXED]')) {
+                  flags.push(
+                    'UNTAGGED_DRIVE_ATTACHMENT: Attachment "' +
+                      attName +
+                      '" exists in Drive but lacks [AI_INDEXED] metadata description.'
+                  )
+                }
+              }
+            } catch {
+              // Non-blocking folder check
+            }
+          }
+        })
+      })
+    }
+
     if (flags.length > 0) {
       findings.push({
         threadId: id,
@@ -1044,6 +1109,7 @@ const CANONICAL_TAXONOMY_SUBFOLDERS = {
 
 const SUBLABEL_TO_FOLDER_MAP = {
   // 01_Household
+  'household/property': 'Primary_House',
   'household/primary-property': 'Primary_House',
   'household/primary_house': 'Primary_House',
   'household/primary': 'Primary_House',
@@ -1536,6 +1602,36 @@ function persistCanonicalAttachmentsToDrive(
           typeof file.getUrl === 'function'
             ? file.getUrl()
             : 'https://drive.google.com/file/d/' + fileId
+
+        if (typeof file.setDescription === 'function') {
+          try {
+            const tagDate =
+              services?.Utilities &&
+              typeof services.Utilities.formatDate === 'function'
+                ? services.Utilities.formatDate(
+                    new Date(),
+                    'GMT',
+                    "yyyy-MM-dd'T'HH:mm:ss'Z'"
+                  )
+                : new Date().toISOString()
+            const tagBlock =
+              '[AI_INDEXED] ' +
+              tagDate +
+              '\nDomain: ' +
+              canonicalDomain +
+              '\nSub-label: ' +
+              (classification.subLabel || '') +
+              '\nSource: Gmail Attachment' +
+              '\nThread-ID: ' +
+              (typeof thread.getId === 'function'
+                ? thread.getId()
+                : thread.id || '')
+            file.setDescription(tagBlock)
+          } catch {
+            // Non-blocking metadata description tagging
+          }
+        }
+
         savedFiles.push({
           name: typeof file.getName === 'function' ? file.getName() : finalName,
           url: fileUrl,
@@ -1555,6 +1651,283 @@ function persistCanonicalAttachmentsToDrive(
   })
 
   return savedFiles
+}
+
+/**
+ * Scans historical Gmail threads for attachments across the 7 Canonical Domains,
+ * verifies whether each attachment exists in Google Drive under the correct taxonomy path,
+ * checks/applies native [AI_INDEXED] description tags, and optionally backfills missing files.
+ *
+ * @param {Object} [options] - Execution options
+ * @param {boolean} [options.dryRun=true] - If true, only reports discrepancies; if false, uploads missing attachments and tags them.
+ * @param {string} [options.query] - Custom search query (defaults to searching canonical domain labels with attachments).
+ * @param {number} [options.maxThreads=50] - Maximum threads to inspect in this batch.
+ * @param {Object} [config] - Classifier configuration (defaults to getAiClassifierConfig()).
+ * @param {Object} [services] - Service injection for testing ({ GmailApp, DriveApp, Utilities }).
+ * @returns {Object} report
+ */
+function auditAndBackfillCanonicalAttachments(options, config, services) {
+  const opts = options || {}
+  const isDryRun = opts.dryRun !== false
+  const maxThreads = opts.maxThreads || 50
+
+  const cfg =
+    config ||
+    (typeof getAiClassifierConfig === 'function' ? getAiClassifierConfig() : {})
+  const canonicalDomains = cfg.canonicalDomains || [
+    '01_Household',
+    '02_Finance_Legal',
+    '03_Vehicles',
+    '04_Family_Health',
+    '05_Tech_Infrastructure',
+    '06_Work_Career',
+    '07_Community_NonProfit',
+  ]
+
+  const gmail =
+    services?.GmailApp || (typeof GmailApp !== 'undefined' ? GmailApp : null)
+  const drive =
+    services?.DriveApp || (typeof DriveApp !== 'undefined' ? DriveApp : null)
+  const utils =
+    services?.Utilities || (typeof Utilities !== 'undefined' ? Utilities : null)
+
+  if (!gmail || !drive) {
+    throw new Error(
+      'GmailApp and DriveApp services are required for attachment audit/backfill.'
+    )
+  }
+
+  let searchQuery = opts.query
+  if (!searchQuery) {
+    const domainQueries = canonicalDomains.map((d) => 'label:' + d).join(' OR ')
+    searchQuery = 'has:attachment (' + domainQueries + ')'
+  }
+
+  let threads = []
+  if (typeof gmail.search === 'function') {
+    threads = gmail.search(searchQuery, 0, maxThreads) || []
+  }
+
+  const report = {
+    scannedThreads: threads.length,
+    threadsWithEligibleAttachments: 0,
+    totalEligibleAttachments: 0,
+    alreadyStoredAndTagged: 0,
+    alreadyStoredUntagged: 0,
+    missingFromDrive: 0,
+    backfilledCount: 0,
+    taggedCount: 0,
+    dryRun: isDryRun,
+    items: [],
+  }
+
+  threads.forEach((thread) => {
+    if (!thread) return
+    const threadId =
+      typeof thread.getId === 'function' ? thread.getId() : thread.id || ''
+    const subject =
+      typeof thread.getFirstMessageSubject === 'function'
+        ? thread.getFirstMessageSubject()
+        : thread.subject || ''
+
+    let rawLabels = []
+    if (typeof thread.getLabels === 'function') {
+      const labelObjs = thread.getLabels() || []
+      rawLabels = labelObjs.map((l) =>
+        typeof l.getName === 'function' ? l.getName() : String(l)
+      )
+    } else if (Array.isArray(thread.labels)) {
+      rawLabels = thread.labels
+    }
+
+    const assignedCanonical = rawLabels.filter(
+      (l) => canonicalDomains.includes(l) || /^0[1-7]_/.test(l)
+    )
+
+    if (assignedCanonical.length === 0) return
+    const canonicalDomain = assignedCanonical[0]
+    const subLabel =
+      rawLabels.find((l) => l.includes('/') && !l.includes(canonicalDomain)) ||
+      ''
+    const subfolderName = resolveTaxonomySubfolderName(
+      canonicalDomain,
+      subLabel
+    )
+
+    let targetFolder = null
+    try {
+      targetFolder = ensureDriveTaxonomyFolder(
+        canonicalDomain,
+        subfolderName,
+        drive
+      )
+    } catch (err) {
+      console.error(
+        '[auditAndBackfillCanonicalAttachments] Error accessing folder ' +
+          canonicalDomain +
+          '/' +
+          subfolderName +
+          ': ' +
+          err.message
+      )
+      return
+    }
+
+    const msgs =
+      typeof thread.getMessages === 'function'
+        ? thread.getMessages()
+        : thread.messages || []
+    let threadHasEligible = false
+
+    msgs.forEach((msg) => {
+      const atts =
+        typeof msg.getAttachments === 'function'
+          ? msg.getAttachments()
+          : msg.attachments || []
+      atts.forEach((att) => {
+        if (!isEligibleAttachment(att)) return
+
+        threadHasEligible = true
+        report.totalEligibleAttachments++
+        const fileName =
+          typeof att.getName === 'function'
+            ? att.getName()
+            : att.name || 'unnamed'
+        const newFileBlob =
+          typeof att.copyBlob === 'function' ? att.copyBlob() : att
+
+        const existingFiles = targetFolder.getFilesByName(fileName)
+        const helperFns = {
+          getFileHash: getFileHash,
+          Utilities: utils,
+        }
+
+        const isDup = isDuplicateAttachment(
+          existingFiles,
+          newFileBlob,
+          helperFns
+        )
+
+        const tagDate =
+          utils && typeof utils.formatDate === 'function'
+            ? utils.formatDate(new Date(), 'GMT', "yyyy-MM-dd'T'HH:mm:ss'Z'")
+            : new Date().toISOString()
+        const tagBlock =
+          '[AI_INDEXED] ' +
+          tagDate +
+          '\nDomain: ' +
+          canonicalDomain +
+          '\nSub-label: ' +
+          subLabel +
+          '\nSource: Gmail Attachment Backfill' +
+          '\nThread-ID: ' +
+          threadId +
+          '\nEmail-Subject: ' +
+          subject
+
+        if (isDup) {
+          const filesIterator = targetFolder.getFilesByName(fileName)
+          const foundFile =
+            filesIterator &&
+            typeof filesIterator.next === 'function' &&
+            filesIterator.hasNext()
+              ? filesIterator.next()
+              : null
+          const desc =
+            foundFile && typeof foundFile.getDescription === 'function'
+              ? foundFile.getDescription()
+              : ''
+
+          if (desc && desc.includes('[AI_INDEXED]')) {
+            report.alreadyStoredAndTagged++
+            report.items.push({
+              threadId: threadId,
+              subject: subject,
+              fileName: fileName,
+              domain: canonicalDomain,
+              subfolder: subfolderName,
+              status: 'ALREADY_STORED_AND_TAGGED',
+            })
+          } else {
+            report.alreadyStoredUntagged++
+            if (
+              !isDryRun &&
+              foundFile &&
+              typeof foundFile.setDescription === 'function'
+            ) {
+              try {
+                foundFile.setDescription(tagBlock)
+                report.taggedCount++
+              } catch {
+                // Non-blocking
+              }
+            }
+            report.items.push({
+              threadId: threadId,
+              subject: subject,
+              fileName: fileName,
+              domain: canonicalDomain,
+              subfolder: subfolderName,
+              status: isDryRun ? 'STORED_BUT_UNTAGGED' : 'TAGGED_EXISTING',
+            })
+          }
+        } else {
+          report.missingFromDrive++
+          if (!isDryRun) {
+            try {
+              const finalName = resolveAttachmentName(
+                targetFolder,
+                fileName,
+                newFileBlob,
+                services
+              )
+              const createdFile = targetFolder.createFile(newFileBlob)
+              if (
+                createdFile &&
+                typeof createdFile.setDescription === 'function'
+              ) {
+                createdFile.setDescription(tagBlock)
+              }
+              report.backfilledCount++
+              report.items.push({
+                threadId: threadId,
+                subject: subject,
+                fileName: finalName,
+                domain: canonicalDomain,
+                subfolder: subfolderName,
+                status: 'BACKFILLED_TO_DRIVE',
+              })
+            } catch (saveErr) {
+              report.items.push({
+                threadId: threadId,
+                subject: subject,
+                fileName: fileName,
+                domain: canonicalDomain,
+                subfolder: subfolderName,
+                status: 'BACKFILL_ERROR',
+                error: saveErr.message,
+              })
+            }
+          } else {
+            report.items.push({
+              threadId: threadId,
+              subject: subject,
+              fileName: fileName,
+              domain: canonicalDomain,
+              subfolder: subfolderName,
+              status: 'MISSING_FROM_DRIVE',
+            })
+          }
+        }
+      })
+    })
+
+    if (threadHasEligible) {
+      report.threadsWithEligibleAttachments++
+    }
+  })
+
+  return report
 }
 
 module.exports = {
@@ -1583,6 +1956,7 @@ module.exports = {
   isDuplicateAttachment,
   resolveAttachmentName,
   persistCanonicalAttachmentsToDrive,
+  auditAndBackfillCanonicalAttachments,
   CANONICAL_TAXONOMY_SUBFOLDERS,
   SUBLABEL_TO_FOLDER_MAP,
 }
