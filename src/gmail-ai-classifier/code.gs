@@ -2973,9 +2973,45 @@ function reclassifyThreadsByQuery(searchQuery, options, config, services) {
  * Convenience runner to audit historical threads matching a query in dry-run mode.
  */
 function runRealignmentAudit(query, options, config, services) {
-  var defaultQuery = 'label:"Family/Sisters" -label:"Family/Kids"'
+  var gmail =
+    (services && services.GmailApp) ||
+    (typeof GmailApp !== 'undefined' ? GmailApp : null)
+  var searchQuery = query
+
+  if (!searchQuery && gmail && typeof gmail.getUserLabels === 'function') {
+    try {
+      var allLabels = gmail.getUserLabels() || []
+      var matchedLabels = allLabels
+        .filter(function (l) {
+          var name = typeof l.getName === 'function' ? l.getName() : String(l)
+          return /sister/i.test(name)
+        })
+        .map(function (l) {
+          var name = typeof l.getName === 'function' ? l.getName() : String(l)
+          return 'label:"' + name + '"'
+        })
+
+      console.log(
+        '[runRealignmentAudit] Discovered sister labels in Gmail: ' +
+          JSON.stringify(matchedLabels)
+      )
+
+      var queryParts = matchedLabels.slice()
+      queryParts.push('"name change"')
+      searchQuery = queryParts.join(' OR ')
+    } catch (e) {
+      console.warn(
+        '[runRealignmentAudit] Error discovering user labels: ' + e.message
+      )
+    }
+  }
+
+  if (!searchQuery) {
+    searchQuery = 'label:"Family/Sisters" OR "name change"'
+  }
+
   return reclassifyThreadsByQuery(
-    query || defaultQuery,
+    searchQuery,
     Object.assign({ maxThreads: 25, dryRun: true }, options || {}),
     config,
     services
