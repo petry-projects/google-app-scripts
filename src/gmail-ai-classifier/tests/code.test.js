@@ -1211,13 +1211,27 @@ describe('cleanConflictingLabels Sub-Label Cleansing', () => {
 })
 
 describe('reclassifyThreadsByQuery Historical Realignment', () => {
-  const { reclassifyThreadsByQuery: reclassifyIndex } = require('../src/index')
-  const { reclassifyThreadsByQuery: reclassifyCodeGs } = require('../code.gs')
+  const {
+    reclassifyThreadsByQuery: reclassifyIndex,
+    runRealignmentAudit: auditIndex,
+  } = require('../src/index')
+  const {
+    reclassifyThreadsByQuery: reclassifyCodeGs,
+    runRealignmentAudit: auditCodeGs,
+  } = require('../code.gs')
 
   ;[
-    { name: 'src/index.js implementation', fn: reclassifyIndex },
-    { name: 'code.gs implementation', fn: reclassifyCodeGs },
-  ].forEach(({ name, fn }) => {
+    {
+      name: 'src/index.js implementation',
+      fn: reclassifyIndex,
+      auditFn: auditIndex,
+    },
+    {
+      name: 'code.gs implementation',
+      fn: reclassifyCodeGs,
+      auditFn: auditCodeGs,
+    },
+  ].forEach(({ name, fn, auditFn }) => {
     describe(name, () => {
       test('reclassifies historical threads and strips conflicting labels in live mode', () => {
         const addedLabels = []
@@ -1418,6 +1432,33 @@ describe('reclassifyThreadsByQuery Historical Realignment', () => {
         expect(mockFile.moveTo).toHaveBeenCalledWith(mockNewFolder)
         expect(mockMovedFiles).toHaveLength(1)
         expect(mockMovedFiles[0].dest).toBe('Students')
+      })
+
+      it('dynamically discovers sister labels and includes name change query in runRealignmentAudit', () => {
+        const mockLabels = [
+          { getName: () => 'Family/Sisters/SubSister' },
+          { getName: () => 'Finance/Banking' },
+        ]
+
+        const mockGmail = {
+          getUserLabels: jest.fn(() => mockLabels),
+          search: jest.fn(() => []),
+        }
+
+        const report = auditFn(
+          null,
+          { maxThreads: 10 },
+          { canonicalDomains: ['04_Family_Health'] },
+          { GmailApp: mockGmail, classifyFn: jest.fn() }
+        )
+
+        expect(mockGmail.getUserLabels).toHaveBeenCalled()
+        expect(mockGmail.search).toHaveBeenCalledWith(
+          'label:"Family/Sisters/SubSister" OR "name change"',
+          0,
+          10
+        )
+        expect(report.dryRun).toBe(true)
       })
     })
   })
