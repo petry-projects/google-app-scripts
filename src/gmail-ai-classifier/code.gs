@@ -2708,101 +2708,6 @@ function runLiveAttachmentBackfill(options) {
 }
 
 /**
- * Deterministic fallback classifier for high-confidence domain and sub-label routing
- * when Gemini API endpoints are unavailable, rate-limited, or UrlFetch quota is exhausted.
- */
-function fallbackDeterministicClassifier_(
-  sender,
-  subject,
-  snippet,
-  existingLabels,
-  config
-) {
-  var text = (subject + ' ' + snippet + ' ' + sender).toLowerCase()
-
-  // 1. Primary Party: Child Paperwork & Identity
-  if (
-    /\b(tide|tori)\b/i.test(text) &&
-    /\b(name change|petition|decree|probate|court|custody|guardianship|hearing)\b/i.test(
-      text
-    )
-  ) {
-    return {
-      canonicalDomain: '04_Family_Health',
-      subLabel: 'Family/Kids/Tide',
-      action: 'keep',
-      category: 'Primary',
-      confidence: 1.0,
-      reasoning:
-        'Deterministic fallback: Primary party legal documentation for child identified.',
-    }
-  }
-
-  if (/\b(tide|tori)\b/i.test(text)) {
-    return {
-      canonicalDomain: '04_Family_Health',
-      subLabel: 'Family/Kids/Tide',
-      action: 'keep',
-      category: 'Primary',
-      confidence: 0.98,
-      reasoning:
-        'Deterministic fallback: Primary correspondence regarding Tide.',
-    }
-  }
-
-  if (/\b(toby)\b/i.test(text)) {
-    return {
-      canonicalDomain: '04_Family_Health',
-      subLabel: 'Family/Kids/Toby',
-      action: 'keep',
-      category: 'Primary',
-      confidence: 0.98,
-      reasoning:
-        'Deterministic fallback: Primary correspondence regarding Toby.',
-    }
-  }
-
-  if (/\b(david|davie)\b/i.test(text)) {
-    return {
-      canonicalDomain: '04_Family_Health',
-      subLabel: 'Family/Kids/David',
-      action: 'keep',
-      category: 'Primary',
-      confidence: 0.98,
-      reasoning:
-        'Deterministic fallback: Primary correspondence regarding David.',
-    }
-  }
-
-  // 2. Adult Sister Correspondence (when not regarding children)
-  if (/erika/i.test(text)) {
-    return {
-      canonicalDomain: '04_Family_Health',
-      subLabel: 'Family/Sisters/Erika & Rob',
-      action: 'keep',
-      category: 'Primary',
-      confidence: 0.95,
-      reasoning:
-        'Deterministic fallback: Correspondence regarding Erika & Rob.',
-    }
-  }
-
-  if (/kristien|kk76ripple/i.test(text)) {
-    return {
-      canonicalDomain: '04_Family_Health',
-      subLabel: 'Family/Sisters/Kristien',
-      action: 'keep',
-      category: 'Primary',
-      confidence: 0.95,
-      reasoning:
-        'Deterministic fallback: Personal correspondence regarding Kristien.',
-    }
-  }
-
-  return null
-}
-
-/**
  * Reclassifies historical threads matching a custom Gmail search query.
  * Useful for retroactive alignment of misclassified or misattributed threads.
  *
@@ -2894,16 +2799,6 @@ function reclassifyThreadsByQuery(searchQuery, options, config, services) {
     } catch (e) {
       console.warn(
         '[reclassifyThreadsByQuery] Classifier exception: ' + e.message
-      )
-    }
-
-    if (!classification) {
-      classification = fallbackDeterministicClassifier_(
-        sender,
-        subject,
-        snippet,
-        rawLabels,
-        cfg
       )
     }
     if (!classification) continue
