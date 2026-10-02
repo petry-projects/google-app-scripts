@@ -1310,6 +1310,115 @@ describe('reclassifyThreadsByQuery Historical Realignment', () => {
         expect(addedLabels).toHaveLength(0)
         expect(removedLabels).toHaveLength(0)
       })
+
+      test('detects tldChanged and relocates attachments via file.moveTo', () => {
+        const mockMovedFiles = []
+        const mockFile = {
+          getName: () => 'decree.pdf',
+          moveTo: jest.fn((destFolder) => {
+            mockMovedFiles.push({
+              file: 'decree.pdf',
+              dest: destFolder.getName(),
+            })
+          }),
+        }
+        const mockOldFolder = {
+          getName: () => 'Banking',
+          getFilesByName: jest.fn((name) => ({
+            hasNext: jest.fn().mockReturnValueOnce(true).mockReturnValue(false),
+            next: jest.fn(() => mockFile),
+          })),
+        }
+        const mockNewFolder = {
+          getName: () => 'Students',
+          getFilesByName: jest.fn(() => ({
+            hasNext: () => false,
+          })),
+          createFile: jest.fn(),
+        }
+        const mockDrive = {
+          getRootFolder: () => ({
+            getFoldersByName: (name) => ({
+              hasNext: () => true,
+              next: () => ({
+                getFoldersByName: (subName) => ({
+                  hasNext: () => true,
+                  next: () =>
+                    subName === 'Students' ? mockNewFolder : mockOldFolder,
+                }),
+                createFolder: (subName) =>
+                  subName === 'Students' ? mockNewFolder : mockOldFolder,
+              }),
+            }),
+            createFolder: () => ({
+              getFoldersByName: () => ({
+                hasNext: () => true,
+                next: () => mockNewFolder,
+              }),
+            }),
+          }),
+        }
+
+        const mockAttachment = {
+          getName: () => 'decree.pdf',
+          getContentType: () => 'application/pdf',
+          getSize: () => 15000,
+          getBytes: () => new Uint8Array([1, 2, 3]),
+        }
+
+        const mockThread = {
+          getId: () => 'thread-tld-change',
+          getMessages: () => [
+            {
+              getFrom: () => 'probate@court.gov',
+              getSubject: () => 'Order Granting Petition',
+              getPlainBody: () => 'Legal decree details.',
+              getAttachments: () => [mockAttachment],
+            },
+          ],
+          getLabels: () => [
+            { getName: () => '02_Finance_Legal' },
+            { getName: () => 'Finance/Banking' },
+          ],
+          addLabel: jest.fn(),
+          removeLabel: jest.fn(),
+        }
+
+        const mockGmail = {
+          search: jest.fn(() => [mockThread]),
+          getUserLabelByName: jest.fn((name) => ({ getName: () => name })),
+          createLabel: jest.fn((name) => ({ getName: () => name })),
+        }
+        const mockClassify = jest.fn(() => ({
+          canonicalDomain: '04_Family_Health',
+          subLabel: 'Family/Kids/Tide',
+          action: 'keep',
+          category: 'Primary',
+        }))
+
+        const report = fn(
+          'Tide Name Change',
+          { maxThreads: 5, dryRun: false },
+          {
+            canonicalDomains: ['02_Finance_Legal', '04_Family_Health'],
+            processedLabel: 'Processed',
+          },
+          {
+            GmailApp: mockGmail,
+            DriveApp: mockDrive,
+            classifyFn: mockClassify,
+            getFileHash: () => 'hash123',
+          }
+        )
+
+        expect(report.scanned).toBe(1)
+        expect(report.items[0].tldChanged).toBe(true)
+        expect(report.items[0].oldDomain).toBe('02_Finance_Legal')
+        expect(report.items[0].newDomain).toBe('04_Family_Health')
+        expect(mockFile.moveTo).toHaveBeenCalledWith(mockNewFolder)
+        expect(mockMovedFiles).toHaveLength(1)
+        expect(mockMovedFiles[0].dest).toBe('Students')
+      })
     })
   })
 })

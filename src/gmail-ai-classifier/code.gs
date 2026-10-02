@@ -2769,15 +2769,36 @@ function reclassifyThreadsByQuery(searchQuery, options, config, services) {
       : null
     if (!classification) continue
 
-    var summary = {
-      threadId: typeof thread.getId === 'function' ? thread.getId() : String(i),
-      subject: subject,
-      sender: sender,
-      newDomain: classification.canonicalDomain,
-      newSubLabel: classification.subLabel,
-      action: classification.action,
-      category: classification.category,
+    var rawLabels = []
+    if (typeof thread.getLabels === 'function') {
+      var labelObjs = thread.getLabels() || []
+      rawLabels = labelObjs.map(function (l) {
+        return typeof l.getName === 'function' ? l.getName() : String(l)
+      })
     }
+    var oldCanonical = rawLabels.filter(function (l) {
+      return (
+        (cfg.canonicalDomains || []).indexOf(l) !== -1 || /^0[1-7]_/.test(l)
+      )
+    })
+    var oldDomain = oldCanonical.length > 0 ? oldCanonical[0] : null
+    var oldSubLabel =
+      rawLabels.find(function (l) {
+        return (
+          l.indexOf('/') !== -1 &&
+          (!oldDomain || l.indexOf(oldDomain) === -1) &&
+          l.indexOf('Archives') === -1 &&
+          l.indexOf('Retention/') === -1
+        )
+      }) || ''
+
+    var newDomain =
+      classification.canonicalDomain || classification.canonical_label
+    var newSubLabel = classification.subLabel || ''
+    var tldChanged = oldDomain && newDomain && oldDomain !== newDomain
+
+    var attachmentsMoved = []
+    var attachmentsSaved = []
 
     if (!opts.dryRun) {
       if (typeof cleanConflictingLabels === 'function') {
@@ -2812,6 +2833,111 @@ function reclassifyThreadsByQuery(searchQuery, options, config, services) {
         var processedLabel = ensureUserLabel(cfg.processedLabel, gmail)
         thread.addLabel(processedLabel)
       }
+
+      // Drive attachment relocation & backfill
+      var drive =
+        (services && services.DriveApp) ||
+        (typeof DriveApp !== 'undefined' ? DriveApp : null)
+      if (drive && isCanonicalClassification(classification, cfg)) {
+        var oldSubfolder = oldDomain
+          ? resolveTaxonomySubfolderName(oldDomain, oldSubLabel)
+          : null
+        var newSubfolder = resolveTaxonomySubfolderName(newDomain, newSubLabel)
+
+        // Relocate existing attachments if folder path changed
+        if (
+          oldDomain &&
+          oldSubfolder &&
+          (oldDomain !== newDomain || oldSubfolder !== newSubfolder)
+        ) {
+          try {
+            var oldFolder = ensureDriveTaxonomyFolder(
+              oldDomain,
+              oldSubfolder,
+              drive
+            )
+            var newFolder = ensureDriveTaxonomyFolder(
+              newDomain,
+              newSubfolder,
+              drive
+            )
+
+            msgs.forEach(function (msg) {
+              var atts = getMessageAttachments_(msg)
+              atts.forEach(function (att) {
+                if (!isEligibleAttachment(att)) return
+                var attName =
+                  typeof att.getName === 'function' ? att.getName() : ''
+                if (!attName) return
+
+                var existingFiles = oldFolder.getFilesByName(attName)
+                if (
+                  existingFiles &&
+                  typeof existingFiles.hasNext === 'function' &&
+                  existingFiles.hasNext()
+                ) {
+                  var fileToMove = existingFiles.next()
+                  if (typeof fileToMove.moveTo === 'function') {
+                    fileToMove.moveTo(newFolder)
+                    attachmentsMoved.push({
+                      name: attName,
+                      from: oldDomain + '/' + oldSubfolder,
+                      to: newDomain + '/' + newSubfolder,
+                    })
+                    console.log(
+                      '[reclassifyThreadsByQuery] Relocated attachment "' +
+                        attName +
+                        '" from ' +
+                        oldDomain +
+                        '/' +
+                        oldSubfolder +
+                        ' to ' +
+                        newDomain +
+                        '/' +
+                        newSubfolder
+                    )
+                  }
+                }
+              })
+            })
+          } catch (e) {
+            console.warn(
+              '[reclassifyThreadsByQuery] Drive relocation warning: ' +
+                e.message
+            )
+          }
+        }
+
+        // Persist any eligible attachments not yet preserved
+        var saved = persistCanonicalAttachmentsToDrive(
+          thread,
+          classification,
+          cfg,
+          {
+            DriveApp: drive,
+            Utilities:
+              services && services.Utilities ? services.Utilities : Utilities,
+          }
+        )
+        if (saved && saved.length > 0) {
+          attachmentsSaved = saved
+        }
+      }
+    }
+
+    var summary = {
+      threadId: typeof thread.getId === 'function' ? thread.getId() : String(i),
+      subject: subject,
+      sender: sender,
+      oldDomain: oldDomain,
+      oldSubLabel: oldSubLabel,
+      newDomain: newDomain,
+      newSubLabel: newSubLabel,
+      tldChanged: !!tldChanged,
+      action: classification.action,
+      category: classification.category,
+      attachmentsMoved: attachmentsMoved,
+      attachmentsSaved: attachmentsSaved,
     }
 
     results.push(summary)
