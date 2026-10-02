@@ -2417,11 +2417,116 @@ function runLiveAttachmentBackfill(options, config, services) {
  * @param {string} searchQuery - Gmail search query
  * @param {Object} [options] - Options: { maxThreads: 20, dryRun: false }
  * @param {Object} [config] - Classifier config
+/**
+ * Deterministic fallback classifier for high-confidence domain and sub-label routing
+ * when Gemini API endpoints are unavailable, rate-limited, or UrlFetch quota is exhausted.
+ */
+function fallbackDeterministicClassifier_(
+  sender,
+  subject,
+  snippet,
+  existingLabels,
+  config
+) {
+  var text = (subject + ' ' + snippet + ' ' + sender).toLowerCase()
+
+  // 1. Primary Party: Child Paperwork & Identity
+  if (
+    /\b(tide|tori)\b/i.test(text) &&
+    /\b(name change|petition|decree|probate|court|custody|guardianship|hearing)\b/i.test(
+      text
+    )
+  ) {
+    return {
+      canonicalDomain: '04_Family_Health',
+      subLabel: 'Family/Kids/Tide',
+      action: 'keep',
+      category: 'Primary',
+      confidence: 1.0,
+      reasoning:
+        'Deterministic fallback: Primary party legal documentation for child identified.',
+    }
+  }
+
+  if (/\b(tide|tori)\b/i.test(text)) {
+    return {
+      canonicalDomain: '04_Family_Health',
+      subLabel: 'Family/Kids/Tide',
+      action: 'keep',
+      category: 'Primary',
+      confidence: 0.98,
+      reasoning:
+        'Deterministic fallback: Primary correspondence regarding Tide.',
+    }
+  }
+
+  if (/\b(toby)\b/i.test(text)) {
+    return {
+      canonicalDomain: '04_Family_Health',
+      subLabel: 'Family/Kids/Toby',
+      action: 'keep',
+      category: 'Primary',
+      confidence: 0.98,
+      reasoning:
+        'Deterministic fallback: Primary correspondence regarding Toby.',
+    }
+  }
+
+  if (/\b(david|davie)\b/i.test(text)) {
+    return {
+      canonicalDomain: '04_Family_Health',
+      subLabel: 'Family/Kids/David',
+      action: 'keep',
+      category: 'Primary',
+      confidence: 0.98,
+      reasoning:
+        'Deterministic fallback: Primary correspondence regarding David.',
+    }
+  }
+
+  // 2. Adult Sister Correspondence (when not regarding children)
+  if (/erika/i.test(text)) {
+    return {
+      canonicalDomain: '04_Family_Health',
+      subLabel: 'Family/Sisters/Erika & Rob',
+      action: 'keep',
+      category: 'Primary',
+      confidence: 0.95,
+      reasoning:
+        'Deterministic fallback: Correspondence regarding Erika & Rob.',
+    }
+  }
+
+  if (/kristien|kk76ripple/i.test(text)) {
+    return {
+      canonicalDomain: '04_Family_Health',
+      subLabel: 'Family/Sisters/Kristien',
+      action: 'keep',
+      category: 'Primary',
+      confidence: 0.95,
+      reasoning:
+        'Deterministic fallback: Personal correspondence regarding Kristien.',
+    }
+  }
+
+  return null
+}
+
+/**
+ * Reclassifies historical threads matching a custom Gmail search query.
+ * Useful for retroactive alignment of misclassified or misattributed threads.
+ *
+ * @param {string} searchQuery - Gmail search query
+ * @param {Object} [options] - Options: { maxThreads: 20, dryRun: false }
+ * @param {Object} [config] - Classifier config
  * @param {Object} [services] - Dependency injection for testing { GmailApp, Utilities, classifyFn }
  * @returns {Object} Report of reclassified threads
  */
 function reclassifyThreadsByQuery(searchQuery, options, config, services) {
-  var opts = Object.assign({ maxThreads: 20, dryRun: false }, options || {})
+  var opts = Object.assign(
+    { maxThreads: 20, dryRun: false, timeBudgetMs: 240000 },
+    options || {}
+  )
   var cfg =
     config ||
     (typeof getAiClassifierConfig === 'function' ? getAiClassifierConfig() : {})
@@ -2456,7 +2561,19 @@ function reclassifyThreadsByQuery(searchQuery, options, config, services) {
   )
 
   var results = []
+  var startTime = Date.now()
+  var timeBudgetMs = opts.timeBudgetMs || 240000
+
   for (var i = 0; i < threads.length; i++) {
+    if (Date.now() - startTime > timeBudgetMs) {
+      console.warn(
+        '[reclassifyThreadsByQuery] Execution safety ceiling reached (' +
+          Math.round((Date.now() - startTime) / 1000) +
+          's); completing batch cleanly.'
+      )
+      break
+    }
+
     var thread = threads[i]
     var msgs =
       typeof thread.getMessages === 'function' ? thread.getMessages() : []
@@ -2473,11 +2590,6 @@ function reclassifyThreadsByQuery(searchQuery, options, config, services) {
         ? firstMessage.getPlainBody().substring(0, 500)
         : ''
 
-    var classification = classifyFn
-      ? classifyFn(sender, subject, snippet, cfg)
-      : null
-    if (!classification) continue
-
     var rawLabels = []
     if (typeof thread.getLabels === 'function') {
       var labelObjs = thread.getLabels() || []
@@ -2485,6 +2597,28 @@ function reclassifyThreadsByQuery(searchQuery, options, config, services) {
         return typeof l.getName === 'function' ? l.getName() : String(l)
       })
     }
+
+    var classification = null
+    try {
+      if (classifyFn) {
+        classification = classifyFn(sender, subject, snippet, cfg)
+      }
+    } catch (e) {
+      console.warn(
+        '[reclassifyThreadsByQuery] Classifier exception: ' + e.message
+      )
+    }
+
+    if (!classification) {
+      classification = fallbackDeterministicClassifier_(
+        sender,
+        subject,
+        snippet,
+        rawLabels,
+        cfg
+      )
+    }
+    if (!classification) continue
     var oldCanonical = rawLabels.filter(function (l) {
       return (
         (cfg.canonicalDomains || []).indexOf(l) !== -1 || /^0[1-7]_/.test(l)
@@ -2634,6 +2768,7 @@ function reclassifyThreadsByQuery(searchQuery, options, config, services) {
       }
     }
 
+    var labelChanged = oldDomain !== newDomain || oldSubLabel !== newSubLabel
     var summary = {
       threadId: typeof thread.getId === 'function' ? thread.getId() : String(i),
       subject: subject,
@@ -2642,6 +2777,7 @@ function reclassifyThreadsByQuery(searchQuery, options, config, services) {
       oldSubLabel: oldSubLabel,
       newDomain: newDomain,
       newSubLabel: newSubLabel,
+      labelChanged: labelChanged,
       tldChanged: !!tldChanged,
       action: classification.action,
       category: classification.category,
@@ -2650,6 +2786,55 @@ function reclassifyThreadsByQuery(searchQuery, options, config, services) {
     }
 
     results.push(summary)
+  }
+
+  if (opts.dryRun) {
+    console.log(
+      '==============================================================='
+    )
+    console.log(
+      '             HISTORICAL REALIGNMENT AUDIT (DRY RUN)            '
+    )
+    console.log(
+      '==============================================================='
+    )
+    console.log('Query: ' + searchQuery)
+    console.log('Scanned: ' + threads.length + ' thread(s)')
+    console.log('Audited: ' + results.length)
+    results.forEach(function (item, idx) {
+      console.log(
+        '  [' +
+          (idx + 1) +
+          '] Thread: ' +
+          item.threadId +
+          ' | Subject: "' +
+          item.subject +
+          '"'
+      )
+      console.log(
+        '      Old: ' +
+          (item.oldSubLabel || item.oldDomain || '(none)') +
+          ' -> New: ' +
+          (item.newSubLabel || item.newDomain) +
+          (item.labelChanged ? ' [CHANGES]' : ' [MATCHES]')
+      )
+      console.log(
+        '      TLD Changed: ' +
+          item.tldChanged +
+          ' | Action: ' +
+          item.action +
+          ' | Category: ' +
+          item.category
+      )
+      if (item.attachmentsMoved && item.attachmentsMoved.length > 0) {
+        console.log(
+          '      Attachments to move: ' + JSON.stringify(item.attachmentsMoved)
+        )
+      }
+    })
+    console.log(
+      '==============================================================='
+    )
   }
 
   return {
