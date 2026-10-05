@@ -83,6 +83,7 @@ Note your **Project Number** from the GCP dashboard. You will enter this into th
 Need enterprise Google Workspace automation, custom Apps Script connectors, or tailored workflow integrations?
 
 Commercial services are offered through **[CombSmith LLC](https://combsmith.com)**:
+
 - **Standard SLA & Priority Support:** $199/month per organization for managed automations, bug triage, and maintenance.
 - **Custom Apps Script & Workspace Engineering:** $250/hour for bespoke connectors, Drive/Docs/Gmail automation, and security compliance.
 - **Consulting & Implementation:** Architectural guidance, migration to GCP cloud functions, and enterprise deployment.
