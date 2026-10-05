@@ -41,6 +41,28 @@ function processEmailsWithAiClassifier() {
     var sender = firstMessage.getFrom()
     var subject = firstMessage.getSubject()
     var snippet = firstMessage.getPlainBody().substring(0, 500)
+    if (
+      snippet.trim().length < 15 &&
+      typeof firstMessage.getAttachments === 'function'
+    ) {
+      try {
+        var atts = firstMessage.getAttachments() || []
+        var attNames = atts
+          .map(function (a) {
+            return typeof a.getName === 'function' ? a.getName() : ''
+          })
+          .filter(Boolean)
+        if (attNames.length > 0) {
+          snippet =
+            (snippet.trim() ? snippet.trim() + ' ' : '') +
+            '[Attached: ' +
+            attNames.join(', ') +
+            ']'
+        }
+      } catch (attErr) {
+        // ignore attachment errors
+      }
+    }
 
     console.log(
       '[processEmailsWithAiClassifier] Processing (' +
@@ -75,9 +97,19 @@ function processEmailsWithAiClassifier() {
           config
         )
 
-        // 1. Single Primary Label Tagging (Sub-label preferred; canonicalDomain if no sub-label)
-        var primaryTag =
-          classification.subLabel || classification.canonicalDomain
+        // 1. Single Primary Label Tagging (Sub-label preferred; fallback to domain default sub-label)
+        var primaryTag = classification.subLabel
+        if (!primaryTag || isRootDomainLabel(primaryTag)) {
+          var domainKey =
+            classification.canonicalDomain || classification.canonical_label
+          primaryTag =
+            (domainKey && DEFAULT_DOMAIN_SUBLABEL_MAP[domainKey]) ||
+            domainKey ||
+            null
+          if (primaryTag && isRootDomainLabel(primaryTag)) {
+            primaryTag = DEFAULT_DOMAIN_SUBLABEL_MAP[primaryTag] || null
+          }
+        }
         if (primaryTag) {
           var targetLabel = ensureUserLabel(primaryTag)
           thread.addLabel(targetLabel)
@@ -267,17 +299,22 @@ function cleanConflictingLabels(thread, targetDomain, targetSubLabel, config) {
         }
       }
 
-      // 5. Clean conflicting or redundant Core Domain labels
-      for (var d = 0; d < canonicalDomains.length; d++) {
-        var cd = canonicalDomains[d]
-        // If thread has a sub-label, strip core domain codes (e.g. 01_Household) to avoid double-tagging
-        if (lName === cd && (targetSubLabel || cd !== targetDomain)) {
-          thread.removeLabel(lObj)
-          console.log(
-            '[cleanConflictingLabels] Removed domain code label: ' + lName
-          )
-          break
+      // 5. Clean ALL Core Domain labels (threads only carry Sub-Labels, never raw domain codes)
+      var isDomainCode = isRootDomainLabel(lName)
+      if (!isDomainCode) {
+        for (var d = 0; d < canonicalDomains.length; d++) {
+          if (lName === canonicalDomains[d]) {
+            isDomainCode = true
+            break
+          }
         }
+      }
+      if (isDomainCode) {
+        thread.removeLabel(lObj)
+        console.log(
+          '[cleanConflictingLabels] Removed domain code label: ' + lName
+        )
+        continue
       }
 
       // 6. Clean conflicting sub-labels if they don't match targetSubLabel
@@ -904,7 +941,9 @@ function buildOntologicalPrompt(config, sender, subject, snippet) {
     "• '07_Community_NonProfit': Official 501(c)(3) charities, non-profit boards of directors, volunteer shift schedules, civic records, community/apiary telemetry, and non-profit initiatives. Valid sub-labels: 'Projects/Charity', 'Community/BOD', 'Projects/Telemetry', 'Projects/Beekeeping', 'Projects/HOG'.\n\n" +
     'NON-CANONICAL EMAILS (canonicalDomain: null):\n' +
     '• Media & platform newsletters (Substack, Medium, LinkedIn digests, news recaps, blogs, trade publications).\n' +
-    '• Retail marketing, store discounts, commercial coupons, e-commerce promotional blasts (e.g. retail flower/bulb/seed catalogs, store newsletters, promotional sales) -> canonicalDomain: null, subLabel: null, category: "Promotions", action: "archive".\n' +
+    '• Retail marketing, store discounts, commercial coupons, equipment supply store sales, and e-commerce promotional blasts (e.g. retail equipment/tools/bee supply discounts, store newsletters, commercial promotional sales) -> canonicalDomain: null, subLabel: null, category: "Promotions", action: "archive". (Distinguish commercial store sales from actual community/apiary telemetry or non-profit initiatives).\n' +
+    '• Customer satisfaction surveys, Net Promoter Score (NPS) ratings, support feedback forms, and service questionnaires (e.g. airline/travel surveys, cloud/developer platform feedback surveys, camp/program feedback ratings, vendor review requests) -> canonicalDomain: null, subLabel: null, category: "Promotions" (or "Updates"), action: "archive".\n' +
+    '• Political campaign communications, candidate fundraising appeals, PAC broadcasts, election solicitations, and news subscription pitches (e.g. campaign fundraising appeals, news subscription drives, daily news digests) -> canonicalDomain: null, subLabel: null, category: "Promotions" (or "Updates"), action: "archive".\n' +
     '• Commercial webinars, product demos, vendor marketing broadcasts.\n' +
     '• Unsolicited real estate cold calls, off-market wholesaler pitches, bulk solicitation.\n' +
     '• Commercial Terms of Service (TOS) updates, privacy policy revisions, arbitration updates, and platform terms/agreements (e.g. Waymo, Google, Uber, Apple, bank policy updates) -> non-canonical broadcast notices; route to category "Promotions" (or "Updates") with action "archive".\n\n' +
@@ -1122,7 +1161,29 @@ function ensureUserLabel(labelName, gmailApp) {
   if (!app) return null
   var label = app.getUserLabelByName(labelName)
   if (!label) {
-    label = app.createLabel(labelName)
+    if (
+      typeof Gmail !== 'undefined' &&
+      Gmail &&
+      Gmail.Users &&
+      Gmail.Users.Labels &&
+      Gmail.Users.Labels.create
+    ) {
+      try {
+        Gmail.Users.Labels.create(
+          {
+            name: labelName,
+            labelListVisibility: 'labelShow',
+            messageListVisibility: 'hide',
+          },
+          'me'
+        )
+        label = app.getUserLabelByName(labelName)
+      } catch (advancedErr) {
+        label = app.createLabel(labelName)
+      }
+    } else {
+      label = app.createLabel(labelName)
+    }
     console.log('[ensureUserLabel] Created new label: ' + labelName)
   }
   return label
@@ -1615,8 +1676,32 @@ var CANONICAL_TAXONOMY_SUBFOLDERS = {
   '07_Community_NonProfit': ['Community_BOD', 'Projects_Telemetry'],
 }
 
+var DEFAULT_DOMAIN_SUBLABEL_MAP = {
+  '01_Household': 'Household/General',
+  '02_Finance_Legal': 'Finance/Banking',
+  '03_Vehicles': 'Vehicles/General',
+  '04_Family_Health': 'Family/General',
+  '05_Tech_Infrastructure': 'Tech/Infrastructure',
+  '06_Work_Career': 'Work/General',
+  '07_Community_NonProfit': 'Community/NonProfit',
+}
+
+function isRootDomainLabel(name) {
+  if (!name || typeof name !== 'string') return false
+  return (
+    !name.includes('/') &&
+    (/^0[1-7]_/.test(name) ||
+      (typeof DEFAULT_DOMAIN_SUBLABEL_MAP !== 'undefined' &&
+        Object.prototype.hasOwnProperty.call(
+          DEFAULT_DOMAIN_SUBLABEL_MAP,
+          name
+        )))
+  )
+}
+
 var SUBLABEL_TO_FOLDER_MAP = {
   // 01_Household
+  'household/general': 'Primary_House',
   'household/property': 'Primary_House',
   'household/primary-property': 'Primary_House',
   'household/primary_house': 'Primary_House',
@@ -1642,6 +1727,7 @@ var SUBLABEL_TO_FOLDER_MAP = {
   'finance/estate_planning': 'Estate_Planning',
 
   // 03_Vehicles
+  'vehicles/general': 'Maintenance',
   'vehicles/maintenance': 'Maintenance',
   'vehicles/parts-orders': 'Maintenance',
   'vehicles/insurance': 'Insurance',
@@ -1651,6 +1737,7 @@ var SUBLABEL_TO_FOLDER_MAP = {
   'vehicles/car_hunt': 'Car_Hunt',
 
   // 04_Family_Health
+  'family/general': 'Family_General',
   'family/medical': 'Medical_Records',
   'family/medical-records': 'Medical_Records',
   'family/medical-student': 'Medical_Records',
@@ -1670,6 +1757,7 @@ var SUBLABEL_TO_FOLDER_MAP = {
   'family/sisters': 'Family_General',
 
   // 05_Tech_Infrastructure
+  'tech/infrastructure': 'Hardware_Licenses',
   'tech/alerts-monitoring': 'NAS_Backups',
   'tech/backups': 'NAS_Backups',
   'tech/hardware': 'Hardware_Licenses',
@@ -1677,6 +1765,7 @@ var SUBLABEL_TO_FOLDER_MAP = {
   'tech/cloud-gcp': 'NAS_Backups',
 
   // 06_Work_Career
+  'work/general': 'Career_Interviews',
   'work/career': 'Career_Interviews',
   'work/notes': 'Career_Interviews',
   'work/expenses': 'Expenses_Admin',
@@ -1684,6 +1773,7 @@ var SUBLABEL_TO_FOLDER_MAP = {
   'work/architecture': 'Career_Interviews',
 
   // 07_Community_NonProfit
+  'community/nonprofit': 'Community_BOD',
   'projects/charity': 'Community_BOD',
   'community/bod': 'Community_BOD',
   'projects/telemetry': 'Projects_Telemetry',
@@ -2802,6 +2892,28 @@ function reclassifyThreadsByQuery(searchQuery, options, config, services) {
       typeof firstMessage.getPlainBody === 'function'
         ? firstMessage.getPlainBody().substring(0, 500)
         : ''
+    if (
+      snippet.trim().length < 15 &&
+      typeof firstMessage.getAttachments === 'function'
+    ) {
+      try {
+        var atts = firstMessage.getAttachments() || []
+        var attNames = atts
+          .map(function (a) {
+            return typeof a.getName === 'function' ? a.getName() : ''
+          })
+          .filter(Boolean)
+        if (attNames.length > 0) {
+          snippet =
+            (snippet.trim() ? snippet.trim() + ' ' : '') +
+            '[Attached: ' +
+            attNames.join(', ') +
+            ']'
+        }
+      } catch (attErr) {
+        // ignore attachment errors
+      }
+    }
 
     var rawLabels = []
     if (typeof thread.getLabels === 'function') {
@@ -2855,7 +2967,18 @@ function reclassifyThreadsByQuery(searchQuery, options, config, services) {
           cfg
         )
       }
-      var primaryTag = classification.subLabel || classification.canonicalDomain
+      var primaryTag = classification.subLabel
+      if (!primaryTag || isRootDomainLabel(primaryTag)) {
+        var domainKey =
+          classification.canonicalDomain || classification.canonical_label
+        primaryTag =
+          (domainKey && DEFAULT_DOMAIN_SUBLABEL_MAP[domainKey]) ||
+          domainKey ||
+          null
+        if (primaryTag && isRootDomainLabel(primaryTag)) {
+          primaryTag = DEFAULT_DOMAIN_SUBLABEL_MAP[primaryTag] || null
+        }
+      }
       if (
         primaryTag &&
         typeof ensureUserLabel === 'function' &&
@@ -3131,6 +3254,8 @@ if (typeof module !== 'undefined' && module.exports) {
     getFileHash: getFileHash,
     CANONICAL_TAXONOMY_SUBFOLDERS: CANONICAL_TAXONOMY_SUBFOLDERS,
     SUBLABEL_TO_FOLDER_MAP: SUBLABEL_TO_FOLDER_MAP,
+    DEFAULT_DOMAIN_SUBLABEL_MAP: DEFAULT_DOMAIN_SUBLABEL_MAP,
+    isRootDomainLabel: isRootDomainLabel,
     getNotePathForDomain: getNotePathForDomain,
   }
 }

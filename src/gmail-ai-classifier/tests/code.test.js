@@ -185,6 +185,39 @@ describe('ensureGmailLabel', () => {
     const gmailApp = makeGmailApp({ createFails: true })
     expect(ensureGmailLabel('FailLabel', gmailApp)).toBeNull()
   })
+
+  test('creates label via advanced Gmail service with messageListVisibility: hide when available', () => {
+    const mockCreated = makeLabel('AdvancedLabel')
+    let advancedCall = null
+    const gmailAdvanced = {
+      Users: {
+        Labels: {
+          create: jest.fn((params, userId) => {
+            advancedCall = { params, userId }
+            return { id: 'adv-1', name: params.name }
+          }),
+        },
+      },
+    }
+    const gmailApp = {
+      getUserLabelByName: jest.fn((name) => {
+        if (advancedCall && name === 'AdvancedLabel') return mockCreated
+        return null
+      }),
+      createLabel: jest.fn(),
+    }
+    const label = ensureGmailLabel('AdvancedLabel', gmailApp, gmailAdvanced)
+    expect(label).toBe(mockCreated)
+    expect(gmailAdvanced.Users.Labels.create).toHaveBeenCalledWith(
+      {
+        name: 'AdvancedLabel',
+        labelListVisibility: 'labelShow',
+        messageListVisibility: 'hide',
+      },
+      'me'
+    )
+    expect(gmailApp.createLabel).not.toHaveBeenCalled()
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -873,6 +906,9 @@ describe('Ontological Knowledge Graph and Triage Matrix Prompt Architecture', ()
     expect(prompt).toContain('06_Work_Career')
     expect(prompt).toContain('07_Community_NonProfit')
     expect(prompt).toContain('NON-CANONICAL EMAILS (canonicalDomain: null)')
+    expect(prompt).toContain('Customer satisfaction surveys')
+    expect(prompt).toContain('Political campaign communications')
+    expect(prompt).toContain('equipment supply store sales')
 
     // Positive Search & Monitoring Alerts routing
     expect(prompt).toContain('AUTOMATED SEARCH & MONITORING ALERTS')
@@ -1206,7 +1242,145 @@ describe('cleanConflictingLabels Sub-Label Cleansing', () => {
         expect(removed).toContain('Family')
         expect(removed).toContain('Household')
       })
+
+      test('unconditionally strips root domain codes even when targetSubLabel is null', () => {
+        const removed = []
+        const mockLabels = [
+          { getName: () => '04_Family_Health' },
+          { getName: () => '01_Household' },
+          { getName: () => '05_Tech_Infrastructure' },
+        ]
+        const mockThread = {
+          getLabels: () => mockLabels,
+          removeLabel: jest.fn((lObj) => {
+            removed.push(lObj.getName())
+          }),
+        }
+        const config = {
+          canonicalDomains: [
+            '01_Household',
+            '04_Family_Health',
+            '05_Tech_Infrastructure',
+          ],
+        }
+
+        fn(mockThread, '04_Family_Health', null, config)
+
+        expect(removed).toContain('04_Family_Health')
+        expect(removed).toContain('01_Household')
+        expect(removed).toContain('05_Tech_Infrastructure')
+      })
     })
+  })
+})
+
+describe('DEFAULT_DOMAIN_SUBLABEL_MAP and isRootDomainLabel', () => {
+  const {
+    DEFAULT_DOMAIN_SUBLABEL_MAP: mapIndex,
+    isRootDomainLabel: isRootIndex,
+  } = require('../src/index')
+  const {
+    DEFAULT_DOMAIN_SUBLABEL_MAP: mapCodeGs,
+    isRootDomainLabel: isRootCodeGs,
+  } = require('../code.gs')
+
+  ;[
+    { name: 'src/index.js', map: mapIndex, isRoot: isRootIndex },
+    { name: 'code.gs', map: mapCodeGs, isRoot: isRootCodeGs },
+  ].forEach(({ name, map, isRoot }) => {
+    describe(name, () => {
+      test('maps all 7 core domains to canonical sublabels', () => {
+        expect(map['01_Household']).toBe('Household/General')
+        expect(map['02_Finance_Legal']).toBe('Finance/Banking')
+        expect(map['03_Vehicles']).toBe('Vehicles/General')
+        expect(map['04_Family_Health']).toBe('Family/General')
+        expect(map['05_Tech_Infrastructure']).toBe('Tech/Infrastructure')
+        expect(map['06_Work_Career']).toBe('Work/General')
+        expect(map['07_Community_NonProfit']).toBe('Community/NonProfit')
+      })
+
+      test('correctly identifies root domain labels vs sub-labels', () => {
+        expect(isRoot('01_Household')).toBe(true)
+        expect(isRoot('05_Tech_Infrastructure')).toBe(true)
+        expect(isRoot('Household/General')).toBe(false)
+        expect(isRoot('Tech/Infrastructure')).toBe(false)
+        expect(isRoot('01_Household/Primary_House')).toBe(false)
+        expect(isRoot(null)).toBe(false)
+        expect(isRoot('')).toBe(false)
+      })
+    })
+  })
+})
+
+describe('Sparse Body Attachment Filename Enrichment', () => {
+  const { processThreadBatch } = require('../src/index')
+
+  test('enriches snippet with attachment filenames when body is sparse', () => {
+    let capturedPrompt = ''
+    const mockThread = {
+      getId: () => 't-sparse',
+      getMessages: () => [
+        {
+          getFrom: () => 'sender@example.com',
+          getSubject: () => 'Fwd: scan',
+          getPlainBody: () => '   ',
+          getAttachments: () => [
+            { getName: () => 'Receipt_2026.pdf' },
+            { getName: () => 'Contract_Doc.pdf' },
+          ],
+        },
+      ],
+      getLabels: () => [],
+      addLabel: jest.fn(),
+    }
+    const mockFetch = jest.fn((url, opts) => {
+      const payload = JSON.parse(opts.payload)
+      capturedPrompt = payload.contents[0].parts[0].text
+      return {
+        getResponseCode: () => 200,
+        getContentText: () =>
+          JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  parts: [
+                    {
+                      text: JSON.stringify({
+                        canonical_label: '02_Finance_Legal/Purchases',
+                        canonicalDomain: '02_Finance_Legal',
+                        subLabel: 'Finance/Purchases',
+                        confidence: 0.95,
+                        reasoning: 'Attached receipt document',
+                      }),
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+      }
+    })
+    const config = {
+      modelEndpoint: 'https://example.com/gemini',
+      geminiApiKey: 'test-key',
+      canonicalDomains: ['02_Finance_Legal/Purchases'],
+      processedLabel: 'Processed',
+      autoFilterConfidenceThreshold: 0.99,
+    }
+    const services = {
+      GmailApp: {
+        getUserLabelByName: jest.fn((name) => ({ getName: () => name })),
+        createLabel: jest.fn((name) => ({ getName: () => name })),
+      },
+      UrlFetchApp: { fetch: mockFetch },
+      Gmail: null,
+    }
+
+    processThreadBatch([mockThread], config, services)
+
+    expect(capturedPrompt).toContain(
+      '[Attached: Receipt_2026.pdf, Contract_Doc.pdf]'
+    )
   })
 })
 
@@ -1338,7 +1512,7 @@ describe('reclassifyThreadsByQuery Historical Realignment', () => {
         }
         const mockOldFolder = {
           getName: () => 'Banking',
-          getFilesByName: jest.fn((name) => ({
+          getFilesByName: jest.fn((_name) => ({
             hasNext: jest.fn().mockReturnValueOnce(true).mockReturnValue(false),
             next: jest.fn(() => mockFile),
           })),
@@ -1352,7 +1526,7 @@ describe('reclassifyThreadsByQuery Historical Realignment', () => {
         }
         const mockDrive = {
           getRootFolder: () => ({
-            getFoldersByName: (name) => ({
+            getFoldersByName: (_name) => ({
               hasNext: () => true,
               next: () => ({
                 getFoldersByName: (subName) => ({
