@@ -878,16 +878,16 @@ function buildOntologicalPrompt(config, sender, subject, snippet) {
     ' (or null if non-canonical).\n\n' +
     '=== TIER 1: DOMAIN TAXONOMY ONTOLOGY (POSITIVE INVARIANTS) ===\n' +
     'Classify emails based on what each domain positively governs:\n' +
-    "• '01_Household': Physical residence, real estate property, maintenance, home repairs, contractor invoices, home utilities, household inventory, travel/lodging reservations, and artisanal home craft/business sales. Valid sub-labels: 'Household/Property', 'Household/Maintenance', 'Household/Travel', 'Projects/Business'.\n" +
-    "• '02_Finance_Legal': Personal banking, checking/savings, credit cards, investments, mortgages, personal tax filings (W-2, 1098, 1099, returns), utility payment accounts/funding, purchase invoices/receipts, insurance policies, actual personal legal proceedings, court orders, attorney correspondence, dispute filings, and executed personal contracts (leases, deeds, wills, trusts, powers of attorney). (Excludes commercial terms of service updates, which are non-canonical broadcast notices). Valid sub-labels: 'Finance/Banking', 'Finance/Bills', 'Finance/Purchases', 'Finance/Taxes', 'Finance/Charitable-Donations', 'Finance/Legal'.\n" +
+    "• '01_Household': Physical residence, real estate property, maintenance, home repairs, contractor invoices, home utilities, household inventory, and travel/lodging reservations. Valid sub-labels: 'Household/Property', 'Household/Maintenance', 'Household/Travel'.\n" +
+    "• '02_Finance_Legal': Personal banking, checking/savings, credit cards, investments, mortgages, personal tax filings (W-2, 1098, 1099, returns), utility payment accounts/funding, purchase invoices/receipts, health/auto/property insurance policies and explanations of benefits (EOB), actual personal legal proceedings, court orders, attorney correspondence, dispute filings, and executed personal contracts (leases, deeds, wills, trusts, powers of attorney). (Excludes commercial terms of service updates, which are non-canonical broadcast notices). Valid sub-labels: 'Finance/Banking', 'Finance/Bills', 'Finance/Purchases', 'Finance/Insurance', 'Finance/Taxes', 'Finance/Donations', 'Finance/Charitable-Donations', 'Finance/Legal'.\n" +
     "• '03_Vehicles': Personal automobile titles, registrations, vehicle insurance, automotive maintenance, repairs, parts, and car rental reservations. Valid sub-labels: 'Vehicles/Maintenance', 'Vehicles/Purchases', 'Vehicles/Rental-Cars'.\n" +
-    "• '04_Family_Health': Family correspondence, healthcare records, doctor appointments, patient portals, prescriptions, elder care, and student education/coursework/school portals. Valid sub-labels: 'Family/Kids/Tide', 'Family/Kids/Toby', 'Family/Kids/David', 'Family/School-Student', 'Family/Medical', 'Family/Personal-Correspondence', 'Family/Legal', 'Family/Correspondence'.\n" +
+    "• '04_Family_Health': Family correspondence, healthcare records, doctor appointments, patient portals, prescriptions, elder care, and student education/coursework/school portals. Valid sub-labels: 'Family/Kids/Tide', 'Family/Kids/Toby', 'Family/Kids/David', 'Family/School-Student', 'Family/Medical', 'Family/Legal', 'Family/Correspondence', 'Family/Parents', 'Family/Sisters'.\n" +
     "• '05_Tech_Infrastructure': Cloud hosting, server infrastructure, domains/DNS, network hardware, security alerts, system telemetry, and developer platform quota/outage alerts. Valid sub-labels: 'Tech/Cloud', 'Tech/Security', 'Tech/Alerts'.\n" +
     "• '06_Work_Career': Professional employment, career advancement, job applications, recruiter correspondence, interview schedules, employer benefits, and consulting. Valid sub-labels: 'Work/Career', 'Work/Employer'.\n" +
-    "• '07_Community_NonProfit': Official 501(c)(3) charities, non-profit boards of directors, volunteer shift schedules, civic records, and community telemetry. Valid sub-labels: 'Projects/Charity', 'Community/BOD', 'Projects/Telemetry'.\n\n" +
+    "• '07_Community_NonProfit': Official 501(c)(3) charities, non-profit boards of directors, volunteer shift schedules, civic records, community/apiary telemetry, and non-profit initiatives. Valid sub-labels: 'Projects/Charity', 'Community/BOD', 'Projects/Telemetry', 'Projects/Beekeeping', 'Projects/HOG'.\n\n" +
     'NON-CANONICAL EMAILS (canonicalDomain: null):\n' +
     '• Media & platform newsletters (Substack, Medium, LinkedIn digests, news recaps, blogs, trade publications).\n' +
-    '• Retail marketing, store discounts, commercial coupons, e-commerce promotional blasts.\n' +
+    '• Retail marketing, store discounts, commercial coupons, e-commerce promotional blasts (e.g. retail flower/bulb/seed catalogs, store newsletters, promotional sales) -> canonicalDomain: null, subLabel: null, category: "Promotions", action: "archive".\n' +
     '• Commercial webinars, product demos, vendor marketing broadcasts.\n' +
     '• Unsolicited real estate cold calls, off-market wholesaler pitches, bulk solicitation.\n' +
     '• Commercial Terms of Service (TOS) updates, privacy policy revisions, arbitration updates, and platform terms/agreements (e.g. Waymo, Google, Uber, Apple, bank policy updates) -> non-canonical broadcast notices; route to category "Promotions" (or "Updates") with action "archive".\n\n' +
@@ -898,8 +898,8 @@ function buildOntologicalPrompt(config, sender, subject, snippet) {
     "• Corporate, business, industry, or career monitoring -> '06_Work_Career' ('Work/Career').\n" +
     "• General news or unassigned media mention -> canonicalDomain: null (category: 'Updates', action: 'archive').\n" +
     '• Student or school sub-labels apply only when the monitored alert query specifically targets an academic program or school.\n\n' +
-    'AUTOMATED MACHINE & SENSOR TELEMETRY (BroodMinder, HoneyBeeham, weather stations, IoT sensors, server metrics, device status pings, cron logs, uptime monitors):\n' +
-    '• Community/beehive telemetry (BroodMinder, HoneyBeeham monitors) -> "07_Community_NonProfit", sub-label "Projects/Telemetry".\n' +
+    'AUTOMATED MACHINE & SENSOR TELEMETRY (BroodMinder, weather stations, IoT sensors, server metrics, device status pings, cron logs, uptime monitors):\n' +
+    '• Community/beehive telemetry (BroodMinder monitors) -> "07_Community_NonProfit", sub-label "Projects/Telemetry" or "Projects/Beekeeping".\n' +
     '• Tech infrastructure/server telemetry (device pings, server metrics, cron logs) -> "05_Tech_Infrastructure", sub-label "Tech/Alerts".\n' +
     '• MANDATORY ROUTING: Always route machine telemetry to category "Updates" with action "archive". Keep telemetry completely archived out of the Inbox.\n\n' +
     'SCHOOL & STUDENT ANNOUNCEMENTS VS DIRECT CORRESPONDENCE (MCAA, Briarwood, ParentSquare, Canvas, Google Classroom):\n' +
@@ -1649,6 +1649,7 @@ var SUBLABEL_TO_FOLDER_MAP = {
   'family/kids/school': 'Students',
   'family/kids/tide-health': 'Medical_Records',
   'family/kids/toby-health': 'Medical_Records',
+  'family/parents': 'Family_General',
   'family/sisters': 'Family_General',
 
   // 05_Tech_Infrastructure
@@ -1669,6 +1670,8 @@ var SUBLABEL_TO_FOLDER_MAP = {
   'projects/charity': 'Community_BOD',
   'community/bod': 'Community_BOD',
   'projects/telemetry': 'Projects_Telemetry',
+  'projects/beekeeping': 'Projects_Telemetry',
+  'projects/hog': 'Community_BOD',
   'community/nonprofit-bod': 'Community_BOD',
   'community/charity': 'Community_BOD',
 }
