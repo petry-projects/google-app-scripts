@@ -2107,6 +2107,47 @@ function persistCanonicalAttachmentsToDrive(
 }
 
 /**
+ * Resolves the canonical domain (e.g. "01_Household") from thread labels.
+ * Inspects both root domain identifiers and canonical sub-label prefixes.
+ *
+ * @param {string[]} rawLabels - Array of label names on the thread
+ * @param {string[]} [canonicalDomains] - Optional list of canonical domain keys
+ * @returns {string|null} Canonical domain key or null if non-canonical
+ */
+function resolveCanonicalDomainFromLabels(rawLabels, canonicalDomains) {
+  if (!rawLabels || !Array.isArray(rawLabels)) return null
+  const allowed = canonicalDomains || [
+    '01_Household',
+    '02_Finance_Legal',
+    '03_Vehicles',
+    '04_Family_Health',
+    '05_Tech_Infrastructure',
+    '06_Work_Career',
+    '07_Community_NonProfit',
+  ]
+  // 1. Direct match on root domain codes (e.g. "01_Household")
+  for (let i = 0; i < rawLabels.length; i++) {
+    const l = rawLabels[i]
+    if (allowed.includes(l) || /^0[1-7]_/.test(l)) {
+      return l
+    }
+  }
+  // 2. Canonical sub-label prefix mapping
+  for (let j = 0; j < rawLabels.length; j++) {
+    const lName = (rawLabels[j] || '').toLowerCase()
+    if (lName.startsWith('household/')) return '01_Household'
+    if (lName.startsWith('finance/')) return '02_Finance_Legal'
+    if (lName.startsWith('vehicles/')) return '03_Vehicles'
+    if (lName.startsWith('family/')) return '04_Family_Health'
+    if (lName.startsWith('tech/')) return '05_Tech_Infrastructure'
+    if (lName.startsWith('work/')) return '06_Work_Career'
+    if (lName.startsWith('community/') || lName.startsWith('projects/'))
+      return '07_Community_NonProfit'
+  }
+  return null
+}
+
+/**
  * Scans historical Gmail threads for attachments across the 7 Canonical Domains,
  * verifies whether each attachment exists in Google Drive under the correct taxonomy path,
  * checks/applies native [AI_INDEXED] description tags, and optionally backfills missing files.
@@ -2150,11 +2191,7 @@ function auditAndBackfillCanonicalAttachments(options, config, services) {
     )
   }
 
-  let searchQuery = opts.query
-  if (!searchQuery) {
-    const domainQueries = canonicalDomains.map((d) => 'label:' + d).join(' OR ')
-    searchQuery = 'has:attachment (' + domainQueries + ')'
-  }
+  let searchQuery = opts.query || 'has:attachment'
 
   let threads = []
   if (typeof gmail.search === 'function') {
@@ -2210,14 +2247,15 @@ function auditAndBackfillCanonicalAttachments(options, config, services) {
       rawLabels = thread.labels
     }
 
-    const assignedCanonical = rawLabels.filter(
-      (l) => canonicalDomains.includes(l) || /^0[1-7]_/.test(l)
+    const canonicalDomain = resolveCanonicalDomainFromLabels(
+      rawLabels,
+      canonicalDomains
     )
+    if (!canonicalDomain) continue
 
-    if (assignedCanonical.length === 0) continue
-    const canonicalDomain = assignedCanonical[0]
     const subLabel =
       rawLabels.find((l) => l.includes('/') && !l.includes(canonicalDomain)) ||
+      rawLabels.find((l) => l.includes('/')) ||
       ''
     const subfolderName = resolveTaxonomySubfolderName(
       canonicalDomain,
@@ -2958,4 +2996,5 @@ module.exports = {
   SUBLABEL_TO_FOLDER_MAP,
   DEFAULT_DOMAIN_SUBLABEL_MAP,
   isRootDomainLabel,
+  resolveCanonicalDomainFromLabels,
 }

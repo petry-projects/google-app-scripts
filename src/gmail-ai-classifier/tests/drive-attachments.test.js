@@ -13,6 +13,7 @@ const {
   auditAndBackfillCanonicalAttachments,
   runDryRunAttachmentAudit,
   runLiveAttachmentBackfill,
+  resolveCanonicalDomainFromLabels,
 } = require('../src/index.js')
 
 // Helper mock makers
@@ -1077,6 +1078,101 @@ describe('Drive Attachment Persistence along Taxonomy Path', () => {
       )
       expect(report.dryRun).toBe(false)
       expect(report.scannedThreads).toBe(0)
+    })
+
+    test('auditAndBackfillCanonicalAttachments resolves domain when thread carries only canonical sub-labels', () => {
+      const mockDriveApp = createMockDriveApp()
+      const folder = ensureDriveTaxonomyFolder(
+        '01_Household',
+        'Primary_House',
+        mockDriveApp
+      )
+
+      const att = createMockAttachment({
+        name: 'Home_Invoice.pdf',
+        content: 'Invoice content payload',
+      })
+
+      const thread = {
+        getId: () => 'th-sublabel-only-1',
+        getFirstMessageSubject: () => 'Contractor Invoice',
+        labels: ['Household/Property'], // NO root "01_Household" label!
+        getMessages: () => [{ getAttachments: () => [att] }],
+      }
+
+      const mockGmailApp = {
+        search: jest.fn(() => [thread]),
+      }
+
+      const services = {
+        GmailApp: mockGmailApp,
+        DriveApp: mockDriveApp,
+        Utilities: { formatDate: () => '2026-10-05T12:00:00Z' },
+      }
+
+      const report = auditAndBackfillCanonicalAttachments(
+        { dryRun: false },
+        {},
+        services
+      )
+
+      expect(report.scannedThreads).toBe(1)
+      expect(report.threadsWithEligibleAttachments).toBe(1)
+      expect(report.totalEligibleAttachments).toBe(1)
+      expect(report.backfilledCount).toBe(1)
+      expect(report.taggedCount).toBe(0)
+
+      const savedFile = folder.getFilesByName('Home_Invoice.pdf').next()
+      expect(savedFile).toBeDefined()
+      expect(savedFile.getDescription()).toContain('Domain: 01_Household')
+      expect(savedFile.getDescription()).toContain(
+        'Sub-label: Household/Property'
+      )
+    })
+  })
+
+  describe('resolveCanonicalDomainFromLabels', () => {
+    test('resolves direct root domain codes', () => {
+      expect(resolveCanonicalDomainFromLabels(['01_Household'])).toBe(
+        '01_Household'
+      )
+      expect(resolveCanonicalDomainFromLabels(['02_Finance_Legal'])).toBe(
+        '02_Finance_Legal'
+      )
+    })
+
+    test('resolves canonical domain from sub-label prefixes', () => {
+      expect(resolveCanonicalDomainFromLabels(['Household/General'])).toBe(
+        '01_Household'
+      )
+      expect(resolveCanonicalDomainFromLabels(['Finance/Banking'])).toBe(
+        '02_Finance_Legal'
+      )
+      expect(resolveCanonicalDomainFromLabels(['Vehicles/Maintenance'])).toBe(
+        '03_Vehicles'
+      )
+      expect(resolveCanonicalDomainFromLabels(['Family/School-Student'])).toBe(
+        '04_Family_Health'
+      )
+      expect(resolveCanonicalDomainFromLabels(['Tech/Alerts-Monitoring'])).toBe(
+        '05_Tech_Infrastructure'
+      )
+      expect(resolveCanonicalDomainFromLabels(['Work/General'])).toBe(
+        '06_Work_Career'
+      )
+      expect(resolveCanonicalDomainFromLabels(['Community/NonProfit'])).toBe(
+        '07_Community_NonProfit'
+      )
+      expect(resolveCanonicalDomainFromLabels(['Projects/Telemetry'])).toBe(
+        '07_Community_NonProfit'
+      )
+    })
+
+    test('returns null for non-canonical or empty labels', () => {
+      expect(resolveCanonicalDomainFromLabels([])).toBeNull()
+      expect(resolveCanonicalDomainFromLabels(null)).toBeNull()
+      expect(resolveCanonicalDomainFromLabels(['INBOX', 'UNREAD'])).toBeNull()
+      expect(resolveCanonicalDomainFromLabels(['Promotions/Sale'])).toBeNull()
     })
   })
 })
