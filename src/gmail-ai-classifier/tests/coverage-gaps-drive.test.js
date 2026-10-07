@@ -215,7 +215,7 @@ describe('auditAndBackfillCanonicalAttachments budget, folder and size paths', (
   })
 
   test('derives size from bytes when attachment has no getSize', () => {
-    const att = makeAtt('sheet.pdf', '12345678')
+    const att = makeAtt('sheet.pdf', 'x'.repeat(2048))
     delete att.getSize
     const report = auditAndBackfillCanonicalAttachments({}, config, {
       GmailApp: { search: () => [makeThread({ labels, atts: [att] })] },
@@ -223,7 +223,7 @@ describe('auditAndBackfillCanonicalAttachments budget, folder and size paths', (
     })
     expect(report.items[0]).toMatchObject({
       status: 'MISSING_FROM_DRIVE',
-      fileSizeKb: 0,
+      fileSizeKb: 2,
     })
     expect(report.totalEligibleAttachments).toBe(1)
   })
