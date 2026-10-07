@@ -909,6 +909,9 @@ describe('Ontological Knowledge Graph and Triage Matrix Prompt Architecture', ()
     expect(prompt).toContain('Customer satisfaction surveys')
     expect(prompt).toContain('Political campaign communications')
     expect(prompt).toContain('equipment supply store sales')
+    expect(prompt).toContain(
+      'enterprise daily/weekly activity digests and newsletters'
+    )
 
     // Positive Search & Monitoring Alerts routing
     expect(prompt).toContain('AUTOMATED SEARCH & MONITORING ALERTS')
