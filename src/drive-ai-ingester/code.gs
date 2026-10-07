@@ -95,7 +95,12 @@ function processDriveFilesWithAiIngester() {
       )
 
       var fileText = extractFileContentText(file, services)
-      var metadata = analyzeDocumentWithAi(file.getName(), fileText, config, services)
+      var metadata = analyzeDocumentWithAi(
+        file.getName(),
+        fileText,
+        config,
+        services
+      )
 
       if (metadata) {
         // 3. Apply Dual-Layer Metadata Tags. Only proceed to GitHub sync,

@@ -269,26 +269,24 @@ function extractJsonSubstring(text) {
  * @returns {number} Delay in milliseconds, capped at 30 seconds
  */
 function parseRetryDelayMs(response) {
-  try {
-    const headers = response.getHeaders()
-    const retryHeader = headers['Retry-After'] || headers['retry-after']
-    if (retryHeader) {
-      const seconds = parseInt(retryHeader, 10)
-      if (!isNaN(seconds) && seconds > 0) {
-        return Math.min(seconds * 1000, 30000)
-      }
+  const headers = response?.getHeaders?.() || {}
+  const retryHeader = headers['Retry-After'] || headers['retry-after']
+  if (retryHeader) {
+    const seconds = parseInt(retryHeader, 10)
+    if (!isNaN(seconds) && seconds > 0) {
+      return Math.min(seconds * 1000, 30000)
     }
-  } catch (e) {}
+  }
   return 5000
 }
 
 /**
  * Maps canonical domain to GitHub notes file path.
  * @param {string} domain - Canonical domain identifier (e.g., '01_Household')
- * @param {string} subLabel - Sub-label for additional context (unused in v1)
+ * @param {string} _subLabel - Sub-label for additional context (unused in v1)
  * @returns {string|null} Path to markdown file or null if domain not found
  */
-function getNotePathForDomain(domain, subLabel) {
+function getNotePathForDomain(domain, _subLabel) {
   const map = {
     '01_Household': '01_Household/index.md',
     '02_Finance_Legal': '02_Finance_Legal/index.md',

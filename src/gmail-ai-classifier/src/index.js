@@ -880,10 +880,8 @@ function executeGitHubCommit(
   const utils =
     services?.Utilities || (typeof Utilities !== 'undefined' ? Utilities : null)
 
-  const repoOwner =
-    services?.githubRepoOwner || process.env.GITHUB_REPO_OWNER
-  const repoName =
-    services?.githubRepoName || process.env.GITHUB_REPO_NAME
+  const repoOwner = services?.githubRepoOwner || process.env.GITHUB_REPO_OWNER
+  const repoName = services?.githubRepoName || process.env.GITHUB_REPO_NAME
 
   const url =
     'https://api.github.com/repos/' +
