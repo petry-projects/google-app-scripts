@@ -673,9 +673,6 @@ function processThreadBatch(threads, config, services) {
   return results
 }
 
-const GITHUB_REPO_OWNER = 'don-petry'
-const GITHUB_REPO_NAME = 'self-private'
-
 const RULE6_PATTERNS = [
   [/\S \? \S/, "' ? ' between words (was an em dash or a · separator)"],
   [/\?\?/, "'??' (was a multi-codepoint emoji)"],
@@ -884,11 +881,9 @@ function executeGitHubCommit(
     services?.Utilities || (typeof Utilities !== 'undefined' ? Utilities : null)
 
   const repoOwner =
-    services?.githubRepoOwner ||
-    process.env.GITHUB_REPO_OWNER ||
-    GITHUB_REPO_OWNER
+    services?.githubRepoOwner || process.env.GITHUB_REPO_OWNER
   const repoName =
-    services?.githubRepoName || process.env.GITHUB_REPO_NAME || GITHUB_REPO_NAME
+    services?.githubRepoName || process.env.GITHUB_REPO_NAME
 
   const url =
     'https://api.github.com/repos/' +
