@@ -185,6 +185,39 @@ describe('ensureGmailLabel', () => {
     const gmailApp = makeGmailApp({ createFails: true })
     expect(ensureGmailLabel('FailLabel', gmailApp)).toBeNull()
   })
+
+  test('creates label via advanced Gmail service with messageListVisibility: hide when available', () => {
+    const mockCreated = makeLabel('AdvancedLabel')
+    let advancedCall = null
+    const gmailAdvanced = {
+      Users: {
+        Labels: {
+          create: jest.fn((params, userId) => {
+            advancedCall = { params, userId }
+            return { id: 'adv-1', name: params.name }
+          }),
+        },
+      },
+    }
+    const gmailApp = {
+      getUserLabelByName: jest.fn((name) => {
+        if (advancedCall && name === 'AdvancedLabel') return mockCreated
+        return null
+      }),
+      createLabel: jest.fn(),
+    }
+    const label = ensureGmailLabel('AdvancedLabel', gmailApp, gmailAdvanced)
+    expect(label).toBe(mockCreated)
+    expect(gmailAdvanced.Users.Labels.create).toHaveBeenCalledWith(
+      {
+        name: 'AdvancedLabel',
+        labelListVisibility: 'labelShow',
+        messageListVisibility: 'hide',
+      },
+      'me'
+    )
+    expect(gmailApp.createLabel).not.toHaveBeenCalled()
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -787,5 +820,820 @@ describe('processThreadBatch', () => {
     expect(results).toHaveLength(2)
     expect(results[0].threadId).toBe('t1')
     expect(results[1].threadId).toBe('t2')
+  })
+
+  test('persists attachments when services.DriveApp is provided', () => {
+    const thread = makeThread({ id: 't-attach' })
+    const classification = {
+      canonical_label: '01_Household/Primary_House',
+      confidence: 0.98,
+      reasoning: 'ok',
+    }
+    const mockDriveApp = {
+      getRootFolder: jest.fn(() => ({
+        getFoldersByName: jest.fn(() => ({
+          hasNext: () => true,
+          next: () => ({
+            getFoldersByName: jest.fn(() => ({
+              hasNext: () => true,
+              next: () => ({
+                getFilesByName: jest.fn(() => ({ hasNext: () => false })),
+                createFile: jest.fn(() => ({
+                  getId: () => 'f1',
+                  getName: () => 'file.pdf',
+                  getUrl: () => 'https://drive.google.com/file/d/f1',
+                })),
+              }),
+            })),
+            createFolder: jest.fn(),
+          }),
+        })),
+        createFolder: jest.fn(),
+      })),
+    }
+    const services = {
+      GmailApp: {
+        getUserLabelByName: jest.fn((name) => makeLabel(name)),
+        createLabel: jest.fn((name) => makeLabel(name)),
+      },
+      UrlFetchApp: { fetch: jest.fn(() => makeGeminiResponse(classification)) },
+      Gmail: null,
+      DriveApp: mockDriveApp,
+    }
+
+    const results = processThreadBatch([thread], config, services)
+    expect(results).toHaveLength(1)
+    expect(results[0].threadId).toBe('t-attach')
+    expect(Array.isArray(results[0].savedAttachments)).toBe(true)
+  })
+})
+
+describe('Ontological Knowledge Graph and Triage Matrix Prompt Architecture', () => {
+  const codeGs = require('../code.gs')
+  const { buildOntologicalPrompt } = require('../src/index')
+
+  test('buildOntologicalPrompt builds 3-Tier positive invariant prompt without negative exclusions', () => {
+    const config = {
+      canonicalDomains: [
+        '01_Household',
+        '02_Finance_Legal',
+        '03_Vehicles',
+        '04_Family_Health',
+        '05_Tech_Infrastructure',
+        '06_Work_Career',
+        '07_Community_NonProfit',
+      ],
+      customPromptRules:
+        'entities:\n  - name: "Entity Alpha"\n    domain: "04_Family_Health"\n    sublabel: "Family/Legal"',
+    }
+
+    const prompt = buildOntologicalPrompt(
+      config,
+      'alerts@example.com',
+      'Alert - Entity Alpha',
+      'Summary of news mention for Entity Alpha'
+    )
+
+    // Tier 1: Positive Domain Taxonomy Ontology
+    expect(prompt).toContain(
+      '=== TIER 1: DOMAIN TAXONOMY ONTOLOGY (POSITIVE INVARIANTS) ==='
+    )
+    expect(prompt).toContain('01_Household')
+    expect(prompt).toContain('02_Finance_Legal')
+    expect(prompt).toContain('03_Vehicles')
+    expect(prompt).toContain('04_Family_Health')
+    expect(prompt).toContain('05_Tech_Infrastructure')
+    expect(prompt).toContain('06_Work_Career')
+    expect(prompt).toContain('07_Community_NonProfit')
+    expect(prompt).toContain('NON-CANONICAL EMAILS (canonicalDomain: null)')
+    expect(prompt).toContain('Customer satisfaction surveys')
+    expect(prompt).toContain('Political campaign communications')
+    expect(prompt).toContain('equipment supply store sales')
+
+    // Positive Search & Monitoring Alerts routing
+    expect(prompt).toContain('AUTOMATED SEARCH & MONITORING ALERTS')
+    expect(prompt).toContain('Google Alerts')
+    expect(prompt).toContain(
+      'Student or school sub-labels apply only when the monitored alert query specifically targets an academic program or school'
+    )
+
+    // Tier 2: Orthogonal Triage Matrix
+    expect(prompt).toContain(
+      '=== TIER 2: ORTHOGONAL TRIAGE MATRIX (LIFECYCLE STATE) ==='
+    )
+    expect(prompt).toContain('Action_Required')
+    expect(prompt).toContain('Informational_Feed')
+    expect(prompt).toContain('Completed_Transaction')
+    expect(prompt).toContain('Broadcast_Marketing')
+    expect(prompt).toContain('Spam_Solicitation')
+
+    // Tier 3: Injected Entity Knowledge Graph
+    expect(prompt).toContain(
+      '=== TIER 3: USER ENTITY KNOWLEDGE GRAPH & CUSTOM RULES ==='
+    )
+    expect(prompt).toContain('Entity Alpha')
+
+    // Constraints & Contract
+    expect(prompt).toContain('Single Sub-Label Invariant')
+    expect(prompt).toContain('Return JSON ONLY')
+
+    // Zero negative exclusions invariant verification
+    expect(prompt).not.toContain('Under NO circumstances')
+    expect(prompt).not.toContain('Do NOT classify')
+    expect(prompt).not.toContain('Reserve strictly for')
+  })
+
+  test('classifyWithGemini in code.gs constructs and sends ontological prompt', () => {
+    let capturedPrompt = ''
+    global.UrlFetchApp = {
+      fetch: jest.fn((url, opts) => {
+        const payload = JSON.parse(opts.payload)
+        capturedPrompt = payload.contents[0].parts[0].text
+        return {
+          getResponseCode: () => 200,
+          getContentText: () =>
+            JSON.stringify({
+              candidates: [
+                {
+                  content: {
+                    parts: [
+                      {
+                        text: JSON.stringify({
+                          canonicalDomain: '04_Family_Health',
+                          subLabel: 'Family/Legal',
+                          category: 'Updates',
+                          action: 'keep',
+                          confidence: 0.98,
+                          title: 'Alert Title',
+                          summary: 'Executive summary',
+                        }),
+                      },
+                    ],
+                  },
+                },
+              ],
+            }),
+        }
+      }),
+    }
+
+    const testConfig = {
+      canonicalDomains: ['01_Household', '04_Family_Health'],
+      geminiApiKey: 'test-key',
+    }
+
+    const result = codeGs.classifyWithGemini(
+      'googlealerts-noreply@google.com',
+      'Google Alert - Elder Relative',
+      'news summary snippet',
+      testConfig
+    )
+
+    expect(capturedPrompt).toContain(
+      '=== TIER 1: DOMAIN TAXONOMY ONTOLOGY (POSITIVE INVARIANTS) ==='
+    )
+    expect(capturedPrompt).toContain(
+      '=== TIER 2: ORTHOGONAL TRIAGE MATRIX (LIFECYCLE STATE) ==='
+    )
+    expect(capturedPrompt).toContain('Google Alerts')
+    expect(capturedPrompt).not.toContain('Under NO circumstances')
+    expect(result).toEqual({
+      canonicalDomain: '04_Family_Health',
+      subLabel: 'Family/Legal',
+      category: 'Updates',
+      action: 'keep',
+      confidence: 0.98,
+      title: 'Alert Title',
+      summary: 'Executive summary',
+    })
+  })
+
+  test('getNotePathForDomain supports CUSTOM_NOTE_PATHS from PropertiesService', () => {
+    expect(codeGs.getNotePathForDomain('04_Family_Health')).toBe(
+      '04_Family_Health/index.md'
+    )
+
+    global.PropertiesService = {
+      getScriptProperties: () => ({
+        getProperty: (key) => {
+          if (key === 'CUSTOM_NOTE_PATHS') {
+            return JSON.stringify({
+              '04_Family_Health': 'custom-domain/kids/index.md',
+            })
+          }
+          return null
+        },
+      }),
+    }
+
+    expect(codeGs.getNotePathForDomain('04_Family_Health')).toBe(
+      'custom-domain/kids/index.md'
+    )
+    delete global.PropertiesService
+  })
+
+  test('buildOntologicalPrompt includes telemetry and school/student positive invariants', () => {
+    const config = {
+      canonicalDomains: [
+        '04_Family_Health',
+        '05_Tech_Infrastructure',
+        '07_Community_NonProfit',
+      ],
+    }
+    const prompt = buildOntologicalPrompt(
+      config,
+      'noreply@parentsquad.com',
+      'Weekly Newsletter',
+      'School news and lunch menu'
+    )
+    expect(prompt).toContain('AUTOMATED MACHINE & SENSOR TELEMETRY')
+    expect(prompt).toContain('BroodMinder')
+    expect(prompt).toContain('Projects/Telemetry')
+    expect(prompt).toContain('Tech/Alerts')
+    expect(prompt).toContain(
+      'Always route machine telemetry to category "Updates" with action "archive"'
+    )
+    expect(prompt).toContain(
+      'SCHOOL & STUDENT ANNOUNCEMENTS VS DIRECT CORRESPONDENCE'
+    )
+    expect(prompt).toContain('MCAA')
+    expect(prompt).toContain('Briarwood')
+    expect(prompt).toContain('ParentSquare')
+    expect(prompt).toContain('Family/School-Student')
+    expect(prompt).toContain('PRIMARY PARTY ATTRIBUTION PRINCIPLE')
+    expect(prompt).toContain('Family/Kids/Tide')
+    expect(prompt).toContain('Family/Kids/Toby')
+    expect(prompt).not.toContain('Under NO circumstances')
+    expect(prompt).not.toContain('Do NOT classify')
+    expect(prompt).not.toContain('Reserve strictly for')
+  })
+})
+
+describe('setGmailCategoryTab Category Shifting', () => {
+  const { setGmailCategoryTab: setCatIndex } = require('../src/index')
+  const { setGmailCategoryTab: setCatCodeGs } = require('../code.gs')
+
+  ;[
+    { name: 'src/index.js implementation', fn: setCatIndex },
+    { name: 'code.gs implementation', fn: setCatCodeGs },
+  ].forEach(({ name, fn }) => {
+    describe(name, () => {
+      let mockModify
+      let mockGmailService
+      let mockThread
+
+      beforeEach(() => {
+        mockModify = jest.fn()
+        mockGmailService = {
+          Users: {
+            Threads: {
+              modify: mockModify,
+            },
+          },
+        }
+        mockThread = {
+          getId: () => 'thread_123',
+          getFirstMessageSubject: () => 'Test Subject',
+        }
+      })
+
+      test('assigns Updates category and strips other categories', () => {
+        fn(mockThread, 'Updates', mockGmailService)
+        expect(mockModify).toHaveBeenCalledWith(
+          {
+            addLabelIds: ['CATEGORY_UPDATES'],
+            removeLabelIds: [
+              'CATEGORY_PERSONAL',
+              'CATEGORY_PROMOTIONS',
+              'CATEGORY_SOCIAL',
+              'CATEGORY_FORUMS',
+            ],
+          },
+          'me',
+          'thread_123'
+        )
+      })
+
+      test('assigns Primary category and strips other categories', () => {
+        fn(mockThread, 'Primary', mockGmailService)
+        expect(mockModify).toHaveBeenCalledWith(
+          {
+            addLabelIds: ['CATEGORY_PERSONAL'],
+            removeLabelIds: [
+              'CATEGORY_UPDATES',
+              'CATEGORY_PROMOTIONS',
+              'CATEGORY_SOCIAL',
+              'CATEGORY_FORUMS',
+            ],
+          },
+          'me',
+          'thread_123'
+        )
+      })
+
+      test('assigns Social category and strips other categories', () => {
+        fn(mockThread, 'Social', mockGmailService)
+        expect(mockModify).toHaveBeenCalledWith(
+          {
+            addLabelIds: ['CATEGORY_SOCIAL'],
+            removeLabelIds: [
+              'CATEGORY_PERSONAL',
+              'CATEGORY_UPDATES',
+              'CATEGORY_PROMOTIONS',
+              'CATEGORY_FORUMS',
+            ],
+          },
+          'me',
+          'thread_123'
+        )
+      })
+
+      test('handles unknown category gracefully as no-op', () => {
+        fn(mockThread, 'UnknownCategory', mockGmailService)
+        expect(mockModify).not.toHaveBeenCalled()
+      })
+
+      test('handles missing or disabled Advanced Gmail API gracefully', () => {
+        expect(() => {
+          fn(mockThread, 'Updates', null)
+        }).not.toThrow()
+        expect(mockModify).not.toHaveBeenCalled()
+      })
+
+      test('handles thread without getFirstMessageSubject safely', () => {
+        const bareThread = {
+          getId: () => 'bare_thread_456',
+        }
+        expect(() => {
+          fn(bareThread, 'Updates', mockGmailService)
+        }).not.toThrow()
+        expect(mockModify).toHaveBeenCalledWith(
+          expect.objectContaining({
+            addLabelIds: ['CATEGORY_UPDATES'],
+          }),
+          'me',
+          'bare_thread_456'
+        )
+      })
+    })
+  })
+})
+
+describe('cleanConflictingLabels Sub-Label Cleansing', () => {
+  const { cleanConflictingLabels: cleanIndex } = require('../src/index')
+  const { cleanConflictingLabels: cleanCodeGs } = require('../code.gs')
+
+  ;[
+    { name: 'src/index.js implementation', fn: cleanIndex },
+    { name: 'code.gs implementation', fn: cleanCodeGs },
+  ].forEach(({ name, fn }) => {
+    describe(name, () => {
+      test('strips conflicting sub-labels such as Family/Sisters/Kristien when primary is Family/Kids/Tide', () => {
+        const removed = []
+        const mockLabels = [
+          { getName: () => 'Family/Sisters/Kristien' },
+          { getName: () => '04_Family_Health' },
+          { getName: () => 'Retention/Permanent' },
+          { getName: () => 'Processed' },
+          { getName: () => 'Retention/30d' },
+          { getName: () => 'Archives/2026' },
+        ]
+        const mockThread = {
+          getLabels: () => mockLabels,
+          removeLabel: jest.fn((lObj) => {
+            removed.push(lObj.getName())
+          }),
+        }
+        const config = {
+          canonicalDomains: ['04_Family_Health'],
+          processedLabel: 'Processed',
+        }
+
+        fn(mockThread, '04_Family_Health', 'Family/Kids/Tide', config)
+
+        // Conflicting sub-label Family/Sisters/Kristien MUST be removed
+        expect(removed).toContain('Family/Sisters/Kristien')
+        // Domain code 04_Family_Health removed when targetSubLabel is set
+        expect(removed).toContain('04_Family_Health')
+        // Redundant Retention/Permanent removed
+        expect(removed).toContain('Retention/Permanent')
+        // Protected labels MUST NOT be removed
+        expect(removed).not.toContain('Processed')
+        expect(removed).not.toContain('Retention/30d')
+        expect(removed).not.toContain('Archives/2026')
+      })
+
+      test('strips legacy flat labels like Family and Household', () => {
+        const removed = []
+        const mockLabels = [
+          { getName: () => 'Family' },
+          { getName: () => 'Household' },
+        ]
+        const mockThread = {
+          getLabels: () => mockLabels,
+          removeLabel: jest.fn((lObj) => {
+            removed.push(lObj.getName())
+          }),
+        }
+        const config = { canonicalDomains: [] }
+
+        fn(mockThread, '04_Family_Health', 'Family/Kids/Tide', config)
+
+        expect(removed).toContain('Family')
+        expect(removed).toContain('Household')
+      })
+
+      test('unconditionally strips root domain codes even when targetSubLabel is null', () => {
+        const removed = []
+        const mockLabels = [
+          { getName: () => '04_Family_Health' },
+          { getName: () => '01_Household' },
+          { getName: () => '05_Tech_Infrastructure' },
+        ]
+        const mockThread = {
+          getLabels: () => mockLabels,
+          removeLabel: jest.fn((lObj) => {
+            removed.push(lObj.getName())
+          }),
+        }
+        const config = {
+          canonicalDomains: [
+            '01_Household',
+            '04_Family_Health',
+            '05_Tech_Infrastructure',
+          ],
+        }
+
+        fn(mockThread, '04_Family_Health', null, config)
+
+        expect(removed).toContain('04_Family_Health')
+        expect(removed).toContain('01_Household')
+        expect(removed).toContain('05_Tech_Infrastructure')
+      })
+    })
+  })
+})
+
+describe('DEFAULT_DOMAIN_SUBLABEL_MAP and isRootDomainLabel', () => {
+  const {
+    DEFAULT_DOMAIN_SUBLABEL_MAP: mapIndex,
+    isRootDomainLabel: isRootIndex,
+  } = require('../src/index')
+  const {
+    DEFAULT_DOMAIN_SUBLABEL_MAP: mapCodeGs,
+    isRootDomainLabel: isRootCodeGs,
+  } = require('../code.gs')
+
+  ;[
+    { name: 'src/index.js', map: mapIndex, isRoot: isRootIndex },
+    { name: 'code.gs', map: mapCodeGs, isRoot: isRootCodeGs },
+  ].forEach(({ name, map, isRoot }) => {
+    describe(name, () => {
+      test('maps all 7 core domains to canonical sublabels', () => {
+        expect(map['01_Household']).toBe('Household/General')
+        expect(map['02_Finance_Legal']).toBe('Finance/Banking')
+        expect(map['03_Vehicles']).toBe('Vehicles/General')
+        expect(map['04_Family_Health']).toBe('Family/General')
+        expect(map['05_Tech_Infrastructure']).toBe('Tech/Infrastructure')
+        expect(map['06_Work_Career']).toBe('Work/General')
+        expect(map['07_Community_NonProfit']).toBe('Community/NonProfit')
+      })
+
+      test('correctly identifies root domain labels vs sub-labels', () => {
+        expect(isRoot('01_Household')).toBe(true)
+        expect(isRoot('05_Tech_Infrastructure')).toBe(true)
+        expect(isRoot('Household/General')).toBe(false)
+        expect(isRoot('Tech/Infrastructure')).toBe(false)
+        expect(isRoot('01_Household/Primary_House')).toBe(false)
+        expect(isRoot(null)).toBe(false)
+        expect(isRoot('')).toBe(false)
+      })
+    })
+  })
+})
+
+describe('Sparse Body Attachment Filename Enrichment', () => {
+  const { processThreadBatch } = require('../src/index')
+
+  test('enriches snippet with attachment filenames when body is sparse', () => {
+    let capturedPrompt = ''
+    const mockThread = {
+      getId: () => 't-sparse',
+      getMessages: () => [
+        {
+          getFrom: () => 'sender@example.com',
+          getSubject: () => 'Fwd: scan',
+          getPlainBody: () => '   ',
+          getAttachments: () => [
+            { getName: () => 'Receipt_2026.pdf' },
+            { getName: () => 'Contract_Doc.pdf' },
+          ],
+        },
+      ],
+      getLabels: () => [],
+      addLabel: jest.fn(),
+    }
+    const mockFetch = jest.fn((url, opts) => {
+      const payload = JSON.parse(opts.payload)
+      capturedPrompt = payload.contents[0].parts[0].text
+      return {
+        getResponseCode: () => 200,
+        getContentText: () =>
+          JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  parts: [
+                    {
+                      text: JSON.stringify({
+                        canonical_label: '02_Finance_Legal/Purchases',
+                        canonicalDomain: '02_Finance_Legal',
+                        subLabel: 'Finance/Purchases',
+                        confidence: 0.95,
+                        reasoning: 'Attached receipt document',
+                      }),
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+      }
+    })
+    const config = {
+      modelEndpoint: 'https://example.com/gemini',
+      geminiApiKey: 'test-key',
+      canonicalDomains: ['02_Finance_Legal/Purchases'],
+      processedLabel: 'Processed',
+      autoFilterConfidenceThreshold: 0.99,
+    }
+    const services = {
+      GmailApp: {
+        getUserLabelByName: jest.fn((name) => ({ getName: () => name })),
+        createLabel: jest.fn((name) => ({ getName: () => name })),
+      },
+      UrlFetchApp: { fetch: mockFetch },
+      Gmail: null,
+    }
+
+    processThreadBatch([mockThread], config, services)
+
+    expect(capturedPrompt).toContain(
+      '[Attached: Receipt_2026.pdf, Contract_Doc.pdf]'
+    )
+  })
+})
+
+describe('reclassifyThreadsByQuery Historical Realignment', () => {
+  const {
+    reclassifyThreadsByQuery: reclassifyIndex,
+    runRealignmentAudit: auditIndex,
+  } = require('../src/index')
+  const {
+    reclassifyThreadsByQuery: reclassifyCodeGs,
+    runRealignmentAudit: auditCodeGs,
+  } = require('../code.gs')
+
+  ;[
+    {
+      name: 'src/index.js implementation',
+      fn: reclassifyIndex,
+      auditFn: auditIndex,
+    },
+    {
+      name: 'code.gs implementation',
+      fn: reclassifyCodeGs,
+      auditFn: auditCodeGs,
+    },
+  ].forEach(({ name, fn, auditFn }) => {
+    describe(name, () => {
+      test('reclassifies historical threads and strips conflicting labels in live mode', () => {
+        const addedLabels = []
+        const removedLabels = []
+        const mockLabels = [{ getName: () => 'Family/Sisters/Kristien' }]
+        const mockThread = {
+          getId: () => 'thread-xyz',
+          getMessages: () => [
+            {
+              getFrom: () => 'probate@example.com',
+              getSubject: () => 'Name Change Decree',
+              getPlainBody: () => 'Order regarding Tide name change petition.',
+            },
+          ],
+          getLabels: () => mockLabels,
+          addLabel: jest.fn((l) =>
+            addedLabels.push(
+              typeof l.getName === 'function' ? l.getName() : String(l)
+            )
+          ),
+          removeLabel: jest.fn((l) =>
+            removedLabels.push(
+              typeof l.getName === 'function' ? l.getName() : String(l)
+            )
+          ),
+        }
+        const mockGmail = {
+          search: jest.fn(() => [mockThread]),
+          getUserLabelByName: jest.fn((name) => ({ getName: () => name })),
+          createLabel: jest.fn((name) => ({ getName: () => name })),
+        }
+        const mockClassify = jest.fn(() => ({
+          canonicalDomain: '04_Family_Health',
+          subLabel: 'Family/Kids/Tide',
+          action: 'keep',
+          category: 'Primary',
+        }))
+
+        const report = fn(
+          'label:"Family/Sisters" Tide',
+          { maxThreads: 10, dryRun: false },
+          { processedLabel: 'Processed' },
+          { GmailApp: mockGmail, classifyFn: mockClassify }
+        )
+
+        expect(report.scanned).toBe(1)
+        expect(report.reclassified).toBe(1)
+        expect(report.items[0].newSubLabel).toBe('Family/Kids/Tide')
+        expect(removedLabels).toContain('Family/Sisters/Kristien')
+        expect(addedLabels).toContain('Family/Kids/Tide')
+        expect(addedLabels).toContain('Processed')
+      })
+
+      test('does not modify thread labels when dryRun is true', () => {
+        const addedLabels = []
+        const removedLabels = []
+        const mockLabels = [{ getName: () => 'Family/Sisters/Kristien' }]
+        const mockThread = {
+          getId: () => 'thread-dry',
+          getMessages: () => [
+            {
+              getFrom: () => 'probate@example.com',
+              getSubject: () => 'Tide Document',
+              getPlainBody: () => 'Tide paperwork details',
+            },
+          ],
+          getLabels: () => mockLabels,
+          addLabel: jest.fn((l) => addedLabels.push(l)),
+          removeLabel: jest.fn((l) => removedLabels.push(l)),
+        }
+        const mockGmail = {
+          search: jest.fn(() => [mockThread]),
+        }
+        const mockClassify = jest.fn(() => ({
+          canonicalDomain: '04_Family_Health',
+          subLabel: 'Family/Kids/Tide',
+          action: 'keep',
+          category: 'Primary',
+        }))
+
+        const report = fn(
+          'label:"Family/Sisters" Tide',
+          { maxThreads: 10, dryRun: true },
+          { processedLabel: 'Processed' },
+          { GmailApp: mockGmail, classifyFn: mockClassify }
+        )
+
+        expect(report.scanned).toBe(1)
+        expect(report.dryRun).toBe(true)
+        expect(addedLabels).toHaveLength(0)
+        expect(removedLabels).toHaveLength(0)
+      })
+
+      test('detects tldChanged and relocates attachments via file.moveTo', () => {
+        const mockMovedFiles = []
+        const mockFile = {
+          getName: () => 'decree.pdf',
+          moveTo: jest.fn((destFolder) => {
+            mockMovedFiles.push({
+              file: 'decree.pdf',
+              dest: destFolder.getName(),
+            })
+          }),
+        }
+        const mockOldFolder = {
+          getName: () => 'Banking',
+          getFilesByName: jest.fn((_name) => ({
+            hasNext: jest.fn().mockReturnValueOnce(true).mockReturnValue(false),
+            next: jest.fn(() => mockFile),
+          })),
+        }
+        const mockNewFolder = {
+          getName: () => 'Students',
+          getFilesByName: jest.fn(() => ({
+            hasNext: () => false,
+          })),
+          createFile: jest.fn(),
+        }
+        const mockDrive = {
+          getRootFolder: () => ({
+            getFoldersByName: (_name) => ({
+              hasNext: () => true,
+              next: () => ({
+                getFoldersByName: (subName) => ({
+                  hasNext: () => true,
+                  next: () =>
+                    subName === 'Students' ? mockNewFolder : mockOldFolder,
+                }),
+                createFolder: (subName) =>
+                  subName === 'Students' ? mockNewFolder : mockOldFolder,
+              }),
+            }),
+            createFolder: () => ({
+              getFoldersByName: () => ({
+                hasNext: () => true,
+                next: () => mockNewFolder,
+              }),
+            }),
+          }),
+        }
+
+        const mockAttachment = {
+          getName: () => 'decree.pdf',
+          getContentType: () => 'application/pdf',
+          getSize: () => 15000,
+          getBytes: () => new Uint8Array([1, 2, 3]),
+        }
+
+        const mockThread = {
+          getId: () => 'thread-tld-change',
+          getMessages: () => [
+            {
+              getFrom: () => 'probate@court.gov',
+              getSubject: () => 'Order Granting Petition',
+              getPlainBody: () => 'Legal decree details.',
+              getAttachments: () => [mockAttachment],
+            },
+          ],
+          getLabels: () => [
+            { getName: () => '02_Finance_Legal' },
+            { getName: () => 'Finance/Banking' },
+          ],
+          addLabel: jest.fn(),
+          removeLabel: jest.fn(),
+        }
+
+        const mockGmail = {
+          search: jest.fn(() => [mockThread]),
+          getUserLabelByName: jest.fn((name) => ({ getName: () => name })),
+          createLabel: jest.fn((name) => ({ getName: () => name })),
+        }
+        const mockClassify = jest.fn(() => ({
+          canonicalDomain: '04_Family_Health',
+          subLabel: 'Family/Kids/Tide',
+          action: 'keep',
+          category: 'Primary',
+        }))
+
+        const report = fn(
+          'Tide Name Change',
+          { maxThreads: 5, dryRun: false },
+          {
+            canonicalDomains: ['02_Finance_Legal', '04_Family_Health'],
+            processedLabel: 'Processed',
+          },
+          {
+            GmailApp: mockGmail,
+            DriveApp: mockDrive,
+            classifyFn: mockClassify,
+            getFileHash: () => 'hash123',
+          }
+        )
+
+        expect(report.scanned).toBe(1)
+        expect(report.items[0].tldChanged).toBe(true)
+        expect(report.items[0].oldDomain).toBe('02_Finance_Legal')
+        expect(report.items[0].newDomain).toBe('04_Family_Health')
+        expect(mockFile.moveTo).toHaveBeenCalledWith(mockNewFolder)
+        expect(mockMovedFiles).toHaveLength(1)
+        expect(mockMovedFiles[0].dest).toBe('Students')
+      })
+
+      it('dynamically discovers sister labels and includes name change query in runRealignmentAudit', () => {
+        const mockLabels = [
+          { getName: () => 'Family/Sisters/SubSister' },
+          { getName: () => 'Finance/Banking' },
+        ]
+
+        const mockGmail = {
+          getUserLabels: jest.fn(() => mockLabels),
+          search: jest.fn(() => []),
+        }
+
+        const report = auditFn(
+          null,
+          { maxThreads: 10 },
+          { canonicalDomains: ['04_Family_Health'] },
+          { GmailApp: mockGmail, classifyFn: jest.fn() }
+        )
+
+        expect(mockGmail.getUserLabels).toHaveBeenCalled()
+        expect(mockGmail.search).toHaveBeenCalledWith(
+          'label:"Family/Sisters/SubSister" OR "name change"',
+          0,
+          10
+        )
+        expect(report.dryRun).toBe(true)
+      })
+    })
   })
 })
