@@ -165,11 +165,12 @@ jobs:
           }
 
       - name: Dispatch central initiative-driver
-        # Skipped (clean no-op) ONLY on an explicit `defer` — never a cancel, never
-        # a job failure (#640, AC #1/#2). Fail-OPEN: an empty/missing decision (the
-        # gate step or its tooling checkout failed) still dispatches, because an
-        # outage of the gate must never stop the fleet (ADR §7 fail-safe direction).
-        if: steps.arl_gate.outputs.decision != 'defer'
+        # Skipped (clean no-op) ONLY on an explicit `allow` — never a cancel, never
+        # a job failure (#640, AC #1/#2). Fail-SAFE: dispatch requires explicit
+        # 'allow' decision so rate-limit enforcement is not bypassed when the gate
+        # tooling is unavailable or errors — a missing decision means gate failed,
+        # and we must not dispatch ungated.
+        if: steps.arl_gate.outputs.decision == 'allow'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT_DON_PETRY || secrets.GH_PAT_WORKFLOWS }}
         run: |
