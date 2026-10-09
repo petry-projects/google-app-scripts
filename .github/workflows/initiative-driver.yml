@@ -41,8 +41,9 @@
 # Gate tooling is fetched at a pinned commit SHA of petry-projects/.github (not
 # a moving tag — the PAT is handed to that code). If the tooling is unavailable
 # or the gate errors, the gate step FAILS LOUDLY (::error:: annotation + step
-# summary, step marked failed) but the dispatch still runs (fail-open — an
-# outage of the gate must never stop the fleet; standards/agent-rate-limits.md).
+# summary, step marked failed); continue-on-error keeps the job green, but the
+# dispatch runs only when the gate emits an explicit `allow` decision, so a gate
+# outage skips the dispatch (fail-closed) rather than dispatching ungated.
 #
 # To adopt:
 #   1. Copy this file verbatim to .github/workflows/initiative-driver.yml in your repo.
@@ -104,10 +105,10 @@ jobs:
         # fetch them read-only into a scratch path. Uses the same PAT as the
         # dispatch — the workflow's GITHUB_TOKEN cannot read another repo — so the
         # stub's `permissions:` block is unchanged.
-        # continue-on-error: a tooling-checkout outage must not stop the fleet —
-        # the gate step then finds no script, reports an ::error:: (fail loudly),
-        # emits no decision, and the dispatch step's `!= 'defer'` guard falls
-        # through to dispatching (fail-open).
+        # continue-on-error keeps a tooling-checkout outage from failing the job:
+        # the gate step then finds no script, reports an ::error:: (fail loudly)
+        # and emits no decision; the dispatch step requires an explicit `allow`
+        # decision, so it is skipped.
         # ref: pinned to an immutable commit SHA of petry-projects/.github (#1232)
         # — a moving tag silently lagged the gate script (v1 predates it) and
         # would hand the PAT to whatever the tag next points at. Bump it in a
@@ -127,9 +128,10 @@ jobs:
         # no model spend, the direct #443 target — AC #5). Reads run history with
         # the PAT (independent of the `permissions:` block) and emits
         # decision=allow|defer to $GITHUB_OUTPUT; a defer is honoured by the `if:`
-        # on the dispatch step below. Fail loud, fail open: a missing gate script
+        # on the dispatch step below. Fail loud, fail closed: a missing gate script
         # or a gate error marks THIS step failed with an ::error:: (visible in the
-        # run), but continue-on-error keeps the job — and the dispatch — going.
+        # run); continue-on-error keeps the job going, but with no `allow`
+        # decision the dispatch step is skipped.
         continue-on-error: true
         id: arl_gate
         env:
@@ -146,7 +148,7 @@ jobs:
           set -euo pipefail
           ARL_GATE_SCRIPT=.arl-gate-tooling/scripts/agent-rate-limit-gate.sh
           if ! [ -f "$ARL_GATE_SCRIPT" ]; then
-            msg="Agent rate-limit gate NOT ENFORCED: ${ARL_GATE_SCRIPT} is missing (tooling checkout failed or the pinned ref lacks the script). Dispatching ungated (fail-open)."
+            msg="Agent rate-limit gate NOT ENFORCED: ${ARL_GATE_SCRIPT} is missing (tooling checkout failed or the pinned ref lacks the script). No decision emitted; dispatch is skipped (fail-closed)."
             echo "::error::${msg}"
             echo "### :warning: ${msg}" >> "$GITHUB_STEP_SUMMARY"
             exit 1
@@ -159,8 +161,8 @@ jobs:
             --tracking-repo "$ARL_TRACKING_REPO" \
             --tracking-issue "$ARL_TRACKING_ISSUE" || {
             rc=$?
-            echo "::error::Agent rate-limit gate errored (exit ${rc}) — dispatching ungated (fail-open)."
-            echo "### :warning: Agent rate-limit gate errored (exit ${rc}) — dispatching ungated (fail-open)." >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::Agent rate-limit gate errored (exit ${rc}) — dispatch runs only if the gate emitted decision=allow (fail-closed)."
+            echo "### :warning: Agent rate-limit gate errored (exit ${rc}) — dispatch runs only if the gate emitted decision=allow (fail-closed)." >> "$GITHUB_STEP_SUMMARY"
             exit "$rc"
           }
 
