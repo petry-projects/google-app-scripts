@@ -122,6 +122,11 @@ describe('Performance and Scalability Benchmarks', () => {
     const duration = Date.now() - startTime
 
     expect(processed).toHaveLength(BATCH_SIZE)
+    processed.forEach((result, i) => {
+      expect(result.threadId).toBe(`msg_${i}`)
+      expect(result.status).toBe('classified')
+      expect(result.label).toBe(classification.canonical_label)
+    })
     expect(duration).toBeLessThan(100) // 100 items benchmarked under 100ms
   })
 })
